@@ -1,0 +1,23 @@
+installation:
+  version: 6.3.0
+  installDate: 2026-04-21T11:17:51.973Z
+  lastUpdated: 2026-04-24T05:30:46.883Z
+modules:
+  - name: core
+    version: 6.3.0
+    installDate: 2026-04-21T11:17:51.668Z
+    lastUpdated: 2026-04-24T05:30:46.882Z
+    source: built-in
+    npmPackage: null
+    repoUrl: null
+  - name: bmm
+    version: 6.3.0
+    installDate: 2026-04-21T11:17:51.930Z
+    lastUpdated: 2026-04-24T05:30:46.883Z
+    source: built-in
+    npmPackage: null
+    repoUrl: null
+ides:
+  - claude-code
+  - codex
+  - windsurf

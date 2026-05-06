@@ -2146,16 +2146,30 @@ func assertLiquidRunOutputPreserved(t *testing.T, out string) {
 	t.Helper()
 	for _, want := range []string{
 		"{% if customer %}",
+		"{% else %}",
 		"{% endif %}",
+		"{% capture cta_text %}",
+		"{% endcapture %}",
+		"{{ cta_text }}",
 		"{% if cart.item_count == 0 %} aria-disabled=\"true\"{% endif %}",
 		"{% for product in collections.frontpage.products %}",
 		"{% endfor %}",
 		"{{ 'general.accessibility.skip_to_content' | t }}",
+		"{% comment %}",
 		"<p>Do not translate this comment</p>",
+		"{% endcomment %}",
+		"{% raw %}",
 		"<p>Do not translate raw {{ token }}</p>",
+		"{% endraw %}",
+		"{% schema %}",
 		`{"name": "Account summary", "settings": [{"type": "text", "id": "heading", "label": "Heading"}]}`,
+		"{% endschema %}",
+		"{% javascript %}",
 		`console.log("Do not translate js");`,
+		"{% endjavascript %}",
+		"{% stylesheet %}",
 		`.account-summary::before { content: "Do not translate css"; }`,
+		"{% endstylesheet %}",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected output to preserve %q, got %q", want, out)

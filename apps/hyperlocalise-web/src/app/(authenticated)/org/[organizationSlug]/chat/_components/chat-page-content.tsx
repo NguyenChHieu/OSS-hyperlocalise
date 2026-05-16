@@ -1,16 +1,16 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   Add01Icon,
   AiImageIcon,
   AiWebBrowsingIcon,
   ArrowDown01Icon,
-  ArrowUp01Icon,
   BubbleChatTranslateIcon,
+  Cancel01Icon,
+  SentIcon,
   CheckmarkCircle02Icon,
-  Clock01Icon,
   FileAttachmentIcon,
   FolderLibraryIcon,
   MailReceive01Icon,
@@ -31,41 +31,34 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  TypographyH1,
-  TypographyH4,
-  TypographyMuted,
-  TypographySmall,
-} from "@/components/ui/typography";
+import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { TypographyH2, TypographyMuted } from "@/components/ui/typography";
 import { apiClient } from "@/lib/api-client-instance";
 
 const suggestedRequests = [
   {
-    icon: MailReceive01Icon,
-    title: "Translate the latest launch copy",
-    detail: "Use Product Web and prepare fr-FR, de-DE, and ja-JP drafts",
+    icon: BubbleChatTranslateIcon,
+    text: "Translate these release notes into ja-JP and vi-VN using the selected project's tone and glossary.",
+  },
+  {
+    icon: FileAttachmentIcon,
+    text: "Translate the attached resource file while preserving keys, placeholders, and file structure.",
   },
   {
     icon: CheckmarkCircle02Icon,
-    title: "Review blocked locale approvals",
-    detail: "Summarize unresolved comments before the release window",
+    text: "Review these strings for tone, terminology, placeholders, and length risks before release.",
   },
   {
-    icon: BubbleChatTranslateIcon,
-    title: "Adapt support macros for APAC",
-    detail: "Keep placeholders and legal disclaimers unchanged",
-  },
-  {
-    icon: Clock01Icon,
-    title: "Show translation work due today",
-    detail: "Prioritize inbox requests that affect the next release",
+    icon: MailReceive01Icon,
+    text: "Suggest glossary updates from this copy, including product terms and forbidden translations.",
   },
 ] as const;
 
 const attachOptions = [
   {
     icon: FileAttachmentIcon,
-    label: "Add photos & files",
+    label: "Add source files",
   },
   {
     icon: AiImageIcon,
@@ -77,6 +70,23 @@ const attachOptions = [
   },
 ] as const;
 
+const translationSourceFileAccept = [
+  ".json",
+  ".jsonc",
+  ".arb",
+  ".xlf",
+  ".xlif",
+  ".xliff",
+  ".po",
+  ".html",
+  ".md",
+  ".mdx",
+  ".strings",
+  ".stringsdict",
+  ".csv",
+].join(",");
+const maxTranslationSourceFiles = 5;
+
 type ApiProject = {
   id: string;
   name: string;
@@ -84,8 +94,10 @@ type ApiProject = {
 
 export function ChatPageContent({ organizationSlug }: { organizationSlug: string }) {
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [text, setText] = useState("");
+  const [files, setFiles] = useState<File[]>([]);
   const projectsQuery = useQuery({
     queryKey: ["translation-projects", organizationSlug],
     queryFn: async () => {
@@ -108,6 +120,26 @@ export function ChatPageContent({ organizationSlug }: { organizationSlug: string
 
   const chatRequestMutation = useMutation({
     mutationFn: async () => {
+      if (files.length > 0) {
+        const formData = new FormData();
+        formData.set("text", text.trim() || "Please translate the attached source file.");
+        if (selectedProject?.id) {
+          formData.set("projectId", selectedProject.id);
+        }
+        for (const file of files) {
+          formData.append("files", file);
+        }
+
+        const response = await fetch(`/api/orgs/${organizationSlug}/chat-requests/upload`, {
+          method: "POST",
+          body: formData,
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to send request (${response.status})`);
+        }
+        return response.json() as Promise<{ conversation: { id: string } }>;
+      }
+
       const response = await apiClient.api.orgs[":organizationSlug"]["chat-requests"].$post({
         param: { organizationSlug },
         json: {
@@ -124,17 +156,26 @@ export function ChatPageContent({ organizationSlug }: { organizationSlug: string
       router.push(`/org/${organizationSlug}/inbox/${data.conversation.id}`);
     },
   });
+  const canSubmit = Boolean(text.trim() || files.length > 0) && !chatRequestMutation.isPending;
 
   return (
     <main className="mx-auto flex min-h-[calc(100svh-7rem)] w-full max-w-6xl flex-col items-center justify-center px-4 py-8 sm:px-6">
       <section className="w-full max-w-5xl">
         <div className="mb-7 text-center">
-          <TypographyH1 className="text-balance text-foreground">
-            What do you want to translate?
-          </TypographyH1>
+          <TypographyH2 className="text-balance text-foreground">
+            What should we localise?
+          </TypographyH2>
         </div>
 
-        <div className="overflow-hidden rounded-[1.35rem] border border-border bg-app-shell-background text-foreground shadow-2xl shadow-black/10">
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (canSubmit) {
+              chatRequestMutation.mutate();
+            }
+          }}
+          className="overflow-hidden rounded-[1.35rem] bg-muted text-foreground shadow-2xl shadow-black/10"
+        >
           <label htmlFor="inbox-request" className="sr-only">
             Translation request
           </label>
@@ -142,28 +183,97 @@ export function ChatPageContent({ organizationSlug }: { organizationSlug: string
             id="inbox-request"
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (canSubmit) {
+                  chatRequestMutation.mutate();
+                }
+              }
+            }}
             className="min-h-36 w-full resize-none bg-transparent px-4 py-4 text-base leading-6 text-foreground outline-none placeholder:text-muted-foreground sm:px-6 sm:py-5"
             placeholder="Paste source text or ask Hyperlocalise to translate a file, string, or inbox request..."
           />
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border bg-muted px-4 py-3 sm:px-5">
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept={translationSourceFileAccept}
+            className="sr-only"
+            onChange={(e) => {
+              const nextFiles = Array.from(e.target.files ?? []);
+              setFiles((currentFiles) => {
+                const existing = new Set(
+                  currentFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`),
+                );
+                return [
+                  ...currentFiles,
+                  ...nextFiles.filter(
+                    (file) => !existing.has(`${file.name}:${file.size}:${file.lastModified}`),
+                  ),
+                ].slice(0, maxTranslationSourceFiles);
+              });
+              e.target.value = "";
+            }}
+          />
+          {files.length > 0 ? (
+            <div className="flex flex-wrap gap-2 border-t border-border px-4 pb-4 sm:px-6">
+              {files.map((file) => (
+                <span
+                  key={`${file.name}:${file.size}:${file.lastModified}`}
+                  className="inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-muted px-3 py-1.5 text-sm text-foreground"
+                >
+                  <HugeiconsIcon
+                    icon={FileAttachmentIcon}
+                    strokeWidth={1.8}
+                    className="size-4 shrink-0 text-muted-foreground"
+                  />
+                  <span className="truncate">{file.name}</span>
+                  <button
+                    type="button"
+                    className="rounded-full text-muted-foreground transition-colors hover:text-foreground"
+                    aria-label={`Remove ${file.name}`}
+                    onClick={() =>
+                      setFiles((currentFiles) => currentFiles.filter((item) => item !== file))
+                    }
+                  >
+                    <HugeiconsIcon icon={Cancel01Icon} strokeWidth={1.8} className="size-3.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : null}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-background/70 px-4 py-3 sm:px-5">
             <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
               <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      className="rounded-full text-muted-foreground hover:bg-accent/20 hover:text-foreground"
-                      aria-label="Add translation context"
-                    />
-                  }
-                >
-                  <HugeiconsIcon icon={Add01Icon} strokeWidth={1.8} className="size-4" />
-                </DropdownMenuTrigger>
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <DropdownMenuTrigger
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            className="rounded-full text-muted-foreground hover:bg-accent/20 hover:text-foreground"
+                            aria-label="Add translation context"
+                          />
+                        }
+                      />
+                    }
+                  >
+                    <HugeiconsIcon icon={Add01Icon} strokeWidth={1.8} className="size-4" />
+                  </TooltipTrigger>
+                  <TooltipContent>Add translation context</TooltipContent>
+                </Tooltip>
                 <DropdownMenuContent className="min-w-52" align="start">
                   <DropdownMenuGroup>
-                    <DropdownMenuItem>
+                    <DropdownMenuItem
+                      closeOnClick={false}
+                      onClick={() => {
+                        fileInputRef.current?.click();
+                      }}
+                    >
                       <HugeiconsIcon
                         icon={attachOptions[0].icon}
                         strokeWidth={1.8}
@@ -175,9 +285,9 @@ export function ChatPageContent({ organizationSlug }: { organizationSlug: string
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
                     {attachOptions.slice(1).map((option) => (
-                      <DropdownMenuItem key={option.label}>
+                      <DropdownMenuItem key={option.label} disabled>
                         <HugeiconsIcon icon={option.icon} strokeWidth={1.8} className="size-4" />
-                        {option.label}
+                        {option.label} (soon)
                       </DropdownMenuItem>
                     ))}
                   </DropdownMenuGroup>
@@ -247,53 +357,45 @@ export function ChatPageContent({ organizationSlug }: { organizationSlug: string
                 </DropdownMenuContent>
               </DropdownMenu>
               <Button
-                type="button"
-                size="icon-sm"
-                disabled={!text.trim() || chatRequestMutation.isPending}
-                onClick={() => chatRequestMutation.mutate()}
-                className="rounded-full bg-foreground text-app-shell-background hover:bg-foreground/90"
+                type="submit"
+                disabled={!canSubmit}
+                className="rounded-full bg-primary text-primary-foreground hover:bg-primary/90"
                 aria-label="Send translation request"
               >
-                <HugeiconsIcon icon={ArrowUp01Icon} strokeWidth={2} className="size-4" />
+                {chatRequestMutation.isPending ? (
+                  <Spinner className="text-primary-foreground" />
+                ) : (
+                  <HugeiconsIcon icon={SentIcon} strokeWidth={2} />
+                )}
+                Send
               </Button>
             </div>
           </div>
-        </div>
+        </form>
 
-        <TypographyMuted className="mt-5 flex items-center justify-center gap-2 text-muted-foreground">
+        <TypographyMuted className="mt-5 flex items-center justify-center gap-2 text-xs">
           <HugeiconsIcon icon={SparklesIcon} strokeWidth={1.7} className="size-3.5" />
           Agent can turn inbox requests into translation jobs, glossary updates, or reviewer tasks.
         </TypographyMuted>
 
-        <div className="space-y-1.4 mt-6">
-          <TypographyH4>Suggestions</TypographyH4>
-          <div className="rounded-xl border border-border/20 bg-muted/5">
-            {suggestedRequests.map((request, index) => (
-              <div key={request.title}>
-                <button
-                  type="button"
-                  className="flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/10"
-                >
-                  <HugeiconsIcon
-                    icon={request.icon}
-                    strokeWidth={1.7}
-                    className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-                  />
-                  <div className="min-w-0">
-                    <TypographySmall className="block text-foreground">
-                      {request.title}
-                    </TypographySmall>
-                    <TypographyMuted className="mt-1 text-muted-foreground">
-                      {request.detail}
-                    </TypographyMuted>
-                  </div>
-                </button>
-                {index < suggestedRequests.length - 1 ? (
-                  <Separator className="bg-border/20" />
-                ) : null}
-              </div>
-            ))}
-          </div>
+        <div className="mt-10 bg-muted/5">
+          {suggestedRequests.map((request, index) => (
+            <div key={request.text}>
+              <button
+                type="button"
+                onClick={() => setText(request.text)}
+                className="flex w-full items-start gap-3 px-4 py-3 text-left text-muted-foreground transition-colors hover:bg-muted/80 hover:text-foreground"
+              >
+                <HugeiconsIcon
+                  icon={request.icon}
+                  strokeWidth={1.7}
+                  className="mt-0.5 size-4 shrink-0"
+                />
+                <span className="min-w-0 text-sm leading-5">{request.text}</span>
+              </button>
+              {index < suggestedRequests.length - 1 ? <Separator className="bg-border/20" /> : null}
+            </div>
+          ))}
         </div>
       </section>
     </main>

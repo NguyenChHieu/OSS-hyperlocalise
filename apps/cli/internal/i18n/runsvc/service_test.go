@@ -1728,6 +1728,455 @@ func TestRunWritesMDXUsingSourceTemplateWhenTargetMissing(t *testing.T) {
 	}
 }
 
+func TestRunWritesLiquidUsingSourceTemplateWhenTargetMissing(t *testing.T) {
+	svc := newTestService()
+	sourcePath := "/tmp/source.liquid"
+	targetPath := "/tmp/out.liquid"
+	source := `<section>
+  <h1>Welcome back</h1>
+  <p>Hello {{ customer.first_name }}.</p>
+  {{ 'header.navigation.home' | t }}
+</section>
+`
+
+	svc.loadConfig = func(_ string) (*config.I18NConfig, error) {
+		cfg := testConfig(sourcePath, targetPath)
+		return &cfg, nil
+	}
+	svc.readFile = func(path string) ([]byte, error) {
+		switch path {
+		case sourcePath:
+			return []byte(source), nil
+		default:
+			return nil, os.ErrNotExist
+		}
+	}
+	svc.translate = func(_ context.Context, req translator.Request) (string, error) {
+		return "FR(" + req.Source + ")", nil
+	}
+
+	var written []byte
+	svc.writeFile = func(path string, content []byte) error {
+		if path != targetPath {
+			t.Fatalf("unexpected write path %q", path)
+		}
+		written = append([]byte(nil), content...)
+		return nil
+	}
+
+	_, err := svc.Run(context.Background(), Input{})
+	if err != nil {
+		t.Fatalf("run execution: %v", err)
+	}
+
+	out := string(written)
+	if !strings.Contains(out, "<h1>FR(Welcome back)</h1>") {
+		t.Fatalf("expected heading translated, got %q", out)
+	}
+	if !strings.Contains(out, "{{ customer.first_name }}") {
+		t.Fatalf("expected Liquid variable preserved, got %q", out)
+	}
+	if !strings.Contains(out, "{{ 'header.navigation.home' | t }}") {
+		t.Fatalf("expected Shopify translation call preserved, got %q", out)
+	}
+	if strings.Contains(out, "FR({{ 'header.navigation.home' | t }})") {
+		t.Fatalf("did not expect Shopify translation key call translated, got %q", out)
+	}
+}
+
+func TestRunWritesRealisticLiquidTemplateForMultipleLocales(t *testing.T) {
+	svc := newTestService()
+	sourcePath := "/tmp/source.liquid"
+	targetPattern := "/tmp/out/{{target}}/section.liquid"
+	source := realisticLiquidRunFixture()
+
+	svc.loadConfig = func(_ string) (*config.I18NConfig, error) {
+		cfg := testConfig(sourcePath, targetPattern)
+		cfg.Locales.Targets = []string{"fr", "es"}
+		cfg.Groups["default"] = config.GroupConfig{
+			Targets: []string{"fr", "es"},
+			Buckets: []string{"ui"},
+		}
+		return &cfg, nil
+	}
+	svc.readFile = func(path string) ([]byte, error) {
+		switch filepath.ToSlash(path) {
+		case sourcePath:
+			return []byte(source), nil
+		default:
+			return nil, os.ErrNotExist
+		}
+	}
+	svc.translate = func(_ context.Context, req translator.Request) (string, error) {
+		return strings.ToUpper(req.TargetLanguage) + "(" + strings.Join(strings.Fields(req.Source), " ") + ")", nil
+	}
+
+	written := map[string]string{}
+	svc.writeFile = func(path string, content []byte) error {
+		written[filepath.ToSlash(path)] = string(content)
+		return nil
+	}
+
+	report, err := svc.Run(context.Background(), Input{Workers: 1})
+	if err != nil {
+		t.Fatalf("run liquid e2e: %v", err)
+	}
+	expectedSucceeded := 4 * 2
+	if report.Failed != 0 || report.ExecutableTotal != expectedSucceeded || report.Succeeded != expectedSucceeded {
+		t.Fatalf("unexpected liquid run report: %+v", report)
+	}
+	if len(written) != 2 {
+		t.Fatalf("expected two target writes, got %d: %v", len(written), written)
+	}
+
+	for _, tc := range []struct {
+		locale string
+		prefix string
+	}{
+		{locale: "fr", prefix: "FR"},
+		{locale: "es", prefix: "ES"},
+	} {
+		out := written["/tmp/out/"+tc.locale+"/section.liquid"]
+		if out == "" {
+			t.Fatalf("missing written output for %s: %v", tc.locale, written)
+		}
+		if !strings.Contains(out, tc.prefix+"(Welcome back, {{ customer.first_name }}!)") {
+			t.Fatalf("expected translated greeting with Liquid output preserved for %s, got %q", tc.locale, out)
+		}
+		if !strings.Contains(out, tc.prefix+"(Welcome to the shop)") {
+			t.Fatalf("expected translated else branch for %s, got %q", tc.locale, out)
+		}
+		if !strings.Contains(out, tc.prefix+"(Checkout now)") {
+			t.Fatalf("expected capture body translated for %s, got %q", tc.locale, out)
+		}
+		if !strings.Contains(out, tc.prefix+"(Add {{ product.title }} to cart)") {
+			t.Fatalf("expected product button text translated for %s, got %q", tc.locale, out)
+		}
+		assertLiquidRunOutputPreserved(t, out)
+	}
+}
+
+func TestRunDryRunPlansLiquidSourceCopyNotTranslationKeys(t *testing.T) {
+	svc := newTestService()
+	sourcePath := "/tmp/source.liquid"
+	targetPath := "/tmp/out.liquid"
+	source := `<p>Hello {{ customer.first_name }}.</p>
+{{ 'header.navigation.home' | t }}
+`
+
+	svc.loadConfig = func(_ string) (*config.I18NConfig, error) {
+		cfg := testConfig(sourcePath, targetPath)
+		return &cfg, nil
+	}
+	svc.readFile = func(path string) ([]byte, error) {
+		switch path {
+		case sourcePath:
+			return []byte(source), nil
+		default:
+			return nil, os.ErrNotExist
+		}
+	}
+
+	report, err := svc.Run(context.Background(), Input{DryRun: true})
+	if err != nil {
+		t.Fatalf("run dry-run: %v", err)
+	}
+	if report.ExecutableTotal != 1 || len(report.Executable) != 1 {
+		t.Fatalf("expected one Liquid task, got %+v", report)
+	}
+	task := report.Executable[0]
+	if !strings.HasPrefix(task.EntryKey, "liquid.") {
+		t.Fatalf("expected liquid entry key, got %q", task.EntryKey)
+	}
+	if !strings.Contains(task.SourceText, "Hello") || !strings.Contains(task.SourceText, "HLLQPH_") {
+		t.Fatalf("expected visible source copy with protected Liquid placeholder, got %q", task.SourceText)
+	}
+	if strings.Contains(task.SourceText, "header.navigation.home") {
+		t.Fatalf("did not expect Shopify locale key call to become source text, got %q", task.SourceText)
+	}
+}
+
+func TestRunLiquidValidationRejectsMissingPlaceholder(t *testing.T) {
+	svc := newTestService()
+	sourcePath := "/tmp/source.liquid"
+	targetPath := "/tmp/out.liquid"
+	source := `<p>Hello {{ customer.first_name }}.</p>`
+
+	svc.loadConfig = func(_ string) (*config.I18NConfig, error) {
+		cfg := testConfig(sourcePath, targetPath)
+		return &cfg, nil
+	}
+	svc.readFile = func(path string) ([]byte, error) {
+		switch path {
+		case sourcePath:
+			return []byte(source), nil
+		default:
+			return nil, os.ErrNotExist
+		}
+	}
+	svc.translate = func(_ context.Context, _ translator.Request) (string, error) {
+		return "Bonjour.", nil
+	}
+	svc.writeFile = func(_ string, _ []byte) error {
+		t.Fatal("write should not be called when Liquid placeholder validation fails")
+		return nil
+	}
+
+	report, err := svc.Run(context.Background(), Input{Workers: 1})
+	if err != nil {
+		t.Fatalf("run execution: %v", err)
+	}
+	if report.Failed != 1 {
+		t.Fatalf("expected failed task from Liquid placeholder validation, got failed=%d report=%+v", report.Failed, report)
+	}
+	if len(report.Failures) != 1 || !strings.Contains(strings.ToLower(report.Failures[0].Reason), "liquid internal placeholder") {
+		t.Fatalf("expected Liquid placeholder failure, got %+v", report.Failures)
+	}
+}
+
+func TestRunLiquidExistingTargetFallbackPreservesOldSegmentsAndTranslatesNewOnes(t *testing.T) {
+	svc := newTestService()
+	sourcePath := "/tmp/source.liquid"
+	targetPath := "/tmp/out.liquid"
+	source := []byte(`<section>
+  <h1>Welcome back</h1>
+  <p>Hello {{ customer.first_name }}.</p>
+  <p>New arrivals are ready.</p>
+</section>
+`)
+	target := []byte(`<section>
+  <h1>Bienvenue</h1>
+  <p>Bonjour {{ customer.first_name }}.</p>
+</section>
+`)
+
+	entries, err := translationfileparser.LiquidParser{}.Parse(source)
+	if err != nil {
+		t.Fatalf("parse liquid source: %v", err)
+	}
+	newKey := liquidKeyForSourceText(t, entries, "New arrivals are ready.")
+
+	svc.loadConfig = func(_ string) (*config.I18NConfig, error) {
+		cfg := testConfig(sourcePath, targetPath)
+		return &cfg, nil
+	}
+	svc.readFile = func(path string) ([]byte, error) {
+		switch path {
+		case sourcePath:
+			return source, nil
+		case targetPath:
+			return target, nil
+		default:
+			return nil, os.ErrNotExist
+		}
+	}
+	svc.translate = func(_ context.Context, req translator.Request) (string, error) {
+		return "FR(" + req.Source + ")", nil
+	}
+
+	var written []byte
+	svc.writeFile = func(path string, content []byte) error {
+		if path != targetPath {
+			t.Fatalf("unexpected write path %q", path)
+		}
+		written = append([]byte(nil), content...)
+		return nil
+	}
+
+	report, err := svc.Run(context.Background(), Input{
+		Workers: 1,
+		FixTargets: []FixTarget{{
+			SourcePath:   sourcePath,
+			TargetPath:   targetPath,
+			TargetLocale: "fr",
+			EntryKey:     newKey,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("run liquid target fallback: %v", err)
+	}
+	if report.Failed != 0 || report.Succeeded != 1 {
+		t.Fatalf("unexpected target fallback report: %+v", report)
+	}
+
+	out := string(written)
+	if !strings.Contains(out, "<h1>Bienvenue</h1>") {
+		t.Fatalf("expected existing target heading preserved, got %q", out)
+	}
+	if !strings.Contains(out, "<p>Bonjour {{ customer.first_name }}.</p>") {
+		t.Fatalf("expected existing target paragraph preserved, got %q", out)
+	}
+	if !strings.Contains(out, "<p>FR(New arrivals are ready.)</p>") {
+		t.Fatalf("expected new source segment translated, got %q", out)
+	}
+	if strings.Contains(out, "FR(Welcome back)") || strings.Contains(out, "FR(Hello") {
+		t.Fatalf("expected old target segments preserved without retranslation, got %q", out)
+	}
+}
+
+func TestRunLiquidSkipsCompletedEntriesAndFlushesCheckpointedTemplate(t *testing.T) {
+	svc := newTestService()
+	sourcePath := "/tmp/source.liquid"
+	targetPath := "/tmp/out.liquid"
+	source := []byte(`<section>
+  <h1>Welcome back</h1>
+  <p>Checkout now</p>
+</section>
+`)
+	entries, err := translationfileparser.LiquidParser{}.Parse(source)
+	if err != nil {
+		t.Fatalf("parse liquid source: %v", err)
+	}
+
+	now := time.Unix(1700000000, 0).UTC()
+	completed := make(map[string]lockfile.RunCompletion, len(entries))
+	checkpoint := make(map[string]lockfile.RunCheckpoint, len(entries))
+	for key, value := range entries {
+		id := taskIdentity(targetPath, key)
+		translated := "FR(" + value + ")"
+		completed[id] = lockfile.RunCompletion{SourceHash: hashSourceText(value)}
+		checkpoint[id] = lockfile.RunCheckpoint{
+			RunID:        "run_1",
+			TargetPath:   targetPath,
+			SourcePath:   sourcePath,
+			TargetLocale: "fr",
+			EntryKey:     key,
+			Value:        translated,
+			SourceHash:   hashSourceText(value),
+			UpdatedAt:    now,
+		}
+	}
+
+	svc.loadConfig = func(_ string) (*config.I18NConfig, error) {
+		cfg := testConfig(sourcePath, targetPath)
+		return &cfg, nil
+	}
+	svc.loadLock = func(_ string) (*lockfile.File, error) {
+		return &lockfile.File{
+			LocaleStates:  map[string]lockfile.LocaleCheckpoint{},
+			ActiveRunID:   "run_1",
+			RunCompleted:  completed,
+			RunCheckpoint: checkpoint,
+		}, nil
+	}
+	svc.readFile = func(path string) ([]byte, error) {
+		switch path {
+		case sourcePath:
+			return source, nil
+		default:
+			return nil, os.ErrNotExist
+		}
+	}
+	svc.translate = func(_ context.Context, _ translator.Request) (string, error) {
+		return "", errors.New("translate should not be called for completed liquid entries")
+	}
+
+	var written []byte
+	svc.writeFile = func(path string, content []byte) error {
+		if path != targetPath {
+			t.Fatalf("unexpected write path %q", path)
+		}
+		written = append([]byte(nil), content...)
+		return nil
+	}
+
+	report, err := svc.Run(context.Background(), Input{Workers: 1})
+	if err != nil {
+		t.Fatalf("run liquid from checkpoint: %v", err)
+	}
+	if report.ExecutableTotal != 0 || report.SkippedByLock != len(entries) {
+		t.Fatalf("expected all liquid entries skipped by lock, got %+v", report)
+	}
+
+	out := string(written)
+	if !strings.Contains(out, "<h1>FR(Welcome back)</h1>") || !strings.Contains(out, "<p>FR(Checkout now)</p>") {
+		t.Fatalf("expected checkpointed liquid translations flushed, got %q", out)
+	}
+}
+
+func realisticLiquidRunFixture() string {
+	return `<section class="account-summary">
+  {% if customer %}
+    <h1>Welcome back, {{ customer.first_name }}!</h1>
+  {% else %}
+    <h1>Welcome to the shop</h1>
+  {% endif %}
+
+  {% capture cta_text %}
+    Checkout now
+  {% endcapture %}
+
+  <a href="{{ routes.cart_url }}" class="button" {% if cart.item_count == 0 %} aria-disabled="true"{% endif %}>
+    {{ cta_text }}
+  </a>
+
+  <ul>
+    {% for product in collections.frontpage.products %}
+      <li>
+        <span>{{ product.title }}</span>
+        <button type="button" data-product-id="{{ product.id }}">
+          Add {{ product.title }} to cart
+        </button>
+      </li>
+    {% endfor %}
+  </ul>
+
+  {{ 'general.accessibility.skip_to_content' | t }}
+
+  {% comment %}
+    <p>Do not translate this comment</p>
+  {% endcomment %}
+  {% raw %}
+    <p>Do not translate raw {{ token }}</p>
+  {% endraw %}
+  {% schema %}
+  {"name": "Account summary", "settings": [{"type": "text", "id": "heading", "label": "Heading"}]}
+  {% endschema %}
+  {% javascript %}
+    console.log("Do not translate js");
+  {% endjavascript %}
+  {% stylesheet %}
+    .account-summary::before { content: "Do not translate css"; }
+  {% endstylesheet %}
+</section>
+`
+}
+
+func assertLiquidRunOutputPreserved(t *testing.T, out string) {
+	t.Helper()
+	for _, want := range []string{
+		"{% if customer %}",
+		"{% endif %}",
+		"{% if cart.item_count == 0 %} aria-disabled=\"true\"{% endif %}",
+		"{% for product in collections.frontpage.products %}",
+		"{% endfor %}",
+		"{{ 'general.accessibility.skip_to_content' | t }}",
+		"<p>Do not translate this comment</p>",
+		"<p>Do not translate raw {{ token }}</p>",
+		`{"name": "Account summary", "settings": [{"type": "text", "id": "heading", "label": "Heading"}]}`,
+		`console.log("Do not translate js");`,
+		`.account-summary::before { content: "Do not translate css"; }`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected output to preserve %q, got %q", want, out)
+		}
+	}
+	if strings.Contains(out, "FR(Do not translate") || strings.Contains(out, "ES(Do not translate") || strings.Contains(out, "FR(Account summary") || strings.Contains(out, "ES(Account summary") {
+		t.Fatalf("expected skipped Liquid regions to remain untranslated, got %q", out)
+	}
+}
+
+func liquidKeyForSourceText(t *testing.T, entries map[string]string, sourceText string) string {
+	t.Helper()
+	for key, value := range entries {
+		if value == sourceText {
+			return key
+		}
+	}
+	t.Fatalf("expected source text %q in liquid entries %#v", sourceText, entries)
+	return ""
+}
+
 func TestRunWritesXLIFFWithInsertedUnitWhenExistingTargetPresent(t *testing.T) {
 	svc := newTestService()
 	sourcePath := "/tmp/source.xlf"
@@ -1958,6 +2407,121 @@ func TestRunWritesMarkdownWithInsertedSectionWhenExistingTargetPresent(t *testin
 	}
 	if !strings.Contains(out, "Conclusion existante.") {
 		t.Fatalf("expected existing translated outro preserved, got %q", out)
+	}
+}
+
+func TestRunMarkdownInsertionSkipsFollowingLegacyTaskHashEntries(t *testing.T) {
+	sourcePath := "/tmp/source.md"
+	targetPath := "/tmp/out.md"
+	sourceBefore := "# Guide\n\nExisting intro.\n\nExisting outro.\n"
+	sourceAfter := "# Guide\n\nExisting intro.\n\nNew section added.\n\nExisting outro.\n"
+	targetBefore := "# Guide\n\nIntro existant.\n\nConclusion existante.\n"
+	cfg := testConfig(sourcePath, targetPath)
+
+	planner := newTestService()
+	planner.readFile = func(path string) ([]byte, error) {
+		if path == sourcePath {
+			return []byte(sourceBefore), nil
+		}
+		return nil, os.ErrNotExist
+	}
+	beforeTasks, _, err := planner.planTasks(&cfg, "", "", nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("plan before tasks: %v", err)
+	}
+	if len(beforeTasks) == 0 {
+		t.Fatalf("expected markdown tasks before insertion")
+	}
+
+	completed := map[string]lockfile.RunCompletion{}
+	for _, task := range beforeTasks {
+		completed[taskIdentity(task.TargetPath, task.EntryKey)] = lockfile.RunCompletion{
+			SourceHash: taskLockSourceHash(task),
+			TaskHash:   legacyContextSensitiveLockTaskHash(task),
+		}
+	}
+	lockState := &lockfile.File{RunCompleted: completed}
+
+	svc := newTestService()
+	svc.loadConfig = func(_ string) (*config.I18NConfig, error) {
+		return &cfg, nil
+	}
+	svc.loadLock = func(_ string) (*lockfile.File, error) { return lockState, nil }
+	svc.saveLock = func(_ string, f lockfile.File) error {
+		*lockState = f
+		return nil
+	}
+	svc.readFile = func(path string) ([]byte, error) {
+		switch path {
+		case sourcePath:
+			return []byte(sourceAfter), nil
+		case targetPath:
+			return []byte(targetBefore), nil
+		default:
+			return nil, os.ErrNotExist
+		}
+	}
+
+	var translated []string
+	svc.translate = func(_ context.Context, req translator.Request) (string, error) {
+		translated = append(translated, req.Source)
+		if req.Source != "New section added." {
+			t.Fatalf("unexpected translation request for unchanged markdown entry: %q", req.Source)
+		}
+		return "Nouvelle section ajoutee.", nil
+	}
+
+	var written []byte
+	svc.writeFile = func(path string, content []byte) error {
+		if path != targetPath {
+			t.Fatalf("unexpected write path %q", path)
+		}
+		written = append([]byte(nil), content...)
+		return nil
+	}
+
+	report, err := svc.Run(context.Background(), Input{Workers: 1})
+	if err != nil {
+		t.Fatalf("run execution: %v", err)
+	}
+	if report.SkippedByLock != len(beforeTasks) || report.ExecutableTotal != 1 || report.Succeeded != 1 {
+		t.Fatalf("expected only inserted markdown section to execute, got %+v", report)
+	}
+	if len(translated) != 1 || translated[0] != "New section added." {
+		t.Fatalf("expected one translation call for inserted section, got %v", translated)
+	}
+
+	out := string(written)
+	for _, want := range []string{"Intro existant.", "Nouvelle section ajoutee.", "Conclusion existante."} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("expected output to contain %q, got %q", want, out)
+		}
+	}
+
+	afterPlanner := newTestService()
+	afterPlanner.readFile = func(path string) ([]byte, error) {
+		if path == sourcePath {
+			return []byte(sourceAfter), nil
+		}
+		return nil, os.ErrNotExist
+	}
+	afterTasks, _, err := afterPlanner.planTasks(&cfg, "", "", nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("plan after tasks: %v", err)
+	}
+	var outroTask Task
+	for _, task := range afterTasks {
+		if task.SourceText == "Existing outro." {
+			outroTask = task
+			break
+		}
+	}
+	if outroTask.EntryKey == "" {
+		t.Fatalf("expected task for unchanged trailing markdown section")
+	}
+	completion := lockState.RunCompleted[taskIdentity(targetPath, outroTask.EntryKey)]
+	if got, want := completion.TaskHash, lockTaskHash(outroTask); got != want {
+		t.Fatalf("expected trailing section lock hash migrated to %q, got %q", want, got)
 	}
 }
 
@@ -3250,6 +3814,7 @@ func TestMarshalTargetFileDispatchParity(t *testing.T) {
 		"/tmp/source.csv":         []byte("key,source,target\nhello,Hello,Hello\n"),
 		"/tmp/source.json":        []byte(`{"hello":"Hello"}`),
 		"/tmp/source.arb":         []byte(`{"@@locale":"en","hello":"Hello","@hello":{"description":"Greeting"}}`),
+		"/tmp/source.liquid":      []byte("<p>Hello</p>\n"),
 	}
 	svc.readFile = func(path string) ([]byte, error) {
 		if b, ok := sourceTemplate[path]; ok {
@@ -3273,10 +3838,22 @@ func TestMarshalTargetFileDispatchParity(t *testing.T) {
 		{target: "/tmp/out.csv", source: "/tmp/source.csv"},
 		{target: "/tmp/out.json", source: "/tmp/source.json"},
 		{target: "/tmp/out.arb", source: "/tmp/source.arb"},
+		{target: "/tmp/out.liquid", source: "/tmp/source.liquid"},
 	}
 
 	for _, tc := range cases {
-		content, warnings, err := svc.marshalTargetFile(tc.target, tc.source, "en", "fr", map[string]string{"hello": "Bonjour"}, map[string]string{"hello": "Bonjour"}, nil)
+		values := map[string]string{"hello": "Bonjour"}
+		if strings.EqualFold(filepath.Ext(tc.target), ".liquid") {
+			entries, err := translationfileparser.LiquidParser{}.Parse(sourceTemplate[tc.source])
+			if err != nil {
+				t.Fatalf("parse liquid source: %v", err)
+			}
+			values = map[string]string{}
+			for key := range entries {
+				values[key] = "Bonjour"
+			}
+		}
+		content, warnings, err := svc.marshalTargetFile(tc.target, tc.source, "en", "fr", values, values, nil)
 		if err != nil {
 			t.Fatalf("marshal %s: %v", tc.target, err)
 		}
@@ -3286,6 +3863,54 @@ func TestMarshalTargetFileDispatchParity(t *testing.T) {
 		if len(warnings) != 0 {
 			t.Fatalf("marshal %s returned unexpected warnings: %+v", tc.target, warnings)
 		}
+	}
+}
+
+func TestMarshalLiquidTargetPreservesExistingTargetByPosition(t *testing.T) {
+	svc := newTestService()
+	sourcePath := "/tmp/source.liquid"
+	targetPath := "/tmp/out.liquid"
+	source := []byte("<h1>Welcome</h1>\n<p>Checkout now.</p>\n")
+	target := []byte("<h1>Bienvenue</h1>\n<p>Ancien paiement.</p>\n")
+	svc.readFile = func(path string) ([]byte, error) {
+		switch path {
+		case sourcePath:
+			return source, nil
+		case targetPath:
+			return target, nil
+		default:
+			return nil, os.ErrNotExist
+		}
+	}
+
+	entries, err := translationfileparser.LiquidParser{}.Parse(source)
+	if err != nil {
+		t.Fatalf("parse liquid source: %v", err)
+	}
+	var checkoutKey string
+	for key, value := range entries {
+		if value == "Checkout now." {
+			checkoutKey = key
+		}
+	}
+	if checkoutKey == "" {
+		t.Fatalf("expected checkout key in %#v", entries)
+	}
+
+	content, warnings, err := svc.marshalTargetFile(targetPath, sourcePath, "en", "fr", map[string]string{checkoutKey: "Paiement maintenant."}, map[string]string{checkoutKey: "Paiement maintenant."}, nil)
+	if err != nil {
+		t.Fatalf("marshal liquid target: %v", err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("unexpected warnings: %+v", warnings)
+	}
+
+	out := string(content)
+	if !strings.Contains(out, "<h1>Bienvenue</h1>") {
+		t.Fatalf("expected existing target heading preserved, got %q", out)
+	}
+	if !strings.Contains(out, "<p>Paiement maintenant.</p>") {
+		t.Fatalf("expected staged paragraph translation, got %q", out)
 	}
 }
 

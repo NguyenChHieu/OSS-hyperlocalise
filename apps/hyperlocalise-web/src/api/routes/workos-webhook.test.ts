@@ -6,8 +6,9 @@ import { testClient } from "hono/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { app } from "@/api/app";
+import { env } from "@/lib/env";
 
-const secret = "test-workos-webhook-secret";
+const secret = env.WORKOS_WEBHOOK_SECRET ?? "test-workos-webhook-secret";
 
 function sign(body: string, timestamp?: number) {
   const ts = timestamp ?? Math.floor(Date.now() / 1000);
@@ -23,13 +24,17 @@ vi.mock("@/api/auth/workos-sync", () => ({
   removeWorkosMembership: vi.fn().mockResolvedValue(undefined),
 }));
 
-vi.mock("@/lib/database", () => ({
-  db: {},
-}));
+vi.mock("@/lib/database", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/database")>();
+
+  return {
+    ...actual,
+    db: {},
+  };
+});
 
 describe("workosWebhookRoutes", () => {
   beforeEach(() => {
-    process.env.WORKOS_WEBHOOK_SECRET = secret;
     vi.clearAllMocks();
   });
 

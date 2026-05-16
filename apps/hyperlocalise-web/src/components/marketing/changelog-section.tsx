@@ -7,10 +7,10 @@ export function ChangelogSection() {
   return (
     <section id="changelog" className="relative">
       <div className="max-w-2xl">
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+        <TypographyP className="text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
           Recent releases
-        </p>
-        <TypographyH2 className="pt-3 pb-0 text-4xl font-semibold tracking-[-0.04em] normal-case text-foreground sm:text-5xl">
+        </TypographyP>
+        <TypographyH2 className="pt-3 pb-0 text-4xl font-semibold tracking-[-0.04em] normal-case text-foreground sm:text-5xl md:text-5xl">
           Changelog
         </TypographyH2>
         <TypographyP className="mt-4 max-w-xl text-pretty text-sm leading-6 text-muted-foreground sm:text-[0.95rem]">
@@ -61,7 +61,7 @@ export function ChangelogSection() {
               </div>
               <div className="h-px bg-[color-mix(in_oklch,var(--border)_84%,var(--chart-1)_16%)]" />
               <div className="space-y-3">
-                <TypographyH3 className="text-lg font-medium normal-case text-foreground">
+                <TypographyH3 className="text-lg font-medium normal-case text-foreground md:text-lg">
                   {entry.title}
                 </TypographyH3>
                 <TypographyP className="max-w-sm text-sm leading-6 text-muted-foreground">
@@ -75,7 +75,7 @@ export function ChangelogSection() {
                 <a
                   href={entry.href}
                   target="_blank"
-                  rel="noreferrer"
+                  rel="noopener noreferrer"
                   className="inline-flex min-h-11 items-center rounded-full text-sm font-medium text-[color-mix(in_oklch,var(--foreground)_88%,var(--chart-4)_12%)] transition-colors duration-200 ease-out hover:text-[color-mix(in_oklch,var(--foreground)_68%,var(--chart-4)_32%)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color-mix(in_oklch,var(--ring)_55%,var(--chart-2)_45%)] focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                 >
                   {entry.ctaLabel}

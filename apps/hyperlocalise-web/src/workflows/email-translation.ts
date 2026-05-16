@@ -1,21 +1,18 @@
-import { isUtf8 } from "node:buffer";
-import { createHash } from "node:crypto";
-
 import { Sandbox } from "@vercel/sandbox";
 import { Resend } from "resend";
+import { getWorkflowMetadata } from "workflow";
 
 import { env } from "@/lib/env";
-import { createLogger } from "@/lib/log";
-import {
-  type AttachmentContent,
-  inferAttachmentContentType,
-  toAttachmentBuffer,
-  toBase64AttachmentContent,
-} from "@/lib/resend/attachments";
+import { inferAttachmentContentType, toBase64AttachmentContent } from "@/lib/resend/attachments";
+import { getTranslatedFileDiagnostics } from "@/lib/translation/diagnostics";
 import type { EmailAgentTask, EmailAgentTaskAttachment } from "@/lib/workflow/types";
+import {
+  markEmailTranslationJobFailed,
+  markEmailTranslationJobRunning,
+  markEmailTranslationJobSucceeded,
+} from "./steps/translation-job";
 
 const sandboxTimeoutMs = 10 * 60 * 1000;
-const logger = createLogger("email-translation-workflow");
 
 async function createTranslationSandbox(): Promise<{ sandboxId: string }> {
   "use step";
@@ -168,52 +165,6 @@ async function readTranslatedFile(sandboxId: string, outputFile: string): Promis
   return Buffer.from(content);
 }
 
-type TranslatedFileDiagnostics = {
-  filename: string;
-  byteLength: number;
-  sha256: string;
-  firstBytesHex: string;
-  contentType: string;
-  isUtf8: boolean;
-  jsonParseOk: boolean | null;
-  jsonParseError: string | null;
-};
-
-export async function getTranslatedFileDiagnostics(
-  content: AttachmentContent,
-  filename: string,
-): Promise<TranslatedFileDiagnostics> {
-  "use step";
-
-  const fileContent = toAttachmentBuffer(content);
-  const dotIndex = filename.lastIndexOf(".");
-  const ext = dotIndex === -1 ? "" : filename.slice(dotIndex).toLowerCase();
-  const isJsonLike = ext === ".json" || ext === ".jsonc";
-  let jsonParseOk: boolean | null = null;
-  let jsonParseError: string | null = null;
-
-  if (isJsonLike) {
-    try {
-      JSON.parse(fileContent.toString("utf8"));
-      jsonParseOk = true;
-    } catch (error) {
-      jsonParseOk = false;
-      jsonParseError = error instanceof Error ? error.message : String(error);
-    }
-  }
-
-  return {
-    filename,
-    byteLength: fileContent.byteLength,
-    sha256: createHash("sha256").update(fileContent).digest("hex"),
-    firstBytesHex: fileContent.subarray(0, 16).toString("hex"),
-    contentType: inferAttachmentContentType(filename),
-    isUtf8: isUtf8(fileContent),
-    jsonParseOk,
-    jsonParseError,
-  };
-}
-
 async function logTranslatedFileDiagnostics(
   task: EmailAgentTask,
   attachment: EmailAgentTaskAttachment,
@@ -224,16 +175,13 @@ async function logTranslatedFileDiagnostics(
 
   const diagnostics = await getTranslatedFileDiagnostics(translatedContent, outputFilename);
 
-  logger.info(
-    {
-      requestId: task.requestId,
-      attachmentId: attachment.id,
-      sourceFilename: attachment.filename,
-      targetLocale: task.parameters.translate.targetLocale,
-      diagnostics,
-    },
-    "translated email attachment diagnostics",
-  );
+  console.info("[email-translation-workflow] translated email attachment diagnostics", {
+    requestId: task.requestId,
+    attachmentId: attachment.id,
+    sourceFilename: attachment.filename,
+    targetLocale: task.parameters.translate.targetLocale,
+    diagnostics,
+  });
 }
 
 function shellQuote(value: string): string {
@@ -394,6 +342,7 @@ function firstTaskAttachment(task: EmailAgentTask): EmailAgentTaskAttachment {
 export async function emailTranslationWorkflow(task: EmailAgentTask) {
   "use workflow";
 
+  const { workflowRunId } = getWorkflowMetadata();
   const attachment = firstTaskAttachment(task);
   const { sourceLocale, targetLocale, instructions } = task.parameters.translate;
   const { sandboxId } = await createTranslationSandbox();
@@ -401,6 +350,7 @@ export async function emailTranslationWorkflow(task: EmailAgentTask) {
   const outputFile = getSandboxOutputFilename(attachment.filename, targetLocale);
 
   try {
+    await markEmailTranslationJobRunning({ jobId: task.jobId, workflowRunId });
     await prepareSandbox(sandboxId);
     await downloadAttachment(sandboxId, attachment.downloadUrl, inputFile);
 
@@ -420,12 +370,21 @@ export async function emailTranslationWorkflow(task: EmailAgentTask) {
     const translatedContent = await readTranslatedFile(sandboxId, outputFile);
     await logTranslatedFileDiagnostics(task, attachment, translatedContent, outputFile);
     await sendReplyEmail(task, attachment, translatedContent, outputFile);
+    await markEmailTranslationJobSucceeded({
+      jobId: task.jobId,
+      workflowRunId,
+      sourceFilename: attachment.filename,
+      outputFilename: outputFile,
+      targetLocale,
+    });
   } catch (error) {
+    const reason = userFacingFailureReason(error);
     try {
-      await sendFailureReplyEmail(task, attachment, userFacingFailureReason(error));
+      await sendFailureReplyEmail(task, attachment, reason);
     } catch {
       // Best-effort notification; keep the original workflow error.
     }
+    await markEmailTranslationJobFailed({ jobId: task.jobId, workflowRunId, reason });
     throw error;
   } finally {
     await stopTranslationSandbox(sandboxId);

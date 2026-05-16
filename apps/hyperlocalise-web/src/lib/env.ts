@@ -63,6 +63,45 @@ export const env = createEnv({
 
     /** Display name for outbound emails sent by the email bot. */
     RESEND_FROM_NAME: z.string().min(1).optional(),
+
+    /** Slack OAuth client ID for multi-workspace adapter. Required for Slack bot integration. */
+    SLACK_CLIENT_ID: z.string().min(1).optional(),
+
+    /** Slack OAuth client secret for multi-workspace adapter. Required for Slack bot integration. */
+    SLACK_CLIENT_SECRET: z.string().min(1).optional(),
+
+    /** Slack signing secret for webhook verification. Required for secure Slack webhook handling. */
+    SLACK_SIGNING_SECRET: z.string().min(1).optional(),
+
+    /** Secret used to sign Slack OAuth state parameters. Required for Slack workspace installation. */
+    SLACK_OAUTH_STATE_SECRET: z.string().min(1).optional(),
+
+    /** Slack OAuth redirect URI. Optional — falls back to the current request origin. */
+    SLACK_REDIRECT_URI: z.url().optional(),
+
+    /** Object storage adapter for durable uploaded and generated files. */
+    FILE_STORAGE_PROVIDER: z.enum(["vercel_blob"]).default("vercel_blob"),
+
+    /** Default access level used for new stored files. */
+    FILE_STORAGE_ACCESS: z.enum(["private", "public"]).default("private"),
+
+    /** Vercel Blob read/write token used by the Vercel Blob storage adapter. */
+    BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),
+
+    /** Enables MCP OAuth and transport endpoints. */
+    MCP_AUTH_ENABLED: z
+      .enum(["true", "false"])
+      .default("true")
+      .transform((value) => value === "true"),
+
+    /** MCP opaque access token lifetime in minutes. */
+    MCP_TOKEN_LIFETIME_MINUTES: z.coerce.number().int().positive().default(60),
+
+    /** MCP refresh token lifetime in days. */
+    MCP_REFRESH_TOKEN_LIFETIME_DAYS: z.coerce.number().int().positive().default(30),
+
+    /** AES-256-GCM key for MCP token encryption at rest. */
+    MCP_ENCRYPTION_KEY: z.string().min(1).optional(),
   },
   client: {
     /** Public URL for the waitlist/sign-up page. Required for client-side redirects. */
@@ -108,6 +147,26 @@ export const env = createEnv({
     RESEND_FROM_ADDRESS:
       process.env.RESEND_FROM_ADDRESS ?? (isTestEnv ? "bot@example.com" : undefined),
     RESEND_FROM_NAME: process.env.RESEND_FROM_NAME ?? (isTestEnv ? "Hyperlocalise Bot" : undefined),
+    SLACK_CLIENT_ID:
+      process.env.SLACK_CLIENT_ID ?? (isTestEnv ? "test-slack-client-id" : undefined),
+    SLACK_CLIENT_SECRET:
+      process.env.SLACK_CLIENT_SECRET ?? (isTestEnv ? "test-slack-client-secret" : undefined),
+    SLACK_SIGNING_SECRET:
+      process.env.SLACK_SIGNING_SECRET ?? (isTestEnv ? "test-slack-signing-secret" : undefined),
+    SLACK_OAUTH_STATE_SECRET:
+      process.env.SLACK_OAUTH_STATE_SECRET ??
+      (isTestEnv ? "test-slack-oauth-state-secret" : undefined),
+    SLACK_REDIRECT_URI: process.env.SLACK_REDIRECT_URI,
+    FILE_STORAGE_PROVIDER: process.env.FILE_STORAGE_PROVIDER,
+    FILE_STORAGE_ACCESS: process.env.FILE_STORAGE_ACCESS,
+    BLOB_READ_WRITE_TOKEN:
+      process.env.BLOB_READ_WRITE_TOKEN ?? (isTestEnv ? "test-blob-read-write-token" : undefined),
+    MCP_AUTH_ENABLED: process.env.MCP_AUTH_ENABLED ?? "true",
+    MCP_TOKEN_LIFETIME_MINUTES: process.env.MCP_TOKEN_LIFETIME_MINUTES,
+    MCP_REFRESH_TOKEN_LIFETIME_DAYS: process.env.MCP_REFRESH_TOKEN_LIFETIME_DAYS,
+    MCP_ENCRYPTION_KEY:
+      process.env.MCP_ENCRYPTION_KEY ??
+      (isTestEnv ? "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=" : undefined),
     NEXT_PUBLIC_WAITLIST_URL:
       process.env.NEXT_PUBLIC_WAITLIST_URL ??
       (isTestEnv ? "https://example.com/waitlist" : undefined),

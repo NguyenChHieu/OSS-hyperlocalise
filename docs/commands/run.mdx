@@ -6,7 +6,7 @@ description: "Plan and execute local translation generation from configured sour
 ## Usage
 
 ```bash
-hyperlocalise run [--config <path>] [--group <name>] [--bucket <name>] [--locale <locale>] [--dry-run] [--workers <count>] [--output <report.json>] [--experimental-context-memory] [--context-memory-scope <file|bucket|group>] [--context-memory-max-chars <count>]
+hyperlocalise run [--config <path>] [--group <name>] [--bucket <name>] [--file <path>] [--locale <locale>] [--dry-run] [--workers <count>] [--output <report.json>] [--experimental-context-memory] [--context-memory-scope <file|bucket|group>] [--context-memory-max-chars <count>]
 ```
 
 ## Behavior
@@ -28,6 +28,7 @@ For lockfile fields, lifecycle, and reset guidance, see [Lockfile contract](/ref
 - `.xlf` and `.xliff`
 - `.po`
 - `.html`
+- `.liquid`
 - `.md`
 - `.mdx`
 - `.strings`
@@ -61,6 +62,14 @@ For HTML (`.html`), `run` translates text content inside block-level elements:
 - HTML entities (`&amp;`, `&lt;`, etc.) are preserved as-is through the translation round-trip
 - HTML comments are preserved verbatim
 
+For Liquid (`.liquid`), `run` translates hardcoded visible template text and preserves Liquid syntax:
+
+- Liquid output delimiters (`{{ ... }}`) are protected as placeholders and restored verbatim
+- Standalone Liquid tags (`{% ... %}`) act as template boundaries; tags inside HTML attributes are protected inline and restored verbatim
+- Shopify locale-key calls such as `{{ 'header.title' | t }}` are preserved as template structure, not translated as source text
+- `{% raw %}`, `{% comment %}`, `{% schema %}`, `{% javascript %}`, and `{% stylesheet %}` blocks are preserved verbatim
+- HTML-shaped Liquid templates use the same visible-text extraction behavior as HTML
+
 For Apple/Xcode Strings (`.strings`), `run` preserves comments and key/value formatting from the template while replacing value literals with translated text.
 
 
@@ -76,6 +85,7 @@ When writing CSV targets, `run` preserves the existing header and non-target col
 - `--config`: path to config file (default `i18n.yml`, falling back to `i18n.jsonc`, in the current directory)
 - `--group`: run only tasks for the given group name
 - `--bucket`: run only tasks for the given bucket name
+- `--file`: run only tasks for the given source file path (repeatable)
 - `--locale`: run only tasks for the given target locale (repeatable); `--target-locale` is an alias
 - `--dry-run`: print plan only, do not translate or write files
 - `--force`: rerun all planned tasks and ignore lockfile skip state
@@ -157,6 +167,16 @@ hyperlocalise run --bucket ui --dry-run
 ```
 
 If the bucket does not exist in your config, `run` fails with an `unknown bucket` planning error.
+
+## Scope runs to one source file
+
+Use `--file` when you want to run only one configured source file. You can repeat the flag to select multiple source files, and you can combine it with `--group`, `--bucket`, and `--locale`.
+
+```bash
+hyperlocalise run --file content/en/checkout.json --dry-run
+```
+
+If the file is not part of the configured source mappings, `run` fails with an `unknown source file` planning error.
 
 ## Scope runs to one target locale
 

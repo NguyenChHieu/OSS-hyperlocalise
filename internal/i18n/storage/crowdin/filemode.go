@@ -1,27 +1,38 @@
 package crowdin
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/hyperlocalise/hyperlocalise/internal/i18n/storage"
 )
 
 type FileClient interface {
-	ResolveLocales(ctx context.Context, projectID string, requested []string) ([]string, error)
+	ResolveLocales(ctx context.Context, projectID string, requested []string) ([]ResolvedLocale, error)
 	ResolveBranch(ctx context.Context, projectID, branch string) (int, error)
 	EnsureDirectory(ctx context.Context, projectID string, branchID int, path string) (int, error)
 	FindDirectory(ctx context.Context, projectID string, branchID int, path string) (int, error)
 	UpsertSourceFile(ctx context.Context, projectID string, branchID, directoryID int, name, localPath string, group storage.FileGroupSpec) (int, error)
 	FindFile(ctx context.Context, projectID string, branchID, directoryID int, name string) (int, error)
 	UploadTranslationFile(ctx context.Context, projectID, languageID string, fileID int, localPath string) error
+	DownloadSourceFile(ctx context.Context, projectID string, fileID int) ([]byte, error)
 	DownloadTranslationFile(ctx context.Context, projectID string, fileID int, languageID string, opts storage.FileExportOptions) ([]byte, error)
+}
+
+type ResolvedLocale struct {
+	LanguageID string
+	Locale     string
 }
 
 type FileAdapter struct {
@@ -62,6 +73,7 @@ func (a *FileAdapter) Name() string { return AdapterName }
 func (a *FileAdapter) FileWorkflowCapabilities() storage.FileWorkflowCapabilities {
 	return storage.FileWorkflowCapabilities{
 		SupportsSourceUpload:      true,
+		SupportsSourceDownload:    true,
 		SupportsTranslationUpload: true,
 		SupportsTranslationExport: true,
 	}
@@ -132,11 +144,11 @@ func (a *FileAdapter) UploadTranslations(ctx context.Context, req storage.FileUp
 				return storage.FileOperationResult{Processed: processed, Skipped: skipped}, err
 			}
 			for _, locale := range locales {
-				if _, isExcluded := excluded[locale]; isExcluded {
-					skipped = append(skipped, remotePath+"@"+locale)
+				if _, isExcluded := excluded[locale.Locale]; isExcluded {
+					skipped = append(skipped, remotePath+"@"+locale.Locale)
 					continue
 				}
-				translationPath, err := renderCrowdinTranslationPath(config.BasePath, group.Translation, locale, sourcePath, group.LanguagesMapping)
+				translationPath, err := renderCrowdinTranslationPath(config.BasePath, group.Translation, locale.Locale, sourcePath, group.LanguagesMapping)
 				if err != nil {
 					return storage.FileOperationResult{Processed: processed, Skipped: skipped}, err
 				}
@@ -147,7 +159,7 @@ func (a *FileAdapter) UploadTranslations(ctx context.Context, req storage.FileUp
 					}
 					return storage.FileOperationResult{Processed: processed, Skipped: skipped}, fmt.Errorf("stat translation file: %w", statErr)
 				}
-				if err := a.client.UploadTranslationFile(ctx, config.ProjectID, locale, fileID, translationPath); err != nil {
+				if err := a.client.UploadTranslationFile(ctx, config.ProjectID, locale.LanguageID, fileID, translationPath); err != nil {
 					return storage.FileOperationResult{Processed: processed, Skipped: skipped}, err
 				}
 				processed = append(processed, translationPath)
@@ -193,21 +205,51 @@ func (a *FileAdapter) DownloadTranslations(ctx context.Context, req storage.File
 			if err != nil {
 				return storage.FileOperationResult{Processed: processed, Skipped: skipped}, err
 			}
-			for _, locale := range locales {
-				if _, isExcluded := excluded[locale]; isExcluded {
-					skipped = append(skipped, remotePath+"@"+locale)
-					continue
-				}
-				payload, err := a.client.DownloadTranslationFile(ctx, config.ProjectID, fileID, locale, group.Export)
+			if req.IncludeSources {
+				payload, err := a.client.DownloadSourceFile(ctx, config.ProjectID, fileID)
 				if err != nil {
 					return storage.FileOperationResult{Processed: processed, Skipped: skipped}, err
 				}
-				targetPath, err := renderCrowdinTranslationPath(config.BasePath, group.Translation, locale, sourcePath, group.LanguagesMapping)
+				if err := os.MkdirAll(filepath.Dir(sourcePath), 0o755); err != nil {
+					return storage.FileOperationResult{Processed: processed, Skipped: skipped}, fmt.Errorf("mkdir source output: %w", err)
+				}
+				if err := os.WriteFile(sourcePath, payload, 0o644); err != nil {
+					return storage.FileOperationResult{Processed: processed, Skipped: skipped}, fmt.Errorf("write source output: %w", err)
+				}
+				processed = append(processed, sourcePath)
+			}
+			for _, locale := range locales {
+				if _, isExcluded := excluded[locale.Locale]; isExcluded {
+					skipped = append(skipped, remotePath+"@"+locale.Locale)
+					continue
+				}
+				exportOptions := effectiveFileExportOptions(group.Export, req.ExportOverrides)
+				if req.MergeApproved {
+					exportOnlyApproved := true
+					skipUntranslatedStrings := true
+					exportOptions.ExportOnlyApproved = &exportOnlyApproved
+					exportOptions.SkipUntranslatedStrings = &skipUntranslatedStrings
+				}
+				payload, err := a.client.DownloadTranslationFile(ctx, config.ProjectID, fileID, locale.LanguageID, exportOptions)
+				if err != nil {
+					return storage.FileOperationResult{Processed: processed, Skipped: skipped}, err
+				}
+				if payload == nil {
+					skipped = append(skipped, remotePath+"@"+locale.Locale)
+					continue
+				}
+				targetPath, err := renderCrowdinTranslationPath(config.BasePath, group.Translation, locale.Locale, sourcePath, group.LanguagesMapping)
 				if err != nil {
 					return storage.FileOperationResult{Processed: processed, Skipped: skipped}, err
 				}
 				if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
 					return storage.FileOperationResult{Processed: processed, Skipped: skipped}, fmt.Errorf("mkdir translation output: %w", err)
+				}
+				if req.MergeApproved {
+					payload, err = mergeApprovedJSONFile(sourcePath, targetPath, payload)
+					if err != nil {
+						return storage.FileOperationResult{Processed: processed, Skipped: skipped}, err
+					}
 				}
 				if err := os.WriteFile(targetPath, payload, 0o644); err != nil {
 					return storage.FileOperationResult{Processed: processed, Skipped: skipped}, fmt.Errorf("write translation output: %w", err)
@@ -220,6 +262,290 @@ func (a *FileAdapter) DownloadTranslations(ctx context.Context, req storage.File
 	slices.Sort(processed)
 	slices.Sort(skipped)
 	return storage.FileOperationResult{Processed: processed, Skipped: skipped}, nil
+}
+
+func effectiveFileExportOptions(base storage.FileExportOptions, overrides *storage.FileExportOptions) storage.FileExportOptions {
+	if overrides == nil {
+		return base
+	}
+	if overrides.SkipUntranslatedStrings != nil {
+		base.SkipUntranslatedStrings = overrides.SkipUntranslatedStrings
+	}
+	if overrides.SkipUntranslatedFiles != nil {
+		base.SkipUntranslatedFiles = overrides.SkipUntranslatedFiles
+	}
+	if overrides.ExportOnlyApproved != nil {
+		base.ExportOnlyApproved = overrides.ExportOnlyApproved
+	}
+	return base
+}
+
+func mergeApprovedJSONFile(sourcePath, targetPath string, approvedPayload []byte) ([]byte, error) {
+	approved, err := decodeOrderedJSONObject(approvedPayload)
+	if err != nil {
+		return nil, fmt.Errorf("merge approved translations: downloaded payload for %s must be a JSON object: %w", targetPath, err)
+	}
+	sourcePayload, err := os.ReadFile(sourcePath)
+	if err == nil {
+		source, err := decodeOrderedJSONObject(sourcePayload)
+		if err != nil {
+			return nil, fmt.Errorf("merge approved translations: source file %s must be a JSON object: %w", sourcePath, err)
+		}
+		approved, err = filterSourceFallbackJSONObjects(approved, source)
+		if err != nil {
+			return nil, fmt.Errorf("merge approved translations: filter source-language fallback values: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("merge approved translations: read source file %s: %w", sourcePath, err)
+	}
+	if len(approved) == 0 {
+		if existing, err := os.ReadFile(targetPath); err == nil {
+			return existing, nil
+		} else if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("merge approved translations: read existing translation file: %w", err)
+		}
+	}
+
+	var merged orderedJSONObject
+	if existing, err := os.ReadFile(targetPath); err == nil {
+		merged, err = decodeOrderedJSONObject(existing)
+		if err != nil {
+			return nil, fmt.Errorf("merge approved translations: existing file %s must be a JSON object: %w", targetPath, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("merge approved translations: read existing translation file: %w", err)
+	}
+
+	merged, err = mergeOrderedJSONObjects(merged, approved)
+	if err != nil {
+		return nil, fmt.Errorf("merge approved translations: merge nested JSON objects: %w", err)
+	}
+	payload := formatOrderedJSONObject(merged, 0)
+	return append(payload, '\n'), nil
+}
+
+type orderedJSONMember struct {
+	key   string
+	value json.RawMessage
+}
+
+type orderedJSONObject []orderedJSONMember
+
+func decodeOrderedJSONObject(payload []byte) (orderedJSONObject, error) {
+	dec := json.NewDecoder(bytes.NewReader(payload))
+
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok || delim != '{' {
+		return nil, fmt.Errorf("root value is %T, not object", tok)
+	}
+
+	var obj orderedJSONObject
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, ok := tok.(string)
+		if !ok {
+			return nil, fmt.Errorf("object key is %T, not string", tok)
+		}
+		var value json.RawMessage
+		if err := dec.Decode(&value); err != nil {
+			return nil, err
+		}
+		obj = append(obj, orderedJSONMember{key: key, value: value})
+	}
+
+	tok, err = dec.Token()
+	if err != nil {
+		return nil, err
+	}
+	delim, ok = tok.(json.Delim)
+	if !ok || delim != '}' {
+		return nil, fmt.Errorf("object is not closed")
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("payload contains trailing JSON tokens")
+		}
+		return nil, err
+	}
+	return obj, nil
+}
+
+func mergeOrderedJSONObjects(existing, approved orderedJSONObject) (orderedJSONObject, error) {
+	merged := append(orderedJSONObject(nil), existing...)
+	for _, approvedMember := range approved {
+		existingIndex := orderedJSONObjectIndex(merged, approvedMember.key)
+		if existingIndex == -1 {
+			merged = append(merged, orderedJSONMember{key: approvedMember.key, value: append(json.RawMessage(nil), approvedMember.value...)})
+			continue
+		}
+		existingMember := merged[existingIndex]
+		if !isJSONObject(existingMember.value) || !isJSONObject(approvedMember.value) {
+			merged[existingIndex].value = append(json.RawMessage(nil), approvedMember.value...)
+			continue
+		}
+		existingObject, err := decodeOrderedJSONObject(existingMember.value)
+		if err != nil {
+			return nil, err
+		}
+		approvedObject, err := decodeOrderedJSONObject(approvedMember.value)
+		if err != nil {
+			return nil, err
+		}
+		nested, err := mergeOrderedJSONObjects(existingObject, approvedObject)
+		if err != nil {
+			return nil, err
+		}
+		merged[existingIndex].value = formatOrderedJSONObject(nested, 0)
+	}
+	return merged, nil
+}
+
+func filterSourceFallbackJSONObjects(approved, source orderedJSONObject) (orderedJSONObject, error) {
+	filtered := make(orderedJSONObject, 0, len(approved))
+	for _, approvedMember := range approved {
+		sourceIndex := orderedJSONObjectIndex(source, approvedMember.key)
+		if sourceIndex == -1 {
+			filtered = append(filtered, cloneOrderedJSONMember(approvedMember))
+			continue
+		}
+
+		sourceMember := source[sourceIndex]
+		if isJSONObject(approvedMember.value) && isJSONObject(sourceMember.value) {
+			approvedObject, err := decodeOrderedJSONObject(approvedMember.value)
+			if err != nil {
+				return nil, err
+			}
+			sourceObject, err := decodeOrderedJSONObject(sourceMember.value)
+			if err != nil {
+				return nil, err
+			}
+			nested, err := filterSourceFallbackJSONObjects(approvedObject, sourceObject)
+			if err != nil {
+				return nil, err
+			}
+			if len(nested) == 0 {
+				continue
+			}
+			filtered = append(filtered, orderedJSONMember{
+				key:   approvedMember.key,
+				value: formatOrderedJSONObject(nested, 0),
+			})
+			continue
+		}
+
+		equal, err := jsonValuesEqual(approvedMember.value, sourceMember.value)
+		if err != nil {
+			return nil, err
+		}
+		if equal {
+			continue
+		}
+		filtered = append(filtered, cloneOrderedJSONMember(approvedMember))
+	}
+	return filtered, nil
+}
+
+func cloneOrderedJSONMember(member orderedJSONMember) orderedJSONMember {
+	return orderedJSONMember{
+		key:   member.key,
+		value: append(json.RawMessage(nil), member.value...),
+	}
+}
+
+func jsonValuesEqual(left, right json.RawMessage) (bool, error) {
+	leftString, leftIsString, err := decodeJSONString(left)
+	if err != nil {
+		return false, err
+	}
+	rightString, rightIsString, err := decodeJSONString(right)
+	if err != nil {
+		return false, err
+	}
+	if leftIsString || rightIsString {
+		return leftIsString && rightIsString && leftString == rightString, nil
+	}
+
+	var leftValue any
+	if err := json.Unmarshal(left, &leftValue); err != nil {
+		return false, err
+	}
+	var rightValue any
+	if err := json.Unmarshal(right, &rightValue); err != nil {
+		return false, err
+	}
+	return reflect.DeepEqual(leftValue, rightValue), nil
+}
+
+func decodeJSONString(payload json.RawMessage) (string, bool, error) {
+	if !bytes.HasPrefix(bytes.TrimSpace(payload), []byte(`"`)) {
+		return "", false, nil
+	}
+	var value string
+	if err := json.Unmarshal(payload, &value); err != nil {
+		return "", false, err
+	}
+	return value, true, nil
+}
+
+func orderedJSONObjectIndex(obj orderedJSONObject, key string) int {
+	for i, member := range obj {
+		if member.key == key {
+			return i
+		}
+	}
+	return -1
+}
+
+func isJSONObject(payload []byte) bool {
+	trimmed := bytes.TrimSpace(payload)
+	return len(trimmed) > 0 && trimmed[0] == '{'
+}
+
+func formatOrderedJSONObject(obj orderedJSONObject, level int) []byte {
+	if len(obj) == 0 {
+		return []byte("{}")
+	}
+
+	indent := strings.Repeat("  ", level)
+	childIndent := strings.Repeat("  ", level+1)
+	var buf bytes.Buffer
+	buf.WriteString("{\n")
+	for i, member := range obj {
+		if i > 0 {
+			buf.WriteString(",\n")
+		}
+		buf.WriteString(childIndent)
+		buf.WriteString(strconv.Quote(member.key))
+		buf.WriteString(": ")
+		buf.Write(formatOrderedJSONValue(member.value, level+1))
+	}
+	buf.WriteByte('\n')
+	buf.WriteString(indent)
+	buf.WriteByte('}')
+	return buf.Bytes()
+}
+
+func formatOrderedJSONValue(payload []byte, level int) []byte {
+	if isJSONObject(payload) {
+		obj, err := decodeOrderedJSONObject(payload)
+		if err == nil {
+			return formatOrderedJSONObject(obj, level)
+		}
+	}
+
+	var buf bytes.Buffer
+	indent := strings.Repeat("  ", level)
+	if err := json.Indent(&buf, payload, indent, "  "); err == nil {
+		return buf.Bytes()
+	}
+	return bytes.TrimSpace(payload)
 }
 
 func (a *FileAdapter) effectiveConfig(cfg storage.FileWorkflowConfig) storage.FileWorkflowConfig {
@@ -294,7 +620,16 @@ func renderCrowdinTranslationPath(basePath, pattern, locale, sourcePath string, 
 	if crowdinPlaceholderRE.MatchString(rendered) {
 		return "", fmt.Errorf("unsupported placeholder remains in translation path %q", rendered)
 	}
-	return crowdinLocalPath(basePath, rendered), nil
+	targetPath := crowdinLocalPath(basePath, rendered)
+	relative, err := filepath.Rel(basePath, targetPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve translation relative path: %w", err)
+	}
+	relative = filepath.ToSlash(relative)
+	if relative == ".." || strings.HasPrefix(relative, "../") {
+		return "", fmt.Errorf("translation path %q escapes base path %q", targetPath, basePath)
+	}
+	return targetPath, nil
 }
 
 func crowdinLocalPath(basePath, pattern string) string {

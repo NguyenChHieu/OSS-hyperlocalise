@@ -2,7 +2,7 @@ import { createOpenAI, openai } from "@ai-sdk/openai";
 import { generateText, Output, type LanguageModel } from "ai";
 import { z } from "zod";
 
-import type { StringTranslationJobInput } from "@/api/routes/project/translation-job.schema";
+import type { StringTranslationJobInput } from "@/api/routes/project/job.schema";
 import { env } from "@/lib/env";
 
 /**
@@ -16,7 +16,9 @@ const stringTranslationOutputSchema = z.object({
   translations: z.array(
     z.object({
       locale: z.string().trim().min(1),
-      text: z.string().trim().min(1),
+      text: z.string().refine((text) => text.trim().length > 0, {
+        message: "Translation text cannot be empty",
+      }),
     }),
   ),
 });
@@ -27,6 +29,22 @@ export type StringTranslationGeneratorInput = {
   projectName: string;
   projectTranslationContext: string;
   jobInput: StringTranslationJobInput;
+  contextSnapshot?: {
+    glossaryTerms?: Array<{
+      sourceTerm: string;
+      targetTerm: string;
+      targetLocale: string;
+      forbidden?: boolean | null;
+      description?: string | null;
+    }>;
+    translationMemoryMatches?: Array<{
+      sourceText: string;
+      targetText: string;
+      targetLocale: string;
+      provenance?: string | null;
+      rank?: number;
+    }>;
+  };
 };
 
 export type StringTranslationGenerator = (
@@ -55,15 +73,20 @@ function getDefaultTranslationModel() {
 /**
  * Builds stable system instructions for deterministic string translation.
  *
- * Future improvements should pull in attached project glossaries, translation
- * memory examples, brand voice rules, and file-format-specific preservation
- * rules. Keep those additions structured and bounded so prompts stay auditable.
+ * Binding translation policy lives in the system prompt so provider-side
+ * instruction priority matches how reviewers expect these constraints to work.
  */
 function buildSystemPrompt(input: StringTranslationGeneratorInput) {
+  const glossaryTerms = input.contextSnapshot?.glossaryTerms ?? [];
+  const translationMemoryMatches = input.contextSnapshot?.translationMemoryMatches ?? [];
   const instructions = [
     "You are an expert software localization engine.",
     "Translate the provided source text into every requested target locale.",
     "Preserve meaning, tone, placeholders, HTML, Markdown, punctuation, whitespace, and line breaks.",
+    "Follow the project translation context and job context as binding style and usage guidance.",
+    "Use glossary terms exactly for their target locale. Do not use forbidden glossary terms.",
+    "Use approved translation memory matches as consistency references when they apply.",
+    "If constraints conflict, prioritize placeholder and markup preservation first, then glossary rules, then project and job context, then translation memory examples.",
     "Do not explain your work.",
     "Return one translation for each requested locale.",
   ];
@@ -73,6 +96,34 @@ function buildSystemPrompt(input: StringTranslationGeneratorInput) {
       `Each translated string must be at most ${input.jobInput.maxLength} characters long.`,
     );
   }
+
+  instructions.push(
+    "",
+    `Project translation context: ${input.projectTranslationContext || "(none)"}`,
+    `Job context: ${input.jobInput.context || "(none)"}`,
+    glossaryTerms.length > 0
+      ? [
+          "Glossary terms:",
+          ...glossaryTerms.map((term) =>
+            [
+              `- ${term.sourceTerm} -> ${term.targetTerm} (${term.targetLocale})`,
+              term.forbidden ? "forbidden" : null,
+              term.description ? `note: ${term.description}` : null,
+            ]
+              .filter(Boolean)
+              .join("; "),
+          ),
+        ].join("\n")
+      : "Glossary terms: (none)",
+    translationMemoryMatches.length > 0
+      ? [
+          "Translation memory matches:",
+          ...translationMemoryMatches.map(
+            (match) => `- ${match.sourceText} -> ${match.targetText} (${match.targetLocale})`,
+          ),
+        ].join("\n")
+      : "Translation memory matches: (none)",
+  );
 
   return instructions.join("\n");
 }
@@ -89,8 +140,6 @@ function buildPrompt(input: StringTranslationGeneratorInput) {
     `Project: ${input.projectName}`,
     `Source locale: ${input.jobInput.sourceLocale}`,
     `Target locales: ${input.jobInput.targetLocales.join(", ")}`,
-    `Project translation context: ${input.projectTranslationContext || "(none)"}`,
-    `Job context: ${input.jobInput.context || "(none)"}`,
     `Metadata: ${JSON.stringify(input.jobInput.metadata ?? {})}`,
     "Source text:",
     input.jobInput.sourceText,

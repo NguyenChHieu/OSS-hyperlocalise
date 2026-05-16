@@ -3,59 +3,12 @@ import "dotenv/config";
 import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
+import { ensureGithubRepositoryTables } from "@/api/routes/github-test-fixture";
 import { createProjectTestFixture } from "@/api/routes/project/project.fixture";
 import { db, schema } from "@/lib/database";
 import { createGithubWebhookRoutes } from "./github-webhook";
 
 const fixture = createProjectTestFixture();
-
-async function ensureGithubRepositoryTables() {
-  await db.$client.query(`
-    CREATE TABLE IF NOT EXISTS github_installations (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-      organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE cascade,
-      github_installation_id bigint NOT NULL,
-      github_app_id bigint NOT NULL,
-      account_login text,
-      account_type text,
-      created_at timestamp with time zone DEFAULT now() NOT NULL,
-      updated_at timestamp with time zone DEFAULT now() NOT NULL
-    );
-  `);
-  await db.$client.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS github_installations_organization_id_key
-    ON github_installations (organization_id);
-  `);
-  await db.$client.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS github_installations_github_installation_id_key
-    ON github_installations (github_installation_id);
-  `);
-  await db.$client.query(`
-    CREATE TABLE IF NOT EXISTS github_installation_repositories (
-      id uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-      organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE cascade,
-      github_installation_id bigint NOT NULL REFERENCES github_installations(github_installation_id) ON DELETE cascade,
-      github_repository_id bigint NOT NULL,
-      owner text NOT NULL,
-      name text NOT NULL,
-      full_name text NOT NULL,
-      private boolean DEFAULT false NOT NULL,
-      archived boolean DEFAULT false NOT NULL,
-      default_branch text,
-      enabled boolean DEFAULT false NOT NULL,
-      last_synced_at timestamp with time zone DEFAULT now() NOT NULL,
-      created_at timestamp with time zone DEFAULT now() NOT NULL,
-      updated_at timestamp with time zone DEFAULT now() NOT NULL
-    );
-  `);
-  await db.$client.query(`
-    DROP INDEX IF EXISTS github_installation_repositories_github_repository_id_key;
-  `);
-  await db.$client.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS github_installation_repositories_github_repository_id_key
-    ON github_installation_repositories (github_installation_id, github_repository_id);
-  `);
-}
 
 async function createStoredGithubInstallation(enabled: boolean) {
   const identity = fixture.createWorkosIdentity();
@@ -67,15 +20,15 @@ async function createStoredGithubInstallation(enabled: boolean) {
 
   await db.insert(schema.githubInstallations).values({
     organizationId: auth.organization.localOrganizationId,
-    githubInstallationId: 54321,
-    githubAppId: 123,
+    githubInstallationId: "54321",
+    githubAppId: "123",
     accountLogin: "hyperlocalise",
     accountType: "Organization",
   });
   await db.insert(schema.githubInstallationRepositories).values({
     organizationId: auth.organization.localOrganizationId,
-    githubInstallationId: 54321,
-    githubRepositoryId: 9001,
+    githubInstallationId: "54321",
+    githubRepositoryId: "9001",
     owner: "hyperlocalise",
     name: "hyperlocalise",
     fullName: "hyperlocalise/hyperlocalise",
@@ -216,7 +169,7 @@ describe("githubWebhookRoutes", () => {
     const [repository] = await db
       .select()
       .from(schema.githubInstallationRepositories)
-      .where(eq(schema.githubInstallationRepositories.githubRepositoryId, 9002));
+      .where(eq(schema.githubInstallationRepositories.githubRepositoryId, "9002"));
     expect(repository).toMatchObject({
       organizationId: auth.organization.localOrganizationId,
       fullName: "hyperlocalise/demo",

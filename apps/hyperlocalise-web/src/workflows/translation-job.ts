@@ -1,52 +1,17 @@
 import { getWorkflowMetadata } from "workflow";
-
-import type { TranslationJobQueuedEventData } from "@/lib/workflow/types";
+import type { TranslationJobEventData } from "@/lib/workflow/types";
 import {
-  claimTranslationJob,
-  completeTranslationJob,
-  executeClaimedTranslationJob,
-  failTranslationJob,
-} from "@/lib/translation/translation-job-queued-function";
-
-type ClaimTranslationJobInput = {
-  event: TranslationJobQueuedEventData;
-  runId: string;
-};
-
-type ClaimedTranslationJob = Extract<
-  Awaited<ReturnType<typeof claimTranslationJob>>,
-  { kind: "claimed" }
->["job"];
-
-async function claimTranslationJobStep(input: ClaimTranslationJobInput) {
-  "use step";
-
-  return claimTranslationJob(input);
-}
-
-async function executeClaimedTranslationJobStep(job: ClaimedTranslationJob) {
-  "use step";
-
-  return executeClaimedTranslationJob(job);
-}
-
-async function completeTranslationJobStep(input: Parameters<typeof completeTranslationJob>[0]) {
-  "use step";
-
-  return completeTranslationJob(input);
-}
-
-async function failTranslationJobStep(input: Parameters<typeof failTranslationJob>[0]) {
-  "use step";
-
-  return failTranslationJob(input);
-}
+  claimTranslationJobStep,
+  completeTranslationJobStep,
+  executeClaimedTranslationJobStep,
+  failTranslationJobStep,
+} from "./steps/translation-job";
 
 function formatExecutionError(error: unknown) {
   return error instanceof Error ? error.message : "translation job execution failed";
 }
 
-export async function translationJobWorkflow(event: TranslationJobQueuedEventData) {
+export async function translationJobWorkflow(event: TranslationJobEventData) {
   "use workflow";
 
   const { workflowRunId } = getWorkflowMetadata();

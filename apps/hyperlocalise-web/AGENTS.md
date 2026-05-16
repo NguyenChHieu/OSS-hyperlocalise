@@ -16,7 +16,7 @@ Follow the official Hono best-practices guide for this app: [Best Practices](htt
 
 - Prefer route-local handlers instead of Rails-style controller functions. Define the handler inline where the path is declared so `c.req.param()` and other route types infer correctly.
 - Split larger APIs into route modules and mount them with `app.route(...)`.
-- Keep the root API app in [`src/api/app.ts`](/Users/minhcung/work/hyperlocalise/apps/hyperlocalise-web/src/api/app.ts). If a test or feature needs an app instance, import the factory or app from there instead of constructing a separate ad hoc `new Hono()` shape in the test file.
+- Keep the root API app in [`src/api/app.ts`](src/api/app.ts). If a test or feature needs an app instance, import the factory or app from there instead of constructing a separate ad hoc `new Hono()` shape in the test file.
 
 ## Middleware
 
@@ -27,9 +27,17 @@ Follow the official Hono best-practices guide for this app: [Best Practices](htt
 ## Testing
 
 - Use Hono's `testClient` for route tests.
-- Test the real API app exported from [`src/api/app.ts`](/Users/minhcung/work/hyperlocalise/apps/hyperlocalise-web/src/api/app.ts) when possible, rather than rebuilding a parallel test-only app structure.
+- Test the real API app exported from [`src/api/app.ts`](src/api/app.ts) when possible, rather than rebuilding a parallel test-only app structure.
 
 <!-- END:hono-agent-rules -->
+
+# Drizzle Migrations
+
+- Do not hand-write SQL files in `drizzle/` or edit `drizzle/meta/` snapshots by hand.
+- Change the schema in `src/lib/database/schema.ts`, then run `vp run db:generate` to produce a new migration and snapshot.
+- Commit the generated `drizzle/<NNNN>_*.sql` and matching `drizzle/meta/<NNNN>_snapshot.json` (and updated `_journal.json`) together with the schema change.
+- Apply migrations locally with `vp run db:migrate`. CI runs `vp run db:generate` and fails if it produces uncommitted changes, so any drift between the schema and the migration history will block the build.
+- Drizzle assigns sequential numeric prefixes (`0004_`, `0005_`, ...). Two branches that both generate against the same base will collide on the same number. After rebasing/merging, delete your migration files and snapshot, then rerun `vp run db:generate` so your migration is renumbered on top of whatever landed on `main`. CI also fails fast on duplicate indices in `_journal.json` or duplicate filename prefixes in `drizzle/`.
 
 <!--VITE PLUS START-->
 

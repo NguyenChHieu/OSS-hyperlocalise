@@ -4,7 +4,7 @@ module(
 )
 
 bazel_dep(name = "rules_go", version = "0.60.0")
-bazel_dep(name = "gazelle", version = "0.50.0")
+bazel_dep(name = "gazelle", version = "0.51.0")
 
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.26.0")
@@ -15,6 +15,7 @@ use_repo(
     go_deps,
     "cc_mvdan_gofumpt",
     "co_honnef_go_tools",
+    "com_github_antihax_optional",
     "com_github_crowdin_crowdin_api_client_go",
     "com_github_daixiang0_gci",
     "com_github_go_critic_go_critic",
@@ -24,6 +25,7 @@ use_repo(
     "com_github_masterminds_semver_v3",
     "com_github_mattn_go_isatty",
     "com_github_openai_openai_go_v3",
+    "com_github_phrase_phrase_go_v4",
     "com_github_spf13_cobra",
     "com_github_subosito_gotenv",
     "com_github_tidwall_jsonc",

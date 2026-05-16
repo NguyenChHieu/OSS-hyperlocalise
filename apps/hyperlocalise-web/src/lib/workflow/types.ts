@@ -1,8 +1,11 @@
-export type TranslationJobQueuedEventData = {
+export type JobEventData<Kind extends string, Type extends string = string> = {
+  kind: Kind;
   jobId: string;
   projectId: string;
-  type: "string" | "file";
+  type: Type;
 };
+
+export type TranslationJobEventData = JobEventData<"translation", "string" | "file">;
 
 export type GitHubReviewTriggerType = "pull_request" | "mention";
 
@@ -54,13 +57,11 @@ export type GitHubFixRequestedEventData = {
   scope: GitHubFixScope;
 };
 
-export type TranslationJobQueue = {
-  enqueue(event: TranslationJobQueuedEventData): Promise<{ ids: string[] }>;
+export type JobQueue<Event> = {
+  enqueue(event: Event): Promise<{ ids: string[] }>;
 };
 
-export type GitHubFixQueue = {
-  enqueue(event: GitHubFixRequestedEventData): Promise<{ ids: string[] }>;
-};
+export type GitHubFixQueue = JobQueue<GitHubFixRequestedEventData>;
 
 export type EmailAgentTaskAttachment = {
   id: string;
@@ -71,6 +72,7 @@ export type EmailAgentTaskAttachment = {
 
 export type EmailAgentTask = {
   kind: "translate";
+  jobId: string;
   requestId: string;
   senderEmail: string;
   subject: string;
@@ -91,6 +93,4 @@ export type EmailAgentTask = {
   };
 };
 
-export type EmailAgentTaskQueue = {
-  enqueue(task: EmailAgentTask): Promise<{ ids: string[] }>;
-};
+export type EmailAgentTaskQueue = JobQueue<EmailAgentTask>;

@@ -3,19 +3,25 @@ import { createGitHubAdapter } from "@chat-adapter/github";
 import { Chat, emoji } from "chat";
 import type { Message, Thread } from "chat";
 
+import {
+  createHyperlocaliseAgent,
+  loadInteractionModelMessages,
+} from "@/lib/agents/hyperlocalise-agent";
 import { createChatStateAdapter } from "@/lib/agents/runtime/state";
+import { wrapThreadPostForInteraction } from "@/lib/agents/runtime/tracking";
 import { env } from "@/lib/env";
 import {
-  addConversationMessage,
-  createConversation,
-  findConversationBySourceThreadId,
-} from "@/lib/conversations";
+  addInteractionMessage,
+  createInteraction,
+  findInteractionBySourceThreadId,
+} from "@/lib/interactions";
 import { db, schema } from "@/lib/database";
 import { eq } from "drizzle-orm";
 import type { GitHubFixRequestedEventData, GitHubFixQueue } from "@/lib/workflow/types";
 
 import { parseFixCommand } from "./commands";
 import { buildFixEvent } from "./events";
+import { createGitHubFixTools } from "./tools";
 
 type GitHubBotOptions = {
   githubFixQueue: GitHubFixQueue;
@@ -29,7 +35,7 @@ let botInstance: Chat<{ github: ReturnType<typeof createGitHubAdapter> }, GitHub
   null;
 let botQueue: GitHubFixQueue | null = null;
 
-async function getOrganizationIdByInstallationId(installationId: number) {
+async function getOrganizationIdByInstallationId(installationId: string) {
   const [installation] = await db
     .select({ organizationId: schema.githubInstallations.organizationId })
     .from(schema.githubInstallations)
@@ -38,8 +44,24 @@ async function getOrganizationIdByInstallationId(installationId: number) {
   return installation?.organizationId ?? null;
 }
 
-async function handleMention(thread: Thread<GitHubBotState>, message: Message) {
-  const queue = botQueue;
+function buildGitHubFixInstructions(event: GitHubFixRequestedEventData) {
+  return [
+    "The GitHub command router already validated this request.",
+    "Call enqueueGitHubFix exactly once before replying.",
+    "After the tool succeeds, tell the user the fix workflow has been queued.",
+    "",
+    `Repository: ${event.repositoryFullName}`,
+    `Pull request: #${event.pullRequestNumber}`,
+    `Scope: ${event.scope.type}`,
+  ].join("\n");
+}
+
+export async function handleMention(
+  thread: Thread<GitHubBotState>,
+  message: Message,
+  options: { queue?: GitHubFixQueue } = {},
+) {
+  const queue = options.queue ?? botQueue;
   if (!queue) {
     return;
   }
@@ -54,11 +76,12 @@ async function handleMention(thread: Thread<GitHubBotState>, message: Message) {
     await thread.post("GitHub App installation is not configured for `@hyperlocalise fix`.");
     return;
   }
+  const githubInstallationId = String(installationId);
 
   const event = buildFixEvent({
     raw: message.raw as GitHubRawMessage,
     command,
-    installationId,
+    installationId: Number.parseInt(githubInstallationId, 10),
   });
   if (!event) {
     await thread.post(
@@ -70,9 +93,13 @@ async function handleMention(thread: Thread<GitHubBotState>, message: Message) {
   // Conversation tracking
   let conversationId: string | undefined;
   try {
-    const organizationId = await getOrganizationIdByInstallationId(installationId);
+    const organizationId = await getOrganizationIdByInstallationId(githubInstallationId);
     if (organizationId) {
-      const existing = await findConversationBySourceThreadId(thread.id);
+      const existing = await findInteractionBySourceThreadId({
+        organizationId,
+        source: "github_agent",
+        sourceThreadId: thread.id,
+      });
       if (existing) {
         conversationId = existing.id;
       } else {
@@ -80,7 +107,7 @@ async function handleMention(thread: Thread<GitHubBotState>, message: Message) {
         const title = raw?.repository?.full_name
           ? `${raw.repository.full_name}#${raw.prNumber ?? ""}`
           : "GitHub fix request";
-        const created = await createConversation({
+        const created = await createInteraction({
           organizationId,
           source: "github_agent",
           title,
@@ -88,32 +115,13 @@ async function handleMention(thread: Thread<GitHubBotState>, message: Message) {
         });
         conversationId = created.id;
       }
-      await addConversationMessage({
-        conversationId,
+      await addInteractionMessage({
+        interactionId: conversationId,
         senderType: "user",
         text: message.text,
       });
 
-      // Wrap thread.post to track agent replies
-      const originalPost = thread.post.bind(thread);
-      (thread as { post: typeof originalPost }).post = async (
-        ...args: Parameters<typeof originalPost>
-      ) => {
-        const result = await originalPost(...args);
-        try {
-          const text = typeof args[0] === "string" ? args[0] : "";
-          if (text) {
-            await addConversationMessage({
-              conversationId: conversationId!,
-              senderType: "agent",
-              text,
-            });
-          }
-        } catch {
-          // Best-effort tracking
-        }
-        return result;
-      };
+      wrapThreadPostForInteraction(thread, conversationId);
     }
   } catch {
     // Best-effort tracking
@@ -121,7 +129,35 @@ async function handleMention(thread: Thread<GitHubBotState>, message: Message) {
 
   await thread.adapter.addReaction(thread.id, message.id, emoji.eyes);
   await thread.setState({ lastFixEvent: event });
-  await queue.enqueue(event);
+
+  const tools = createGitHubFixTools({ event, queue });
+  const agent = createHyperlocaliseAgent({
+    surface: "github",
+    projectId: null,
+    tools,
+    activeTools: ["enqueueGitHubFix"],
+    additionalInstructions: buildGitHubFixInstructions(event),
+    prepareStep: ({ stepNumber }) => {
+      if (stepNumber === 0) {
+        return {
+          activeTools: ["enqueueGitHubFix"],
+          toolChoice: { type: "tool", toolName: "enqueueGitHubFix" },
+        };
+      }
+
+      return {
+        toolChoice: "none",
+      };
+    },
+  });
+  const messages = conversationId
+    ? await loadInteractionModelMessages(conversationId)
+    : [{ role: "user" as const, content: message.text }];
+  const result = await agent.generate({ messages });
+
+  if (result.text.trim()) {
+    await thread.post(result.text);
+  }
 }
 
 export async function getGitHubBot(options: GitHubBotOptions) {
@@ -147,7 +183,7 @@ export async function getGitHubBot(options: GitHubBotOptions) {
     userName: "hyperlocalise",
   });
 
-  botInstance.onNewMention(handleMention);
+  botInstance.onNewMention((thread, message) => handleMention(thread, message));
 
   return botInstance;
 }

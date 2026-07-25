@@ -147,7 +147,7 @@ export const navbarMessages = defineMessages({
   },
   brandName: {
     defaultMessage: "Hyperlocalise",
-    id: "0vuUDWBSZZ",
-    description: "Brand name shown next to the logo in the marketing navbar",
+    id: "JwC3NaQtN9",
+    description: "Brand name shown next to the logo in the marketing navbar on desktop",
   },
 });

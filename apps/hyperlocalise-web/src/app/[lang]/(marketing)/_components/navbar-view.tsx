@@ -222,7 +222,10 @@ function Logo({ onHero = false }: { onHero?: boolean }) {
         alt={intl.formatMessage(navbarMessages.logoAlt)}
       />
       <span
-        className={cn("font-sans text-base font-semibold tracking-tight", onHero && "text-white")}
+        className={cn(
+          "hidden font-sans text-base font-semibold tracking-tight md:inline",
+          onHero && "text-white",
+        )}
       >
         <FormattedMessage {...navbarMessages.brandName} />
       </span>

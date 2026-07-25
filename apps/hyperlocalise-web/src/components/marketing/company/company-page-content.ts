@@ -36,8 +36,8 @@ export function getCompanyPageCopy(locale: string) {
 
   return {
     headline: intl.formatMessage({
-      defaultMessage: "An AI workforce that acts like your team of local experts.",
-      id: "NZyLH6QByp",
+      defaultMessage: "Built by people who believe localisation connects the world",
+      id: "KaiqOsFp5/",
       description: "Primary headline on the marketing company page",
     }),
     subcopy: intl.formatMessage({

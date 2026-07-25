@@ -15,8 +15,8 @@ import type { IntlShape } from "@formatjs/intl";
 export function getCompanyRouteMetadata(intl: IntlShape) {
   return {
     title: intl.formatMessage({
-      defaultMessage: "Company | Hyperlocalise",
-      id: "hdNOTMXsn9",
+      defaultMessage: "About Hyperlocalise | Building the Agentic Localisation Platform",
+      id: "bUrzfKsGhW",
       description: "Meta title for the marketing company page",
     }),
     description: intl.formatMessage({

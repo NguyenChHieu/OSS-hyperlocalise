@@ -12,7 +12,7 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, type FocusEvent } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
@@ -24,17 +24,30 @@ import { useIntl } from "react-intl";
 
 import { cn } from "@/lib/primitives/cn";
 
-import { markdownDescriptionEditorMessages } from "./markdown-description-editor.messages";
+import { MarkdownEditorBubbleMenu } from "./markdown-editor-bubble-menu";
+import { markdownEditorMessages } from "./markdown-editor.messages";
 import {
   buildMarkdownSlashCommandItems,
   filterMarkdownSlashCommandItems,
-} from "./markdown-description-editor-slash-items";
+} from "./markdown-editor-slash-items";
 import {
   createMarkdownSlashCommandExtension,
   type MarkdownSlashCommandConfig,
-} from "./markdown-description-editor-slash-extension";
+} from "./markdown-editor-slash-extension";
+import { MarkdownEditorToolbar } from "./markdown-editor-toolbar";
 
-const markdownDescriptionContentClassName = cn(
+function isMarkdownEditorChromeTarget(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    Boolean(
+      target.closest(
+        "[data-markdown-slash-menu], [data-markdown-bubble-menu], [data-markdown-toolbar]",
+      ),
+    )
+  );
+}
+
+const markdownEditorContentClassName = cn(
   "max-w-none px-3 py-2 text-sm text-subtle-foreground focus:outline-none",
   "[&_p]:my-2 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0",
   "[&_h1]:mb-3 [&_h1]:mt-5 [&_h1]:font-heading [&_h1]:text-2xl [&_h1]:font-semibold [&_h1]:leading-tight [&_h1]:text-foreground",
@@ -54,8 +67,8 @@ const markdownDescriptionContentClassName = cn(
   "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
 );
 
-const markdownDescriptionMinimalContentClassName = cn(
-  markdownDescriptionContentClassName,
+const markdownEditorMinimalContentClassName = cn(
+  markdownEditorContentClassName,
   "px-0 py-1 text-foreground",
 );
 
@@ -81,7 +94,7 @@ function useMarkdownEditorExtensions(getSlashConfig: () => MarkdownSlashCommandC
   );
 }
 
-export function MarkdownDescriptionEditor({
+export function MarkdownEditor({
   value,
   onChange,
   onBlur,
@@ -98,10 +111,13 @@ export function MarkdownDescriptionEditor({
   className?: string;
   placeholder?: string;
   ariaLabel?: string;
-  /** Minimal inline chrome (Linear-style); markdown and keyboard shortcuts only. */
+  /** Minimal inline chrome omits the bordered shell; toolbar still shows when editable. */
   chrome?: "default" | "minimal";
 }) {
   const intl = useIntl();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const blurCommitScheduledRef = useRef(false);
+  const linkPromptOpenRef = useRef(false);
   const onBlurRef = useRef(onBlur);
   onBlurRef.current = onBlur;
   const slashConfigRef = useRef<MarkdownSlashCommandConfig>({
@@ -111,19 +127,45 @@ export function MarkdownDescriptionEditor({
   slashConfigRef.current = {
     resolveItems: (query: string) =>
       filterMarkdownSlashCommandItems(buildMarkdownSlashCommandItems(intl), query),
-    emptyLabel: intl.formatMessage(markdownDescriptionEditorMessages.slashEmpty),
+    emptyLabel: intl.formatMessage(markdownEditorMessages.slashEmpty),
   };
   const getSlashConfig = useCallback(() => slashConfigRef.current, []);
   const editorExtensions = useMarkdownEditorExtensions(getSlashConfig);
-  const resolvedPlaceholder =
-    placeholder ?? intl.formatMessage(markdownDescriptionEditorMessages.placeholder);
+  const resolvedPlaceholder = placeholder ?? intl.formatMessage(markdownEditorMessages.placeholder);
   const resolvedAriaLabel =
-    ariaLabel ?? intl.formatMessage(markdownDescriptionEditorMessages.taskDescriptionAria);
+    ariaLabel ?? intl.formatMessage(markdownEditorMessages.taskDescriptionAria);
   const isMinimal = chrome === "minimal";
   const editorContentClassName = cn(
-    isMinimal ? markdownDescriptionMinimalContentClassName : markdownDescriptionContentClassName,
+    isMinimal ? markdownEditorMinimalContentClassName : markdownEditorContentClassName,
     isMinimal ? "min-h-[3rem]" : "min-h-[8rem]",
   );
+
+  const scheduleBlurCommit = useCallback((hasEditorFocus: () => boolean) => {
+    // Root focusout and ProseMirror blur can both fire for one leave; coalesce.
+    if (blurCommitScheduledRef.current) {
+      return;
+    }
+    blurCommitScheduledRef.current = true;
+    // Defer past slash/bubble menu mount/unmount so a transient body focus
+    // during popup open doesn't commit, but a real outside click still does.
+    queueMicrotask(() => {
+      blurCommitScheduledRef.current = false;
+      if (linkPromptOpenRef.current) {
+        return;
+      }
+      if (hasEditorFocus()) {
+        return;
+      }
+      const active = document.activeElement;
+      if (rootRef.current?.contains(active)) {
+        return;
+      }
+      if (isMarkdownEditorChromeTarget(active)) {
+        return;
+      }
+      onBlurRef.current?.();
+    });
+  }, []);
 
   const editor = useEditor({
     extensions: editorExtensions,
@@ -141,30 +183,24 @@ export function MarkdownDescriptionEditor({
         "data-placeholder": resolvedPlaceholder,
       },
       handleDOMEvents: {
-        blur: (_view, event) => {
-          const relatedTarget = event.relatedTarget;
-          if (
-            relatedTarget instanceof Element &&
-            relatedTarget.closest("[data-markdown-slash-menu]")
-          ) {
-            return false;
-          }
-          // Defer past slash-menu mount/unmount so a transient body focus during
-          // popup open doesn't commit, but a real outside click still does.
-          queueMicrotask(() => {
-            if (_view.hasFocus()) {
-              return;
-            }
-            if (document.activeElement?.closest("[data-markdown-slash-menu]")) {
-              return;
-            }
-            onBlurRef.current?.();
-          });
+        blur: (_view) => {
+          scheduleBlurCommit(() => _view.hasFocus());
           return false;
         },
       },
     },
   });
+
+  const handleRootFocusOut = (event: FocusEvent<HTMLDivElement>) => {
+    const next = event.relatedTarget;
+    if (next instanceof Node && event.currentTarget.contains(next)) {
+      return;
+    }
+    if (isMarkdownEditorChromeTarget(next)) {
+      return;
+    }
+    scheduleBlurCommit(() => Boolean(editor?.view.hasFocus()));
+  };
 
   useEffect(() => {
     if (!editor) {
@@ -200,31 +236,14 @@ export function MarkdownDescriptionEditor({
           "data-placeholder": resolvedPlaceholder,
         },
         handleDOMEvents: {
-          blur: (_view, event) => {
-            const relatedTarget = event.relatedTarget;
-            if (
-              relatedTarget instanceof Element &&
-              relatedTarget.closest("[data-markdown-slash-menu]")
-            ) {
-              return false;
-            }
-            // Defer past slash-menu mount/unmount so a transient body focus during
-            // popup open doesn't commit, but a real outside click still does.
-            queueMicrotask(() => {
-              if (editor.view.hasFocus()) {
-                return;
-              }
-              if (document.activeElement?.closest("[data-markdown-slash-menu]")) {
-                return;
-              }
-              onBlurRef.current?.();
-            });
+          blur: (_view) => {
+            scheduleBlurCommit(() => editor.view.hasFocus());
             return false;
           },
         },
       },
     });
-  }, [editor, editorContentClassName, resolvedAriaLabel, resolvedPlaceholder]);
+  }, [editor, editorContentClassName, resolvedAriaLabel, resolvedPlaceholder, scheduleBlurCommit]);
 
   const placeholderStyles = cn(
     "[&_.tiptap_p.is-editor-empty:first-child::before]:text-muted-foreground",
@@ -248,6 +267,8 @@ export function MarkdownDescriptionEditor({
 
   return (
     <div
+      ref={rootRef}
+      onBlur={handleRootFocusOut}
       className={cn(
         isMinimal
           ? "[&_.tiptap]:min-h-[3rem]"
@@ -257,12 +278,23 @@ export function MarkdownDescriptionEditor({
         className,
       )}
     >
+      {!disabled && !isMinimal ? (
+        <MarkdownEditorToolbar editor={editor} disabled={disabled} />
+      ) : null}
       <EditorContent
         editor={editor}
         className={cn(
           isMinimal ? "min-h-[3rem]" : "max-h-[32rem] min-h-[8rem] resize-y overflow-auto",
         )}
       />
+      {!disabled ? (
+        <MarkdownEditorBubbleMenu
+          editor={editor}
+          onLinkPromptOpenChange={(open) => {
+            linkPromptOpenRef.current = open;
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -280,7 +312,7 @@ export function MarkdownContent({
 }) {
   const intl = useIntl();
   const resolvedAriaLabel =
-    ariaLabel ?? intl.formatMessage(markdownDescriptionEditorMessages.markdownContentAria);
+    ariaLabel ?? intl.formatMessage(markdownEditorMessages.markdownContentAria);
 
   const editor = useEditor({
     extensions: markdownBaseExtensions,
@@ -290,7 +322,7 @@ export function MarkdownContent({
     immediatelyRender: false,
     editorProps: {
       attributes: {
-        class: cn(markdownDescriptionContentClassName, contentClassName),
+        class: cn(markdownEditorContentClassName, contentClassName),
         "aria-label": resolvedAriaLabel,
       },
     },
@@ -317,7 +349,7 @@ export function MarkdownContent({
     editor.setOptions({
       editorProps: {
         attributes: {
-          class: cn(markdownDescriptionContentClassName, contentClassName),
+          class: cn(markdownEditorContentClassName, contentClassName),
           "aria-label": resolvedAriaLabel,
         },
       },
@@ -341,7 +373,7 @@ export function MarkdownContent({
   );
 }
 
-export function MarkdownDescriptionPreview({
+export function MarkdownPreview({
   value,
   className,
   contentClassName,
@@ -356,10 +388,8 @@ export function MarkdownDescriptionPreview({
 }) {
   const intl = useIntl();
   const resolvedEmptyMessage =
-    emptyMessage ?? intl.formatMessage(markdownDescriptionEditorMessages.noDescription);
-  const previewAriaLabel = intl.formatMessage(
-    markdownDescriptionEditorMessages.taskDescriptionPreviewAria,
-  );
+    emptyMessage ?? intl.formatMessage(markdownEditorMessages.noDescription);
+  const previewAriaLabel = intl.formatMessage(markdownEditorMessages.taskDescriptionPreviewAria);
   const isMinimal = chrome === "minimal";
 
   if (!value.trim()) {

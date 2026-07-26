@@ -7,13 +7,13 @@ import (
 	"github.com/hyperlocalise/hyperlocalise/internal/i18n/icuparser"
 )
 
-func validateICUInvariant(source, translated string) error {
+func validateICUInvariantWithTokens(source, translated string) (bool, error) {
 	// BOLT OPTIMIZATION: Fast-path for plain text without any potential ICU structures or HTML tags.
 	// If neither the source nor the translated text contains '{' or '<', neither can contain any ICU
 	// blocks, placeholders, or tags. We can immediately return nil, skipping space trimming and the
 	// expensive ICU AST parser for both.
 	if !strings.ContainsAny(source, "{<") && !strings.ContainsAny(translated, "{<") {
-		return nil
+		return false, nil
 	}
 
 	source = trimSpace(source)
@@ -21,21 +21,22 @@ func validateICUInvariant(source, translated string) error {
 
 	srcInv, srcErr := icuparser.ParseInvariant(source)
 	if srcErr != nil {
-		return nil
+		return false, nil
 	}
-	if len(srcInv.Placeholders) == 0 && len(srcInv.ICUBlocks) == 0 {
-		return nil
+	hasTokens := len(srcInv.Placeholders) > 0 || len(srcInv.ICUBlocks) > 0
+	if !hasTokens {
+		return false, nil
 	}
 
 	translatedInv, translatedErr := icuparser.ParseInvariant(translated)
 	if translatedErr != nil {
-		return fmt.Errorf(
+		return hasTokens, fmt.Errorf(
 			"translation invariant violation: invalid ICU/braces structure | %s",
 			formatInvariantDebugContext(source, translated),
 		)
 	}
 	if !icuparser.SamePlaceholderSet(srcInv.Placeholders, translatedInv.Placeholders) {
-		return fmt.Errorf(
+		return hasTokens, fmt.Errorf(
 			"translation invariant violation: placeholder parity mismatch (expected %q, got %q) | %s",
 			srcInv.Placeholders,
 			translatedInv.Placeholders,
@@ -43,7 +44,7 @@ func validateICUInvariant(source, translated string) error {
 		)
 	}
 	if !icuparser.SameICUBlocks(srcInv.ICUBlocks, translatedInv.ICUBlocks) {
-		return fmt.Errorf(
+		return hasTokens, fmt.Errorf(
 			"translation invariant violation: ICU parity mismatch (expected %s, got %s) | %s",
 			icuparser.FormatICUBlocks(srcInv.ICUBlocks),
 			icuparser.FormatICUBlocks(translatedInv.ICUBlocks),
@@ -51,11 +52,11 @@ func validateICUInvariant(source, translated string) error {
 		)
 	}
 	if icuparser.HasDuplicatePounds(translatedInv.ICUBlocks) {
-		return fmt.Errorf(
+		return hasTokens, fmt.Errorf(
 			"translation invariant violation: duplicate # tokens in ICU plural/selectordinal branch (got %s) | %s",
 			icuparser.FormatICUBlocks(translatedInv.ICUBlocks),
 			formatInvariantDebugContext(source, translated),
 		)
 	}
-	return nil
+	return hasTokens, nil
 }

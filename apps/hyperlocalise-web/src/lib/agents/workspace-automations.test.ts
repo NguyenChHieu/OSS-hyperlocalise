@@ -22,6 +22,7 @@ import { claimGithubRepositoryAutomationJob } from "./github/github-repository-a
 import {
   createWorkspaceAutomation,
   createWorkspaceAutomationRun,
+  getWorkspaceAutomationById,
   hoistLegacyWorkspaceAutomationProjectId,
   listDueContentfulWorkspaceAutomations,
   listWorkspaceAutomations,
@@ -110,6 +111,37 @@ async function seedWorkspaceAutomationScope() {
   };
 }
 
+describe("hoistLegacyWorkspaceAutomationProjectId", () => {
+  it("hoists when every legacy tool projectId agrees", () => {
+    expect(
+      hoistLegacyWorkspaceAutomationProjectId({
+        contentful: { projectId: "project-a" },
+        translation: { projectId: "project-a" },
+        github: { projectId: "project-a" },
+      }),
+    ).toBe("project-a");
+  });
+
+  it("hoists the only non-empty legacy tool projectId", () => {
+    expect(
+      hoistLegacyWorkspaceAutomationProjectId({
+        contentful: { enabled: true },
+        github: { projectId: "project-b" },
+      }),
+    ).toBe("project-b");
+  });
+
+  it("refuses to hoist when legacy tool projectIds conflict", () => {
+    expect(
+      hoistLegacyWorkspaceAutomationProjectId({
+        contentful: { projectId: "project-contentful" },
+        translation: { projectId: "project-header" },
+        github: { projectId: "project-header" },
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("workspace automations", () => {
   beforeAll(async () => {
     await db.$client.query("select 1");
@@ -119,6 +151,60 @@ describe("workspace automations", () => {
     for (const organizationId of organizationIds.splice(0)) {
       await db.delete(schema.organizations).where(eq(schema.organizations.id, organizationId));
     }
+  });
+
+  it("does not collapse conflicting legacy tool projectIds onto one automation project", async () => {
+    const scope = await seedWorkspaceAutomationScope();
+    const otherProjectId = `project-other-${scope.organizationId.slice(0, 8)}`;
+    await db.insert(schema.projects).values({
+      id: otherProjectId,
+      organizationId: scope.organizationId,
+      createdByUserId: scope.userId,
+      name: "Contentful Project",
+    });
+
+    const [row] = await db
+      .insert(schema.workspaceAutomations)
+      .values({
+        organizationId: scope.organizationId,
+        authorUserId: scope.userId,
+        status: "active",
+        name: "Legacy mismatched projects",
+        instructions: "Translate Contentful and sync GitHub.",
+        projectId: null,
+        triggerConfig: { mode: "manual" },
+        repositoryTarget: {
+          kind: "github",
+          githubInstallationRepositoryId: scope.githubInstallationRepositoryId,
+        },
+        githubInstallationRepositoryId: scope.githubInstallationRepositoryId,
+        toolConfig: {
+          contentful: {
+            enabled: true,
+            connectionId: crypto.randomUUID(),
+            projectId: otherProjectId,
+            sourceLocale: "en",
+            targetLocales: ["fr"],
+          },
+          github: {
+            enabled: true,
+            mode: "sync",
+            projectId: scope.projectId,
+            pushSource: true,
+            pullTranslations: false,
+            validation: false,
+          },
+        },
+      })
+      .returning();
+
+    const automation = await getWorkspaceAutomationById({
+      automationId: row!.id,
+      organizationId: scope.organizationId,
+    });
+
+    // Fail closed: do not prefer Contentful (or any tool) and retarget GitHub.
+    expect(automation?.projectId).toBeNull();
   });
 
   it("creates automations with safe defaults and serializes next-run storage", async () => {
@@ -811,17 +897,25 @@ describe("workspace automations", () => {
     ).toBe("github-project");
     expect(
       hoistLegacyWorkspaceAutomationProjectId({
+        contentful: { projectId: "shared-project" },
+        translation: { projectId: "shared-project" },
+        github: { projectId: "shared-project" },
+      }),
+    ).toBe("shared-project");
+    // Fail closed: do not prefer Contentful/translation when legacy IDs disagree.
+    expect(
+      hoistLegacyWorkspaceAutomationProjectId({
         contentful: { projectId: "contentful-project" },
         translation: { projectId: "translation-project" },
         github: { projectId: "github-project" },
       }),
-    ).toBe("contentful-project");
+    ).toBeNull();
     expect(
       hoistLegacyWorkspaceAutomationProjectId({
         translation: { projectId: "translation-project" },
         github: { projectId: "github-project" },
       }),
-    ).toBe("translation-project");
+    ).toBeNull();
     expect(hoistLegacyWorkspaceAutomationProjectId({ github: { projectId: "   " } })).toBeNull();
     expect(hoistLegacyWorkspaceAutomationProjectId({})).toBeNull();
   });

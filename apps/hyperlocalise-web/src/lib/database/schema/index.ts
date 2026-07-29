@@ -32,6 +32,7 @@ export * from "./project-image-variants";
 export * from "./issue-sheet";
 export * from "./repo-tms";
 export * from "./knowledge-memory";
+export * from "./workspace-automation-memory";
 export * from "./project-file-string-contexts";
 export * from "./project-cat-string-overlays";
 export * from "./billing";

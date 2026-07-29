@@ -32,6 +32,7 @@ import { composeWorkspaceAutomationInstructions } from "./compose-workspace-inst
 import { createWorkspaceOrchestratorSession, type WorkspaceOrchestratorSession } from "./context";
 import { buildWorkspaceOrchestratorPlan } from "./plan";
 import { resolveWorkspaceAutomationKnowledgeContext } from "./resolve-workspace-automation-knowledge";
+import { resolveWorkspaceAutomationMemoryContext } from "./resolve-workspace-automation-memory";
 import { buildWorkspaceOrchestratorOutputSummary } from "./workspace-orchestrator-output-summary";
 
 const logger = createLogger("workspace-orchestrator");
@@ -160,17 +161,26 @@ export async function runWorkspaceOrchestrator(input: {
 
   const templateSkillId = resolveTemplateSkillId(run.inputSnapshot);
   const plan = buildWorkspaceOrchestratorPlan(automation, { templateSkillId });
+  const automationMemory = await resolveWorkspaceAutomationMemoryContext({ automation });
   const knowledgeMemory = await resolveWorkspaceAutomationKnowledgeContext({
     organizationId: input.organizationId,
     automation,
+    // With no automation-specific Memory, org knowledge stays gated by the existing
+    // toolConfig.knowledge.enabled toggle (unchanged behavior). Once the automation has its own
+    // Memory, its "Also include organization-wide Memory" checkbox is the authority instead.
+    forceInclude: automationMemory.content !== null && automationMemory.includeOrgKnowledge,
   });
   const composedInstructions = composeWorkspaceAutomationInstructions({
     templateSkillId,
     userOverride: automation.instructions,
     triggerMode: automation.triggerConfig.mode,
     plan,
-    knowledgeEnabled: Boolean(automation.toolConfig.knowledge?.enabled),
+    // Reflects whether org knowledge actually ended up included, whether via the classic toggle
+    // or the automation-Memory forceInclude path above — not the raw toolConfig flag, so the
+    // "Enabled tools" hint line stays accurate in both cases.
+    knowledgeEnabled: knowledgeMemory !== null,
     knowledgeMemory,
+    automationMemory: automationMemory.content,
   });
 
   let repository: {

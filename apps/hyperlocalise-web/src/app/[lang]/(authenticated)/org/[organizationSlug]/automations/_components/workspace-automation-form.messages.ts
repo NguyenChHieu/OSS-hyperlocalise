@@ -286,8 +286,9 @@ export const workspaceAutomationFormMessages = defineMessages({
     description: "Menu item and tool title for workspace knowledge memories",
   },
   memoriesDescription: {
-    defaultMessage: "Use organization knowledge memory as guidance for this automation.",
-    id: "rcdU5+Pv4r",
+    defaultMessage:
+      "Give this automation its own memory, and choose whether to also use organization-wide knowledge.",
+    id: "lpqkwYWN1U",
     description: "Description for the knowledge memories automation tool",
   },
   memoriesUnavailableDescription: {
@@ -301,15 +302,21 @@ export const workspaceAutomationFormMessages = defineMessages({
     id: "WNUkfqHAtJ",
     description: "Button to open the knowledge memories editor from an automation",
   },
+  saveBeforeManagingMemory: {
+    defaultMessage: "Save this automation before managing its memory",
+    id: "I4ftBd1qfy",
+    description:
+      "Tooltip when the Manage memory button is disabled because the automation isn't saved yet",
+  },
   manageMemoriesTitle: {
-    defaultMessage: "Knowledge memories",
-    id: "W9S7Ht69kS",
-    description: "Title for the knowledge memories management sheet",
+    defaultMessage: "Automation memory",
+    id: "2Z1n7HNSQV",
+    description: "Title for the automation memory management sheet",
   },
   manageMemoriesDescription: {
-    defaultMessage: "Edit the shared organization knowledge used by this automation.",
-    id: "WBqbSdV/u8",
-    description: "Description for the knowledge memories management sheet",
+    defaultMessage: "Guidance the agent reads before this automation runs.",
+    id: "pHK5kWiSa0",
+    description: "Description for the automation memory management sheet",
   },
   removeMemoriesTool: {
     defaultMessage: "Remove memories tool",

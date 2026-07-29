@@ -11,12 +11,14 @@
  * Version 2.0 or later.
  */
 import { and, eq } from "drizzle-orm";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { validator } from "hono/validator";
 
+import { hasCapability } from "@/api/auth/policy";
 import { isWorkspaceOperatorRole } from "@/api/auth/roles";
 import { workosAuthMiddleware, type AuthVariables } from "@/api/auth/workos";
 import {
+  apiErrorResponse,
   badRequestResponse,
   conflictResponse,
   forbiddenResponse,
@@ -44,6 +46,17 @@ import {
 } from "@/lib/agents/workspace-automations";
 import { db, schema } from "@/lib/database";
 import { isErr } from "@/lib/primitives/result/results";
+import {
+  commitWorkspaceAutomationMemory,
+  getWorkspaceAutomationMemory,
+  setWorkspaceAutomationMemoryIncludeOrgKnowledge,
+} from "@/lib/workspace-automation-memory/workspace-automation-memory";
+import {
+  getWorkspaceAutomationMemoryRevision,
+  listWorkspaceAutomationMemoryRevisions,
+  restoreWorkspaceAutomationMemoryRevision,
+} from "@/lib/workspace-automation-memory/workspace-automation-memory-revisions";
+import type { WorkspaceAutomationMemoryRecord } from "@/lib/workspace-automation-memory/workspace-automation-memory.types";
 
 import {
   createWorkspaceAutomationBodySchema,
@@ -53,6 +66,11 @@ import {
   updateWorkspaceAutomationBodySchema,
   workspaceAutomationIdParamSchema,
 } from "./workspace-automation.schema";
+import {
+  updateWorkspaceAutomationMemoryBodySchema,
+  workspaceAutomationMemoryRevisionListQuerySchema,
+  workspaceAutomationMemoryRevisionParamsSchema,
+} from "./workspace-automation-memory.schema";
 
 const validateListQuery = validator("query", (value, c) => {
   const parsed = listWorkspaceAutomationsQuerySchema.safeParse(value);
@@ -126,6 +144,114 @@ const validateRunBody = validator("json", (value, c) => {
   }
   return parsed.data;
 });
+
+const validateUpdateMemoryBody = validator("json", (value, c) => {
+  const parsed = updateWorkspaceAutomationMemoryBodySchema.safeParse(value);
+  if (!parsed.success) {
+    return badRequestResponse(
+      c,
+      "invalid_workspace_automation_memory_payload",
+      "Automation memory payload is invalid.",
+      parsed.error.flatten(),
+    );
+  }
+  return parsed.data;
+});
+
+const validateMemoryRevisionListQuery = validator("query", (value, c) => {
+  const parsed = workspaceAutomationMemoryRevisionListQuerySchema.safeParse(value);
+  if (!parsed.success) {
+    return badRequestResponse(
+      c,
+      "invalid_query_params",
+      "Query parameters are invalid.",
+      parsed.error.flatten(),
+    );
+  }
+  return parsed.data;
+});
+
+const validateMemoryRevisionParams = validator("param", (value, c) => {
+  const parsed = workspaceAutomationMemoryRevisionParamsSchema.safeParse(value);
+  if (!parsed.success) {
+    return badRequestResponse(c, "invalid_workspace_automation_memory_revision_params");
+  }
+  return parsed.data;
+});
+
+function formatWorkspaceAutomationMemoryEtag(revisionId: string | null) {
+  return `"${revisionId ?? "0"}"`;
+}
+
+type ParsedWorkspaceAutomationMemoryPrecondition =
+  | { kind: "missing" }
+  | { kind: "invalid" }
+  | { kind: "valid"; expectedRevisionId: string | null };
+
+function parseWorkspaceAutomationMemoryIfMatch(
+  value: string | undefined,
+): ParsedWorkspaceAutomationMemoryPrecondition {
+  if (value === undefined) {
+    return { kind: "missing" };
+  }
+
+  const match = /^"([^"]+)"$/u.exec(value.trim());
+  if (!match) {
+    return { kind: "invalid" };
+  }
+
+  const token = match[1];
+  if (token === "0") {
+    return { kind: "valid", expectedRevisionId: null };
+  }
+
+  return workspaceAutomationMemoryRevisionParamsSchema.shape.revisionId.safeParse(token).success
+    ? { kind: "valid", expectedRevisionId: token }
+    : { kind: "invalid" };
+}
+
+type WorkspaceAutomationMemoryRouteContext = Context<{ Variables: AuthVariables }>;
+
+function setWorkspaceAutomationMemoryEtag(
+  c: WorkspaceAutomationMemoryRouteContext,
+  workspaceAutomationMemory: WorkspaceAutomationMemoryRecord,
+) {
+  c.header("ETag", formatWorkspaceAutomationMemoryEtag(workspaceAutomationMemory.revisionId));
+}
+
+function validateWorkspaceAutomationMemoryPrecondition(c: WorkspaceAutomationMemoryRouteContext) {
+  const precondition = parseWorkspaceAutomationMemoryIfMatch(c.req.header("If-Match"));
+  if (precondition.kind === "missing") {
+    return apiErrorResponse(
+      c,
+      428,
+      "workspace_automation_memory_precondition_required",
+      "Reload this automation's memory before committing changes",
+    );
+  }
+  if (precondition.kind === "invalid") {
+    return badRequestResponse(
+      c,
+      "invalid_workspace_automation_memory_precondition",
+      "If-Match must contain the current automation memory ETag",
+    );
+  }
+  return precondition;
+}
+
+function workspaceAutomationMemoryPreconditionFailedResponse(
+  c: WorkspaceAutomationMemoryRouteContext,
+  current: WorkspaceAutomationMemoryRecord,
+) {
+  setWorkspaceAutomationMemoryEtag(c, current);
+  return apiErrorResponse(
+    c,
+    412,
+    "workspace_automation_memory_precondition_failed",
+    "This automation's memory changed after it was loaded",
+    { workspaceAutomationMemory: current },
+  );
+}
 
 async function getOwnedGithubRepository(input: { organizationId: string; repositoryId: string }) {
   const [repository] = await db
@@ -565,5 +691,177 @@ export function createWorkspaceAutomationRoutes() {
       } catch (error) {
         return mapAutomationError(c, error);
       }
-    });
+    })
+    .get("/:automationId/memory", validateAutomationParams, async (c) => {
+      const params = c.req.valid("param");
+      const organizationId = c.var.auth.organization.localOrganizationId;
+      const automation = await getWorkspaceAutomationById({
+        automationId: params.automationId,
+        organizationId,
+      });
+      if (!automation) {
+        return notFoundResponse(c, "workspace_automation_not_found");
+      }
+
+      const workspaceAutomationMemory = await getWorkspaceAutomationMemory({
+        automationId: automation.id,
+      });
+      setWorkspaceAutomationMemoryEtag(c, workspaceAutomationMemory);
+
+      return c.json({ workspaceAutomationMemory }, 200);
+    })
+    .put("/:automationId/memory", validateAutomationParams, validateUpdateMemoryBody, async (c) => {
+      if (!hasCapability(c.var.auth.membership.role, "workspace:update")) {
+        return forbiddenResponse(
+          c,
+          "forbidden",
+          "Only workspace admins can update this automation's memory",
+        );
+      }
+
+      const params = c.req.valid("param");
+      const organizationId = c.var.auth.organization.localOrganizationId;
+      const automation = await getWorkspaceAutomationById({
+        automationId: params.automationId,
+        organizationId,
+      });
+      if (!automation) {
+        return notFoundResponse(c, "workspace_automation_not_found");
+      }
+
+      const precondition = validateWorkspaceAutomationMemoryPrecondition(c);
+      if (precondition instanceof Response) {
+        return precondition;
+      }
+
+      const payload = c.req.valid("json");
+      const result = await commitWorkspaceAutomationMemory({
+        automationId: automation.id,
+        organizationId,
+        updatedByUserId: c.var.auth.user.localUserId,
+        content: payload.content,
+        summary: payload.summary,
+        expectedRevisionId: precondition.expectedRevisionId,
+      });
+
+      if (isErr(result)) {
+        return workspaceAutomationMemoryPreconditionFailedResponse(c, result.error.current);
+      }
+
+      if (payload.includeOrgKnowledge !== undefined) {
+        await setWorkspaceAutomationMemoryIncludeOrgKnowledge({
+          automationId: automation.id,
+          organizationId,
+          includeOrgKnowledge: payload.includeOrgKnowledge,
+        });
+      }
+
+      const workspaceAutomationMemory =
+        payload.includeOrgKnowledge !== undefined
+          ? await getWorkspaceAutomationMemory({ automationId: automation.id })
+          : result.value.workspaceAutomationMemory;
+
+      setWorkspaceAutomationMemoryEtag(c, workspaceAutomationMemory);
+      return c.json({ workspaceAutomationMemory }, 200);
+    })
+    .get(
+      "/:automationId/memory/revisions",
+      validateAutomationParams,
+      validateMemoryRevisionListQuery,
+      async (c) => {
+        const params = c.req.valid("param");
+        const organizationId = c.var.auth.organization.localOrganizationId;
+        const automation = await getWorkspaceAutomationById({
+          automationId: params.automationId,
+          organizationId,
+        });
+        if (!automation) {
+          return notFoundResponse(c, "workspace_automation_not_found");
+        }
+
+        const query = c.req.valid("query");
+        const result = await listWorkspaceAutomationMemoryRevisions({
+          automationId: automation.id,
+          limit: query.limit,
+          cursor: query.cursor,
+        });
+
+        return c.json(result, 200);
+      },
+    )
+    .get("/:automationId/memory/revisions/:revisionId", validateMemoryRevisionParams, async (c) => {
+      const params = c.req.valid("param");
+      const organizationId = c.var.auth.organization.localOrganizationId;
+      const automation = await getWorkspaceAutomationById({
+        automationId: params.automationId,
+        organizationId,
+      });
+      if (!automation) {
+        return notFoundResponse(c, "workspace_automation_not_found");
+      }
+
+      const result = await getWorkspaceAutomationMemoryRevision({
+        automationId: automation.id,
+        revisionId: params.revisionId,
+      });
+      if (!result) {
+        return notFoundResponse(
+          c,
+          "workspace_automation_memory_revision_not_found",
+          "Automation memory revision was not found",
+        );
+      }
+
+      return c.json(result, 200);
+    })
+    .post(
+      "/:automationId/memory/revisions/:revisionId/restore",
+      validateMemoryRevisionParams,
+      async (c) => {
+        if (!hasCapability(c.var.auth.membership.role, "workspace:update")) {
+          return forbiddenResponse(
+            c,
+            "forbidden",
+            "Only workspace admins can restore this automation's memory",
+          );
+        }
+
+        const params = c.req.valid("param");
+        const organizationId = c.var.auth.organization.localOrganizationId;
+        const automation = await getWorkspaceAutomationById({
+          automationId: params.automationId,
+          organizationId,
+        });
+        if (!automation) {
+          return notFoundResponse(c, "workspace_automation_not_found");
+        }
+
+        const precondition = validateWorkspaceAutomationMemoryPrecondition(c);
+        if (precondition instanceof Response) {
+          return precondition;
+        }
+
+        const result = await restoreWorkspaceAutomationMemoryRevision({
+          automationId: automation.id,
+          organizationId,
+          revisionId: params.revisionId,
+          restoredByUserId: c.var.auth.user.localUserId,
+          expectedRevisionId: precondition.expectedRevisionId,
+        });
+
+        if (isErr(result)) {
+          if (result.error.code === "revision_not_found") {
+            return notFoundResponse(
+              c,
+              "workspace_automation_memory_revision_not_found",
+              "Automation memory revision was not found",
+            );
+          }
+          return workspaceAutomationMemoryPreconditionFailedResponse(c, result.error.current);
+        }
+
+        setWorkspaceAutomationMemoryEtag(c, result.value.workspaceAutomationMemory);
+        return c.json({ workspaceAutomationMemory: result.value.workspaceAutomationMemory }, 200);
+      },
+    );
 }

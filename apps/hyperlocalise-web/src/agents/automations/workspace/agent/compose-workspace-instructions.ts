@@ -22,11 +22,15 @@ export function composeWorkspaceAutomationInstructions(input: {
   plan: WorkspaceOrchestratorPlan;
   knowledgeMemory?: string | null;
   knowledgeEnabled?: boolean;
+  automationMemory?: string | null;
 }) {
   const enabledToolsSection = [
     "## Enabled tools",
     `Trigger mode: ${input.triggerMode}.`,
     `Execution plan: ${input.plan.tools.map((tool) => `\`${tool}\``).join(" → ") || "none"}.`,
+    input.automationMemory?.trim()
+      ? "This automation's own memory notes are applied as context below."
+      : null,
     input.knowledgeEnabled && input.knowledgeMemory?.trim()
       ? "Workspace knowledge memories are enabled and applied as context below."
       : null,
@@ -36,6 +40,9 @@ export function composeWorkspaceAutomationInstructions(input: {
     .join("\n");
 
   const dynamicSections = [enabledToolsSection];
+  if (input.automationMemory?.trim()) {
+    dynamicSections.push(`## Automation memory\n${input.automationMemory.trim()}`);
+  }
   if (input.knowledgeMemory?.trim()) {
     dynamicSections.push(`## Workspace knowledge\n${input.knowledgeMemory.trim()}`);
   }

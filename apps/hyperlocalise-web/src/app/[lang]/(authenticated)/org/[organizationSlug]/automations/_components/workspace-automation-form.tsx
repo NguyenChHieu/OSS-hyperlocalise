@@ -38,7 +38,7 @@ import {
 } from "simple-icons";
 
 import { SimpleBrandIcon } from "@/app/[lang]/(authenticated)/org/[organizationSlug]/integrations/_components/simple-brand-icon";
-import { KnowledgeMemoryEditor } from "@/app/[lang]/(authenticated)/org/[organizationSlug]/knowledge/_components/knowledge-memory-editor";
+import { WorkspaceAutomationMemoryEditor } from "./workspace-automation-memory-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -1443,6 +1443,7 @@ function ContentfulTargetLocalesPicker({
 }
 
 function ToolsSettings({
+  automationId,
   canUpdateKnowledgeMemory,
   contentfulConnections,
   disabled,
@@ -1462,6 +1463,8 @@ function ToolsSettings({
   slackChannelsLoading,
   slackConnected,
 }: {
+  /** The persisted automation's id. Undefined until first save (mode "create"). */
+  automationId?: string;
   canUpdateKnowledgeMemory: boolean;
   contentfulConnections: ContentfulConnectionOption[];
   disabled?: boolean;
@@ -1526,7 +1529,12 @@ function ToolsSettings({
                   type="button"
                   variant="secondary"
                   size="sm"
-                  disabled={disabled || !knowledgeAvailable}
+                  disabled={disabled || !knowledgeAvailable || !automationId}
+                  title={
+                    !automationId
+                      ? intl.formatMessage(workspaceAutomationFormMessages.saveBeforeManagingMemory)
+                      : undefined
+                  }
                   className="h-8 rounded-full px-3"
                   onClick={() => setMemoriesOpen(true)}
                 >
@@ -2295,10 +2303,13 @@ function ToolsSettings({
             </SheetDescription>
           </SheetHeader>
           <div className="px-6 pb-6">
-            <KnowledgeMemoryEditor
-              organizationSlug={organizationSlug}
-              canUpdateKnowledgeMemory={canUpdateKnowledgeMemory}
-            />
+            {automationId ? (
+              <WorkspaceAutomationMemoryEditor
+                organizationSlug={organizationSlug}
+                automationId={automationId}
+                canUpdateWorkspaceAutomationMemory={canUpdateKnowledgeMemory}
+              />
+            ) : null}
           </div>
         </SheetContent>
       </Sheet>
@@ -2387,6 +2398,7 @@ function RunHistoryTable({ runs }: { runs: WorkspaceAutomationRunRecord[] }) {
 
 export function WorkspaceAutomationEditor({
   actions,
+  automationId,
   canUpdateKnowledgeMemory = false,
   disabled,
   errors,
@@ -2398,6 +2410,8 @@ export function WorkspaceAutomationEditor({
   runHistory,
 }: {
   actions?: ReactNode;
+  /** The persisted automation's id. Undefined until first save (mode "create"). */
+  automationId?: string;
   canUpdateKnowledgeMemory?: boolean;
   disabled?: boolean;
   errors: Record<string, string | undefined>;
@@ -2702,6 +2716,7 @@ export function WorkspaceAutomationEditor({
           </EditorSection>
 
           <ToolsSettings
+            automationId={automationId}
             canUpdateKnowledgeMemory={canUpdateKnowledgeMemory}
             contentfulConnections={contentfulConnections}
             disabled={disabled}

@@ -33,6 +33,7 @@ export type WorkspaceAutomationFormState = {
   name: string;
   instructions: string;
   status: "active" | "paused";
+  projectId: string;
   triggerMode: WorkspaceAutomationTriggerMode;
   pushBranches: string[];
   scheduledCadence: "hourly" | "daily" | "weekly";
@@ -43,7 +44,6 @@ export type WorkspaceAutomationFormState = {
   githubInstallationRepositoryId: string;
   githubEnabled: boolean;
   githubMode: WorkspaceAutomationGithubToolMode;
-  githubProjectId: string;
   pushSourceEnabled: boolean;
   pullTranslationsEnabled: boolean;
   validationEnabled: boolean;
@@ -53,7 +53,6 @@ export type WorkspaceAutomationFormState = {
   emailRecipients: string[];
   contentfulEnabled: boolean;
   contentfulConnectionId: string;
-  contentfulProjectId: string;
   contentfulSourceLocale: string;
   contentfulEntryId: string;
   contentfulContentTypeIds: string[];
@@ -63,7 +62,6 @@ export type WorkspaceAutomationFormState = {
   contentfulRunQa: boolean;
   contentfulWriteDrafts: boolean;
   translationEnabled: boolean;
-  translationProjectId: string;
   translationUseProjectTargetLocales: boolean;
   translationTargetLocales: string[];
   knowledgeEnabled: boolean;
@@ -75,21 +73,32 @@ export type WorkspaceAutomationFormState = {
   ahrefsConnectionId: string;
 };
 
+function workspaceAutomationFormNeedsProject(form: WorkspaceAutomationFormState): boolean {
+  if (form.triggerMode === "source_upload") {
+    return true;
+  }
+  if (form.contentfulEnabled) {
+    return true;
+  }
+  if (form.translationEnabled) {
+    return true;
+  }
+  return form.githubEnabled && form.githubMode === "sync";
+}
+
 export type WorkspaceAutomationFieldErrors = Partial<
   Record<
     | "name"
     | "instructions"
-    | "githubProjectId"
+    | "projectId"
     | "githubRepository"
     | "trigger"
     | "pushBranches"
     | "slackChannelId"
     | "emailRecipients"
     | "contentfulConnectionId"
-    | "contentfulProjectId"
     | "contentfulTargetLocales"
     | "contentfulEntryId"
-    | "translationProjectId"
     | "translationTargetLocales"
     | "mcpConnectionId"
     | "semrushConnectionId"
@@ -101,7 +110,10 @@ export type WorkspaceAutomationFieldErrors = Partial<
 
 export const WORKSPACE_AUTOMATION_API_ERROR_MESSAGES: Record<string, string> = {
   github_repository_target_required: "Choose a GitHub repository before enabling GitHub tools.",
-  github_project_required: "Choose a Hyperlocalise project for GitHub workflows.",
+  project_required: "Choose a Hyperlocalise project for this automation.",
+  github_project_required: "Choose a Hyperlocalise project for this automation.",
+  contentful_project_required: "Choose a Hyperlocalise project for this automation.",
+  translation_project_required: "Choose a Hyperlocalise project for this automation.",
   github_trigger_required: "Choose a schedule or GitHub push trigger for GitHub workflows.",
   github_agent_trigger_required:
     "Use GitHub repo automations with a scheduled or manual trigger, not GitHub push.",
@@ -113,10 +125,8 @@ export const WORKSPACE_AUTOMATION_API_ERROR_MESSAGES: Record<string, string> = {
   email_not_connected: "Enable the email agent in Integrations before using email notifications.",
   email_recipients_required: "Add at least one email recipient.",
   contentful_connection_required: "Choose a Contentful connection.",
-  contentful_project_required: "Choose a Hyperlocalise project for Contentful translation.",
   contentful_target_locales_required: "Add at least one target locale for Contentful translation.",
   contentful_entry_id_required: "Scheduled Contentful automations need an entry ID.",
-  translation_project_required: "Choose a Hyperlocalise project for translation jobs.",
   translation_target_locales_required: "Add at least one target locale for translation jobs.",
   source_upload_workflow_required: "Source upload triggers require translation jobs to be enabled.",
   mcp_connection_required: "Choose an MCP server connection.",
@@ -141,6 +151,7 @@ export function createDefaultWorkspaceAutomationFormState(): WorkspaceAutomation
     name: "",
     instructions: "",
     status: "active",
+    projectId: "",
     triggerMode: "manual",
     pushBranches: ["main"],
     scheduledCadence: "daily",
@@ -151,7 +162,6 @@ export function createDefaultWorkspaceAutomationFormState(): WorkspaceAutomation
     githubInstallationRepositoryId: "",
     githubEnabled: false,
     githubMode: "sync",
-    githubProjectId: "",
     pushSourceEnabled: false,
     pullTranslationsEnabled: false,
     validationEnabled: false,
@@ -161,7 +171,6 @@ export function createDefaultWorkspaceAutomationFormState(): WorkspaceAutomation
     emailRecipients: [],
     contentfulEnabled: false,
     contentfulConnectionId: "",
-    contentfulProjectId: "",
     contentfulSourceLocale: "en",
     contentfulEntryId: "",
     contentfulContentTypeIds: [],
@@ -171,7 +180,6 @@ export function createDefaultWorkspaceAutomationFormState(): WorkspaceAutomation
     contentfulRunQa: true,
     contentfulWriteDrafts: true,
     translationEnabled: false,
-    translationProjectId: "",
     translationUseProjectTargetLocales: true,
     translationTargetLocales: [],
     knowledgeEnabled: false,
@@ -201,6 +209,7 @@ export function createWorkspaceAutomationFormStateFromRecord(
     name: automation.name,
     instructions: automation.instructions,
     status: automation.status === "paused" ? "paused" : "active",
+    projectId: automation.projectId ?? "",
     triggerMode: automation.triggerConfig.mode,
     pushBranches:
       automation.triggerConfig.mode === "github" && automation.triggerConfig.branches?.length
@@ -227,7 +236,6 @@ export function createWorkspaceAutomationFormStateFromRecord(
       automation.repositoryTarget.githubInstallationRepositoryId ?? "",
     githubEnabled: Boolean(github?.enabled),
     githubMode: github?.mode ?? "sync",
-    githubProjectId: github?.projectId ?? "",
     pushSourceEnabled: Boolean(github?.pushSource),
     pullTranslationsEnabled: Boolean(github?.pullTranslations),
     validationEnabled: Boolean(github?.validation),
@@ -237,7 +245,6 @@ export function createWorkspaceAutomationFormStateFromRecord(
     emailRecipients: email?.recipients ? [...email.recipients] : [],
     contentfulEnabled: Boolean(contentful?.enabled),
     contentfulConnectionId: contentful?.connectionId ?? "",
-    contentfulProjectId: contentful?.projectId ?? "",
     contentfulSourceLocale: contentful?.sourceLocale ?? "en",
     contentfulEntryId: contentful?.entryId ?? "",
     contentfulContentTypeIds: contentful?.contentTypeIds ? [...contentful.contentTypeIds] : [],
@@ -247,7 +254,6 @@ export function createWorkspaceAutomationFormStateFromRecord(
     contentfulRunQa: contentful?.runQa ?? true,
     contentfulWriteDrafts: contentful?.writeDrafts ?? true,
     translationEnabled: Boolean(translation?.enabled),
-    translationProjectId: translation?.projectId ?? "",
     translationUseProjectTargetLocales: translation?.useProjectTargetLocales ?? true,
     translationTargetLocales: translation?.targetLocales ? [...translation.targetLocales] : [],
     knowledgeEnabled: Boolean(knowledge?.enabled),
@@ -293,10 +299,32 @@ export function applyTemplateToWorkspaceAutomationFormState(
   };
 }
 
+export function applyWorkspaceAutomationProjectSelection(
+  form: WorkspaceAutomationFormState,
+  projectId: string,
+  project?: { sourceLocale: string | null; targetLocales: string[] },
+): WorkspaceAutomationFormState {
+  const next: WorkspaceAutomationFormState = {
+    ...form,
+    projectId,
+  };
+
+  if (form.contentfulEnabled && project) {
+    next.contentfulSourceLocale = project.sourceLocale ?? form.contentfulSourceLocale;
+    next.contentfulTargetLocales =
+      project.targetLocales.length > 0 && form.contentfulTargetLocales.length === 0
+        ? [...project.targetLocales]
+        : form.contentfulTargetLocales.filter((locale) => project.targetLocales.includes(locale));
+  }
+
+  return next;
+}
+
 export function formStateToWorkspaceAutomationPayload(form: WorkspaceAutomationFormState): {
   name: string;
   instructions: string;
   status: "active" | "paused";
+  projectId?: string;
   triggerConfig: WorkspaceAutomationTriggerConfig;
   repositoryTarget: WorkspaceAutomationRepositoryTarget;
   toolConfig: WorkspaceAutomationToolConfig;
@@ -337,8 +365,6 @@ export function formStateToWorkspaceAutomationPayload(form: WorkspaceAutomationF
           github: {
             enabled: true,
             mode: form.githubMode,
-            projectId:
-              form.githubMode === "sync" ? form.githubProjectId.trim() || undefined : undefined,
             pushSource: form.githubMode === "sync" ? form.pushSourceEnabled : false,
             pullTranslations: form.githubMode === "sync" ? form.pullTranslationsEnabled : false,
             validation: form.githubMode === "sync" ? form.validationEnabled : false,
@@ -366,7 +392,6 @@ export function formStateToWorkspaceAutomationPayload(form: WorkspaceAutomationF
           contentful: {
             enabled: true,
             connectionId: form.contentfulConnectionId || undefined,
-            projectId: form.contentfulProjectId || undefined,
             sourceLocale: form.contentfulSourceLocale.trim() || "en",
             entryId: form.contentfulEntryId.trim() || undefined,
             contentTypeIds: form.contentfulContentTypeIds,
@@ -382,7 +407,6 @@ export function formStateToWorkspaceAutomationPayload(form: WorkspaceAutomationF
       ? {
           translation: {
             enabled: true,
-            projectId: form.translationProjectId.trim() || undefined,
             useProjectTargetLocales: form.translationUseProjectTargetLocales,
             targetLocales: form.translationUseProjectTargetLocales
               ? []
@@ -423,10 +447,13 @@ export function formStateToWorkspaceAutomationPayload(form: WorkspaceAutomationF
       : {}),
   };
 
+  const projectId = form.projectId.trim() || undefined;
+
   return {
     name: form.name.trim(),
     instructions: form.instructions.trim(),
     status: form.status,
+    ...(projectId ? { projectId } : {}),
     triggerConfig,
     repositoryTarget,
     toolConfig,
@@ -446,15 +473,16 @@ export function validateWorkspaceAutomationFormState(
     errors.instructions = "Instructions are required.";
   }
 
+  if (workspaceAutomationFormNeedsProject(form) && !form.projectId.trim()) {
+    errors.projectId = "Choose a Hyperlocalise project.";
+  }
+
   if (form.githubEnabled) {
     if (!form.githubInstallationRepositoryId) {
       errors.githubRepository = "Choose a GitHub repository.";
     }
 
     if (form.githubMode === "sync") {
-      if (!form.githubProjectId.trim()) {
-        errors.githubProjectId = "Choose a Hyperlocalise project.";
-      }
       if (!form.pushSourceEnabled && !form.pullTranslationsEnabled && !form.validationEnabled) {
         errors.form = "Enable at least one GitHub workflow.";
       }
@@ -482,9 +510,6 @@ export function validateWorkspaceAutomationFormState(
     if (!form.contentfulConnectionId) {
       errors.contentfulConnectionId = "Choose a Contentful connection.";
     }
-    if (!form.contentfulProjectId.trim()) {
-      errors.contentfulProjectId = "Choose a Hyperlocalise project.";
-    }
     if (form.contentfulTargetLocales.length === 0) {
       errors.contentfulTargetLocales = "Add at least one target locale.";
     }
@@ -494,9 +519,6 @@ export function validateWorkspaceAutomationFormState(
   }
 
   if (form.translationEnabled) {
-    if (!form.translationProjectId.trim()) {
-      errors.translationProjectId = "Choose a Hyperlocalise project.";
-    }
     if (!form.translationUseProjectTargetLocales && form.translationTargetLocales.length === 0) {
       errors.translationTargetLocales = "Add at least one target locale.";
     }
@@ -534,9 +556,12 @@ export function mapWorkspaceAutomationApiErrorToFieldErrors(
     case "github_repository_not_enabled":
     case "github_repository_archived":
       return { githubRepository: message };
+    case "project_required":
     case "github_project_required":
+    case "contentful_project_required":
+    case "translation_project_required":
     case "project_not_found":
-      return { githubProjectId: message };
+      return { projectId: message };
     case "github_trigger_required":
     case "github_agent_trigger_required":
     case "scheduled_workflow_required":
@@ -552,14 +577,10 @@ export function mapWorkspaceAutomationApiErrorToFieldErrors(
       return { emailRecipients: message };
     case "contentful_connection_required":
       return { contentfulConnectionId: message };
-    case "contentful_project_required":
-      return { contentfulProjectId: message };
     case "contentful_target_locales_required":
       return { contentfulTargetLocales: message };
     case "contentful_entry_id_required":
       return { contentfulEntryId: message };
-    case "translation_project_required":
-      return { translationProjectId: message };
     case "translation_target_locales_required":
       return { translationTargetLocales: message };
     case "mcp_connection_required":

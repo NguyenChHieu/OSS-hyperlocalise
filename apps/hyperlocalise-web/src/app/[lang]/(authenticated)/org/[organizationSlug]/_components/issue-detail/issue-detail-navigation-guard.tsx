@@ -1,7 +1,29 @@
 "use client";
 
+/*
+ * Copyright (c) 2026 Hyperlocalise Pty Ltd
+ *
+ * Use of this software is governed by the Business Source License 1.1
+ * included in this application's LICENSE file.
+ *
+ * Change Date: Four years after publication of the applicable version.
+ *
+ * On the Change Date, in accordance with the Business Source License, use
+ * of this software will be governed by the GNU General Public License
+ * Version 2.0 or later.
+ */
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { FormattedMessage } from "react-intl";
 
 import {
@@ -17,6 +39,29 @@ import { Button } from "@/components/ui/button";
 
 import { issueDetailPanelMessages as messages } from "./issue-detail-panel.messages";
 import type { IssueDetailPanelHandle } from "./issue-detail-panel";
+
+type IssueDetailLeaveGuardContextValue = {
+  requestNavigate: (href: string) => void;
+};
+
+const IssueDetailLeaveGuardContext = createContext<IssueDetailLeaveGuardContextValue | null>(null);
+
+/** Navigate in-app, prompting when the issue detail draft is dirty. */
+export function useIssueDetailGuardedNavigate() {
+  const router = useRouter();
+  const guard = useContext(IssueDetailLeaveGuardContext);
+
+  return useCallback(
+    (href: string) => {
+      if (guard) {
+        guard.requestNavigate(href);
+        return;
+      }
+      router.push(href);
+    },
+    [guard, router],
+  );
+}
 
 export function getInternalNavigationHrefFromClick(
   target: EventTarget | null,
@@ -62,9 +107,11 @@ export function getInternalNavigationHrefFromClick(
 export function IssueDetailNavigationGuard({
   panelRef,
   isDirty,
+  children,
 }: {
   panelRef: RefObject<IssueDetailPanelHandle | null>;
   isDirty: boolean;
+  children?: ReactNode;
 }) {
   const router = useRouter();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -120,6 +167,22 @@ export function IssueDetailNavigationGuard({
     [panelRef],
   );
 
+  const requestNavigate = useCallback(
+    (href: string) => {
+      requestLeave(() => {
+        router.push(href);
+      });
+    },
+    [requestLeave, router],
+  );
+
+  const leaveGuardValue = useMemo(
+    () => ({
+      requestNavigate,
+    }),
+    [requestNavigate],
+  );
+
   const handleDiscard = useCallback(() => {
     panelRef.current?.discardPending();
     runPendingProceed();
@@ -169,14 +232,12 @@ export function IssueDetailNavigationGuard({
 
       event.preventDefault();
       event.stopPropagation();
-      requestLeave(() => {
-        router.push(href);
-      });
+      requestNavigate(href);
     };
 
     document.addEventListener("click", onClickCapture, true);
     return () => document.removeEventListener("click", onClickCapture, true);
-  }, [panelRef, requestLeave, router]);
+  }, [panelRef, requestNavigate]);
 
   useEffect(() => {
     if (!isDirty) {
@@ -210,49 +271,52 @@ export function IssueDetailNavigationGuard({
   }, [isDirty, panelRef, requestLeave]);
 
   return (
-    <AlertDialog
-      open={confirmOpen}
-      onOpenChange={(open) => {
-        if (isSavingClose) {
-          return;
-        }
-        if (!open) {
-          keepEditing();
-          return;
-        }
-        setConfirmOpen(true);
-      }}
-    >
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            <FormattedMessage {...messages.unsavedChangesTitle} />
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            <FormattedMessage {...messages.unsavedChangesDescription} />
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isSavingClose} onClick={keepEditing}>
-            <FormattedMessage {...messages.unsavedChangesKeepEditing} />
-          </AlertDialogCancel>
-          <Button
-            variant="outline"
-            disabled={isSavingClose}
-            onPointerDown={() => panelRef.current?.beginCloseConfirm()}
-            onClick={handleDiscard}
-          >
-            <FormattedMessage {...messages.unsavedChangesDiscard} />
-          </Button>
-          <Button
-            disabled={isSavingClose}
-            onPointerDown={() => panelRef.current?.beginCloseConfirm()}
-            onClick={() => void handleSaveAndLeave()}
-          >
-            <FormattedMessage {...messages.unsavedChangesSave} />
-          </Button>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <IssueDetailLeaveGuardContext.Provider value={leaveGuardValue}>
+      {children}
+      <AlertDialog
+        open={confirmOpen}
+        onOpenChange={(open) => {
+          if (isSavingClose) {
+            return;
+          }
+          if (!open) {
+            keepEditing();
+            return;
+          }
+          setConfirmOpen(true);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              <FormattedMessage {...messages.unsavedChangesTitle} />
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              <FormattedMessage {...messages.unsavedChangesDescription} />
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSavingClose} onClick={keepEditing}>
+              <FormattedMessage {...messages.unsavedChangesKeepEditing} />
+            </AlertDialogCancel>
+            <Button
+              variant="outline"
+              disabled={isSavingClose}
+              onPointerDown={() => panelRef.current?.beginCloseConfirm()}
+              onClick={handleDiscard}
+            >
+              <FormattedMessage {...messages.unsavedChangesDiscard} />
+            </Button>
+            <Button
+              disabled={isSavingClose}
+              onPointerDown={() => panelRef.current?.beginCloseConfirm()}
+              onClick={() => void handleSaveAndLeave()}
+            >
+              <FormattedMessage {...messages.unsavedChangesSave} />
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </IssueDetailLeaveGuardContext.Provider>
   );
 }

@@ -30,16 +30,17 @@ import {
   type ProjectFileCatPaginationInput,
 } from "@/lib/projects/cat/project-file-cat-pagination";
 import { legacyProviderCatSegmentLimit } from "@/api/routes/project/project.schema";
-import { buildCrowdinFileQueueCroql } from "@/lib/providers/adapters/crowdin/crowdin-api";
-import { crowdinTmsProvider } from "@/lib/providers/adapters/crowdin/crowdin-provider";
 import {
+  buildCrowdinFileQueueCroql,
   CrowdinApiClient,
   CrowdinApiError,
+  isCrowdinCroqlWithinLimit,
   type CrowdinProject,
   type CrowdinLanguageTranslation,
   type CrowdinSourceString,
   type CrowdinStringComment,
 } from "@/lib/providers/adapters/crowdin/crowdin-api";
+import { crowdinTmsProvider } from "@/lib/providers/adapters/crowdin/crowdin-provider";
 import { crowdinAuth } from "@/lib/providers/adapters/crowdin/crowdin-auth";
 import {
   getPhraseUserConnection,
@@ -2191,6 +2192,9 @@ export async function getTmsProviderLiveCatFile(
   });
 }
 
+export const CROWDIN_CAT_ALL_FILES_QUERY_TOO_LARGE_MESSAGE =
+  "This Crowdin project has too many files to open All Files at once. Select a single file to view strings instead.";
+
 export async function getTmsProviderLiveCatAllFiles(
   organizationId: string,
   externalProjectId: string,
@@ -2254,12 +2258,21 @@ async function buildCrowdinLiveCatAllFiles(input: {
   const sourcePathFilter =
     input.sourcePaths && input.sourcePaths.length > 0 ? new Set(input.sourcePaths) : null;
 
-  const catFiles = files
+  const allCatFiles = files
     .filter((file) => supportsLiveProviderCat(input.context.providerKind, file))
-    .filter((file) => (sourcePathFilter ? sourcePathFilter.has(file.sourcePath) : true))
     .toSorted((left, right) =>
       left.sourcePath.localeCompare(right.sourcePath, undefined, { sensitivity: "base" }),
     );
+
+  const catFiles = sourcePathFilter
+    ? allCatFiles.filter((file) => sourcePathFilter.has(file.sourcePath))
+    : allCatFiles;
+
+  // Job All Files passes a subset of sourcePaths. Project-wide string pagination + client-side
+  // filtering drops/skips in-scope strings (empty/sparse pages). Only fall back to project-wide
+  // listing when the file OR list would 414 *and* the request is not narrowed to a subset.
+  const isNarrowedSourcePathFilter =
+    sourcePathFilter != null && catFiles.length < allCatFiles.length;
 
   const fileById = new Map<number, TmsProviderLiveFile>();
   const fileIds: number[] = [];
@@ -2310,29 +2323,54 @@ async function buildCrowdinLiveCatAllFiles(input: {
     baseUrl: input.context.credential.baseUrl ?? undefined,
   });
 
-  const croql = buildCrowdinFileQueueCroql({
+  const croqlWithFiles = buildCrowdinFileQueueCroql({
     fileIds,
     targetLocale: input.targetLocale,
     queueFilter: paginationInput.queueFilter,
     search: paginationInput.search,
   });
-  if (!croql) {
+  const croqlProjectWide = buildCrowdinFileQueueCroql({
+    targetLocale: input.targetLocale,
+    queueFilter: paginationInput.queueFilter,
+    search: paginationInput.search,
+  });
+
+  const useFileScopedCroql = croqlWithFiles != null && isCrowdinCroqlWithinLimit(croqlWithFiles);
+
+  if (!useFileScopedCroql && isNarrowedSourcePathFilter) {
     throw new TmsProviderLiveError(
-      "invalid_crowdin_project_or_file_id",
-      "Crowdin All Files CAT requires at least one project file.",
+      "crowdin_cat_all_files_query_too_large",
+      CROWDIN_CAT_ALL_FILES_QUERY_TOO_LARGE_MESSAGE,
     );
   }
 
+  const croql = useFileScopedCroql ? croqlWithFiles : croqlProjectWide;
+
+  if (croql && !isCrowdinCroqlWithinLimit(croql)) {
+    throw new TmsProviderLiveError(
+      "crowdin_cat_all_files_query_too_large",
+      CROWDIN_CAT_ALL_FILES_QUERY_TOO_LARGE_MESSAGE,
+    );
+  }
+
+  const allowedFileIds = new Set(fileIds);
+
   try {
+    // Pass offset/limit straight through (Crowdin caps page size at 500).
     const page = await client.listSourceStringsPage(projectId, {
-      croql,
+      croql: croql ?? undefined,
       offset,
       limit,
     });
 
     const segments: TmsProviderLiveCatFile["segments"] = [];
     for (const sourceString of page.strings) {
-      const file = sourceString.fileId != null ? (fileById.get(sourceString.fileId) ?? null) : null;
+      const fileId = sourceString.fileId;
+      if (fileId == null || !allowedFileIds.has(fileId)) {
+        continue;
+      }
+
+      const file = fileById.get(fileId);
       if (!file) {
         continue;
       }
@@ -2377,6 +2415,13 @@ async function buildCrowdinLiveCatAllFiles(input: {
   } catch (error) {
     if (error instanceof CrowdinApiError && error.status === 401) {
       throw new TmsProviderLiveError("crowdin_auth_invalid", "Crowdin credentials are invalid.");
+    }
+
+    if (error instanceof CrowdinApiError && (error.status === 400 || error.status === 414)) {
+      throw new TmsProviderLiveError(
+        "crowdin_cat_all_files_query_too_large",
+        CROWDIN_CAT_ALL_FILES_QUERY_TOO_LARGE_MESSAGE,
+      );
     }
 
     throw error;

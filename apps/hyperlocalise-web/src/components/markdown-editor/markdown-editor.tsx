@@ -16,6 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, type FocusEvent } from "react"
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Link from "@tiptap/extension-link";
+import Placeholder from "@tiptap/extension-placeholder";
 import TaskItem from "@tiptap/extension-task-item";
 import TaskList from "@tiptap/extension-task-list";
 import { Markdown } from "@tiptap/markdown";
@@ -34,14 +35,23 @@ import {
   createMarkdownSlashCommandExtension,
   type MarkdownSlashCommandConfig,
 } from "./markdown-editor-slash-extension";
+import { createMarkdownMentionExtension } from "./markdown-editor-mention-extension";
+import {
+  parseMentionHref,
+  type MarkdownMentionConfig,
+  type ParsedMarkdownMention,
+} from "./markdown-editor-mention-types";
 import { MarkdownEditorToolbar } from "./markdown-editor-toolbar";
+
+export type { MarkdownMentionConfig, ParsedMarkdownMention } from "./markdown-editor-mention-types";
+export { extractMentionIdsFromMarkdown, parseMentionHref } from "./markdown-editor-mention-types";
 
 function isMarkdownEditorChromeTarget(target: EventTarget | null) {
   return (
     target instanceof Element &&
     Boolean(
       target.closest(
-        "[data-markdown-slash-menu], [data-markdown-bubble-menu], [data-markdown-toolbar]",
+        "[data-markdown-slash-menu], [data-markdown-bubble-menu], [data-markdown-toolbar], [data-markdown-mention-menu]",
       ),
     )
   );
@@ -62,6 +72,7 @@ const markdownEditorContentClassName = cn(
   "[&_li[data-type=taskItem]_div]:flex-1",
   "[&_blockquote]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-subtle-foreground",
   "[&_a]:text-foreground [&_a]:underline [&_a]:decoration-border [&_a]:underline-offset-4 [&_a:hover]:decoration-muted-foreground",
+  "[&_a[href^='mention:']]:cursor-pointer [&_a[href^='mention:']]:rounded-md [&_a[href^='mention:']]:bg-muted [&_a[href^='mention:']]:px-1 [&_a[href^='mention:']]:py-0.5 [&_a[href^='mention:']]:no-underline [&_a[href^='mention:']]:decoration-transparent",
   "[&_code]:rounded [&_code]:bg-skeleton [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.85em]",
   "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:bg-skeleton [&_pre]:p-3",
   "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
@@ -72,25 +83,86 @@ const markdownEditorMinimalContentClassName = cn(
   "px-0 py-1 text-foreground",
 );
 
+const markdownPlaceholderStyles = cn(
+  "[&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none",
+  "[&_.tiptap_p.is-editor-empty:first-child::before]:float-left",
+  "[&_.tiptap_p.is-editor-empty:first-child::before]:h-0",
+  "[&_.tiptap_p.is-editor-empty:first-child::before]:text-muted-foreground",
+  "[&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)]",
+);
+
+function tryHandleMentionClick(
+  event: MouseEvent,
+  onMentionNavigate: ((mention: ParsedMarkdownMention) => void) | undefined,
+) {
+  const target = event.target;
+  if (!(target instanceof Element)) {
+    return false;
+  }
+  const anchor = target.closest("a[href^='mention:']");
+  if (!(anchor instanceof HTMLAnchorElement)) {
+    return false;
+  }
+  const href = anchor.getAttribute("href");
+  if (!href) {
+    return false;
+  }
+  // Always block browser navigation for mention: links (target=_blank etc.).
+  event.preventDefault();
+  event.stopPropagation();
+  const mention = parseMentionHref(href);
+  if (mention) {
+    onMentionNavigate?.(mention);
+  }
+  return true;
+}
+
 const markdownBaseExtensions = [
   StarterKit,
   Link.configure({
     openOnClick: false,
     linkOnPaste: true,
+    protocols: ["http", "https", "mailto", "mention"],
+    HTMLAttributes: {
+      // Mentions are handled in-app; avoid browser opening mention: in a new tab.
+      // External http(s) links still navigate via the browser default (same tab).
+      target: null,
+    },
+    isAllowedUri: (url, ctx) => {
+      try {
+        if (url.startsWith("mention:")) {
+          return true;
+        }
+        return ctx.defaultValidate(url);
+      } catch {
+        return false;
+      }
+    },
   }),
   TaskList,
   TaskItem.configure({ nested: true }),
   Markdown,
 ] as unknown as Extensions;
 
-function useMarkdownEditorExtensions(getSlashConfig: () => MarkdownSlashCommandConfig) {
+function useMarkdownEditorExtensions(
+  getSlashConfig: () => MarkdownSlashCommandConfig,
+  getMentionConfig: () => MarkdownMentionConfig | null,
+  getPlaceholder: () => string,
+) {
   return useMemo(
     () =>
       [
         ...markdownBaseExtensions,
+        Placeholder.configure({
+          placeholder: () => getPlaceholder(),
+          emptyEditorClass: "is-editor-empty",
+          showOnlyWhenEditable: true,
+          showOnlyCurrent: false,
+        }),
         createMarkdownSlashCommandExtension(getSlashConfig),
+        createMarkdownMentionExtension(getMentionConfig),
       ] as unknown as Extensions,
-    [getSlashConfig],
+    [getSlashConfig, getMentionConfig, getPlaceholder],
   );
 }
 
@@ -103,6 +175,9 @@ export function MarkdownEditor({
   placeholder,
   ariaLabel,
   chrome = "default",
+  compact = false,
+  mentionConfig = null,
+  onMentionNavigate,
 }: {
   value: string;
   onChange: (value: string) => void;
@@ -113,6 +188,10 @@ export function MarkdownEditor({
   ariaLabel?: string;
   /** Minimal inline chrome omits the bordered shell; toolbar still shows when editable. */
   chrome?: "default" | "minimal";
+  /** Shorter min-height for single-line composers (e.g. comment reply footer). */
+  compact?: boolean;
+  mentionConfig?: MarkdownMentionConfig | null;
+  onMentionNavigate?: (mention: ParsedMarkdownMention) => void;
 }) {
   const intl = useIntl();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -120,6 +199,8 @@ export function MarkdownEditor({
   const linkPromptOpenRef = useRef(false);
   const onBlurRef = useRef(onBlur);
   onBlurRef.current = onBlur;
+  const onMentionNavigateRef = useRef(onMentionNavigate);
+  onMentionNavigateRef.current = onMentionNavigate;
   const slashConfigRef = useRef<MarkdownSlashCommandConfig>({
     resolveItems: () => [],
     emptyLabel: "",
@@ -129,15 +210,26 @@ export function MarkdownEditor({
       filterMarkdownSlashCommandItems(buildMarkdownSlashCommandItems(intl), query),
     emptyLabel: intl.formatMessage(markdownEditorMessages.slashEmpty),
   };
+  const mentionConfigRef = useRef<MarkdownMentionConfig | null>(null);
+  mentionConfigRef.current = mentionConfig;
   const getSlashConfig = useCallback(() => slashConfigRef.current, []);
-  const editorExtensions = useMarkdownEditorExtensions(getSlashConfig);
+  const getMentionConfig = useCallback(() => mentionConfigRef.current, []);
   const resolvedPlaceholder = placeholder ?? intl.formatMessage(markdownEditorMessages.placeholder);
+  const placeholderRef = useRef(resolvedPlaceholder);
+  placeholderRef.current = resolvedPlaceholder;
+  const getPlaceholder = useCallback(() => placeholderRef.current, []);
+  const editorExtensions = useMarkdownEditorExtensions(
+    getSlashConfig,
+    getMentionConfig,
+    getPlaceholder,
+  );
   const resolvedAriaLabel =
     ariaLabel ?? intl.formatMessage(markdownEditorMessages.taskDescriptionAria);
   const isMinimal = chrome === "minimal";
+  const minimalMinHeightClassName = compact ? "min-h-6" : "min-h-[3rem]";
   const editorContentClassName = cn(
     isMinimal ? markdownEditorMinimalContentClassName : markdownEditorContentClassName,
-    isMinimal ? "min-h-[3rem]" : "min-h-[8rem]",
+    isMinimal ? minimalMinHeightClassName : "min-h-[8rem]",
   );
 
   const scheduleBlurCommit = useCallback((hasEditorFocus: () => boolean) => {
@@ -180,8 +272,9 @@ export function MarkdownEditor({
       attributes: {
         class: editorContentClassName,
         "aria-label": resolvedAriaLabel,
-        "data-placeholder": resolvedPlaceholder,
       },
+      handleClick: (_view, _pos, event) =>
+        tryHandleMentionClick(event, onMentionNavigateRef.current),
       handleDOMEvents: {
         blur: (_view) => {
           scheduleBlurCommit(() => _view.hasFocus());
@@ -215,6 +308,15 @@ export function MarkdownEditor({
       return;
     }
 
+    // Placeholder text is read lazily; nudge decorations when it changes.
+    editor.view.dispatch(editor.state.tr.setMeta("placeholder", resolvedPlaceholder));
+  }, [editor, resolvedPlaceholder]);
+
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
     const currentMarkdown = editor.getMarkdown();
     if (currentMarkdown === value) {
       return;
@@ -233,8 +335,9 @@ export function MarkdownEditor({
         attributes: {
           class: editorContentClassName,
           "aria-label": resolvedAriaLabel,
-          "data-placeholder": resolvedPlaceholder,
         },
+        handleClick: (_view, _pos, event) =>
+          tryHandleMentionClick(event, onMentionNavigateRef.current),
         handleDOMEvents: {
           blur: (_view) => {
             scheduleBlurCommit(() => editor.view.hasFocus());
@@ -243,21 +346,32 @@ export function MarkdownEditor({
         },
       },
     });
-  }, [editor, editorContentClassName, resolvedAriaLabel, resolvedPlaceholder, scheduleBlurCommit]);
+  }, [editor, editorContentClassName, resolvedAriaLabel, scheduleBlurCommit]);
 
-  const placeholderStyles = cn(
-    "[&_.tiptap_p.is-editor-empty:first-child::before]:text-muted-foreground",
-    "[&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)]",
-    "[&_.tiptap_p.is-editor-empty:first-child::before]:float-left",
-    "[&_.tiptap_p.is-editor-empty:first-child::before]:h-0",
-    "[&_.tiptap_p.is-editor-empty:first-child::before]:pointer-events-none",
-  );
+  // Editable TipTap leaves Link clicks to the browser when openOnClick is false.
+  // Capture mention: navigation so drafts don't open raw mention URLs.
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    const dom = editor.view.dom;
+    const onClick = (event: MouseEvent) => {
+      tryHandleMentionClick(event, onMentionNavigateRef.current);
+    };
+    dom.addEventListener("click", onClick, true);
+    return () => {
+      dom.removeEventListener("click", onClick, true);
+    };
+  }, [editor]);
 
   if (!editor) {
     return (
       <div
         className={cn(
-          isMinimal ? "min-h-[3rem]" : "min-h-[8rem] rounded-lg border border-border bg-muted",
+          isMinimal
+            ? minimalMinHeightClassName
+            : "min-h-[8rem] rounded-lg border border-border bg-muted",
           !isMinimal && "resize-y overflow-auto",
           className,
         )}
@@ -271,9 +385,11 @@ export function MarkdownEditor({
       onBlur={handleRootFocusOut}
       className={cn(
         isMinimal
-          ? "[&_.tiptap]:min-h-[3rem]"
+          ? compact
+            ? "[&_.tiptap]:min-h-6"
+            : "[&_.tiptap]:min-h-[3rem]"
           : "rounded-lg border border-border bg-muted [&_.tiptap]:min-h-[8rem]",
-        placeholderStyles,
+        markdownPlaceholderStyles,
         disabled && "opacity-60",
         className,
       )}
@@ -284,7 +400,9 @@ export function MarkdownEditor({
       <EditorContent
         editor={editor}
         className={cn(
-          isMinimal ? "min-h-[3rem]" : "max-h-[32rem] min-h-[8rem] resize-y overflow-auto",
+          isMinimal
+            ? minimalMinHeightClassName
+            : "max-h-[32rem] min-h-[8rem] resize-y overflow-auto",
         )}
       />
       {!disabled ? (
@@ -304,15 +422,19 @@ export function MarkdownContent({
   className,
   contentClassName,
   ariaLabel,
+  onMentionNavigate,
 }: {
   value: string;
   className?: string;
   contentClassName?: string;
   ariaLabel?: string;
+  onMentionNavigate?: (mention: ParsedMarkdownMention) => void;
 }) {
   const intl = useIntl();
   const resolvedAriaLabel =
     ariaLabel ?? intl.formatMessage(markdownEditorMessages.markdownContentAria);
+  const onMentionNavigateRef = useRef(onMentionNavigate);
+  onMentionNavigateRef.current = onMentionNavigate;
 
   const editor = useEditor({
     extensions: markdownBaseExtensions,
@@ -325,6 +447,8 @@ export function MarkdownContent({
         class: cn(markdownEditorContentClassName, contentClassName),
         "aria-label": resolvedAriaLabel,
       },
+      handleClick: (_view, _pos, event) =>
+        tryHandleMentionClick(event, onMentionNavigateRef.current),
     },
   });
 
@@ -352,9 +476,28 @@ export function MarkdownContent({
           class: cn(markdownEditorContentClassName, contentClassName),
           "aria-label": resolvedAriaLabel,
         },
+        handleClick: (_view, _pos, event) =>
+          tryHandleMentionClick(event, onMentionNavigateRef.current),
       },
     });
   }, [contentClassName, editor, resolvedAriaLabel]);
+
+  // Non-editable TipTap skips Link click handling, so the browser follows
+  // <a href="mention:…"> (often target=_blank). Capture before that happens.
+  useEffect(() => {
+    if (!editor) {
+      return;
+    }
+
+    const dom = editor.view.dom;
+    const onClick = (event: MouseEvent) => {
+      tryHandleMentionClick(event, onMentionNavigateRef.current);
+    };
+    dom.addEventListener("click", onClick, true);
+    return () => {
+      dom.removeEventListener("click", onClick, true);
+    };
+  }, [editor]);
 
   if (!editor) {
     return (
@@ -379,12 +522,14 @@ export function MarkdownPreview({
   contentClassName,
   emptyMessage,
   chrome = "default",
+  onMentionNavigate,
 }: {
   value: string;
   className?: string;
   contentClassName?: string;
   emptyMessage?: string;
   chrome?: "default" | "minimal";
+  onMentionNavigate?: (mention: ParsedMarkdownMention) => void;
 }) {
   const intl = useIntl();
   const resolvedEmptyMessage =
@@ -416,6 +561,7 @@ export function MarkdownPreview({
         contentClassName,
       )}
       ariaLabel={previewAriaLabel}
+      onMentionNavigate={onMentionNavigate}
     />
   );
 }

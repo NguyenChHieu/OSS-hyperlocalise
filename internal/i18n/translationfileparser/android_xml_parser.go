@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 // AndroidXMLResourcesParser parses Android string resource XML files.
@@ -347,9 +348,285 @@ func isSelfClosingXMLStart(text string, endOffset int) bool {
 	return true
 }
 
+type tagSpan struct {
+	start int
+	end   int
+}
+
+func isAlphaNumDashColonDot(c byte) bool {
+	return (c >= 'a' && c <= 'z') ||
+		(c >= 'A' && c <= 'Z') ||
+		(c >= '0' && c <= '9') ||
+		c == '_' || c == '-' || c == ':' || c == '.'
+}
+
+func isXMLNameStartByte(c byte) bool {
+	return (c >= 'a' && c <= 'z') ||
+		(c >= 'A' && c <= 'Z') ||
+		c == '_' || c == ':'
+}
+
+// isXMLNameFast validates ASCII XML names accepted by encoding/xml's nsname().
+// Non-ASCII names return false so the caller can fall back to the decoder.
+func isXMLNameFast(name string) bool {
+	if name == "" {
+		return false
+	}
+	if !isXMLNameStartByte(name[0]) {
+		return false
+	}
+
+	colonCount := 0
+	if name[0] == ':' {
+		colonCount = 1
+	}
+	for i := 1; i < len(name); i++ {
+		c := name[i]
+		if c >= 0x80 || !isAlphaNumDashColonDot(c) {
+			return false
+		}
+		if c == ':' {
+			colonCount++
+			if colonCount > 1 {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isNamespaceDeclared(prefix, namespaceAttrs string) bool {
+	if prefix == "" {
+		return true
+	}
+	search := "xmlns:" + prefix + "="
+	return strings.Contains(namespaceAttrs, search)
+}
+
+func fastIsXMLFragmentWellFormed(value, namespaceAttrs string) bool {
+	var stack [8]tagSpan
+	depth := 0
+
+	i := 0
+	for i < len(value) {
+		if value[i] == '<' {
+			if i+1 >= len(value) {
+				return false
+			}
+
+			if value[i+1] == '/' {
+				// Closing tag
+				nameStart := i + 2
+				nameEnd := nameStart
+				for nameEnd < len(value) && isAlphaNumDashColonDot(value[nameEnd]) {
+					nameEnd++
+				}
+				if nameEnd == nameStart {
+					return false
+				}
+
+				tagName := value[nameStart:nameEnd]
+				if !isXMLNameFast(tagName) {
+					return false
+				}
+
+				idx := nameEnd
+				for idx < len(value) && isXMLWhitespace(value[idx]) {
+					idx++
+				}
+				if idx >= len(value) || value[idx] != '>' {
+					return false
+				}
+
+				if depth == 0 {
+					return false
+				}
+				depth--
+				expected := stack[depth]
+				if value[expected.start:expected.end] != tagName {
+					return false
+				}
+				i = idx + 1
+				continue
+			}
+
+			// Opening or self-closing tag
+			nameStart := i + 1
+			nameEnd := nameStart
+			for nameEnd < len(value) && isAlphaNumDashColonDot(value[nameEnd]) {
+				nameEnd++
+			}
+			if nameEnd == nameStart {
+				return false
+			}
+
+			tagName := value[nameStart:nameEnd]
+			if !isXMLNameFast(tagName) {
+				return false
+			}
+			colonIdx := strings.IndexByte(tagName, ':')
+			if colonIdx >= 0 {
+				prefix := tagName[:colonIdx]
+				if !isNamespaceDeclared(prefix, namespaceAttrs) {
+					return false
+				}
+			}
+
+			idx := nameEnd
+			selfClosing := false
+			for {
+				// Skip whitespace
+				for idx < len(value) && isXMLWhitespace(value[idx]) {
+					idx++
+				}
+				if idx >= len(value) {
+					return false
+				}
+
+				if value[idx] == '>' {
+					idx++
+					break
+				}
+
+				if value[idx] == '/' {
+					idx++
+					// XML requires "/>" with no whitespace between '/' and '>'.
+					if idx < len(value) && value[idx] == '>' {
+						selfClosing = true
+						idx++
+						break
+					}
+					return false
+				}
+
+				// Attribute name
+				attrStart := idx
+				for idx < len(value) && isAlphaNumDashColonDot(value[idx]) {
+					idx++
+				}
+				if idx == attrStart {
+					return false
+				}
+				attrName := value[attrStart:idx]
+				if !isXMLNameFast(attrName) {
+					return false
+				}
+				attrColon := strings.IndexByte(attrName, ':')
+				if attrColon >= 0 {
+					prefix := attrName[:attrColon]
+					if !isNamespaceDeclared(prefix, namespaceAttrs) {
+						return false
+					}
+				}
+
+				// Skip whitespace before '='
+				for idx < len(value) && isXMLWhitespace(value[idx]) {
+					idx++
+				}
+				if idx >= len(value) || value[idx] != '=' {
+					return false
+				}
+				idx++ // Skip '='
+
+				// Skip whitespace after '='
+				for idx < len(value) && isXMLWhitespace(value[idx]) {
+					idx++
+				}
+				if idx >= len(value) {
+					return false
+				}
+
+				quote := value[idx]
+				if quote != '"' && quote != '\'' {
+					return false
+				}
+				idx++ // Skip quote
+
+				for idx < len(value) && value[idx] != quote {
+					c := value[idx]
+					if c == '<' || c == '&' {
+						return false
+					}
+					size := scanXMLCharSize(value, idx)
+					if size <= 0 {
+						return false
+					}
+					idx += size
+				}
+				if idx >= len(value) {
+					return false
+				}
+				idx++ // Skip closing quote
+			}
+
+			if !selfClosing {
+				if depth >= len(stack) {
+					return false
+				}
+				stack[depth] = tagSpan{start: nameStart, end: nameEnd}
+				depth++
+			}
+			i = idx
+			continue
+		} else if value[i] == '&' {
+			semiOffset := strings.IndexByte(value[i+1:], ';')
+			if semiOffset < 0 {
+				return false
+			}
+			entity := value[i+1 : i+1+semiOffset]
+			if !isXMLTextEntityReference(entity) {
+				return false
+			}
+			i += 1 + semiOffset + 1
+			continue
+		} else if value[i] == ']' {
+			// XML forbids the character-data terminator "]]>" outside CDATA.
+			if i+2 < len(value) && value[i+1] == ']' && value[i+2] == '>' {
+				return false
+			}
+			i++
+			continue
+		} else {
+			size := scanXMLCharSize(value, i)
+			if size <= 0 {
+				return false
+			}
+			i += size
+		}
+	}
+
+	return depth == 0
+}
+
+// scanXMLCharSize returns the byte length of the XML Char at value[i], or 0 if
+// the byte sequence is not a legal XML character.
+func scanXMLCharSize(value string, i int) int {
+	c := value[i]
+	if c < 0x80 {
+		if c == 0x09 || c == 0x0A || c == 0x0D || c >= 0x20 {
+			return 1
+		}
+		return 0
+	}
+	r, size := utf8.DecodeRuneInString(value[i:])
+	if r == utf8.RuneError && size == 1 {
+		return 0
+	}
+	if !isXMLCharacterRange(r) {
+		return 0
+	}
+	return size
+}
+
 func encodeAndroidResourceValue(value, namespaceAttrs string) string {
 	// BOLT OPTIMIZATION: Fast-path for strings without '<', '&', or '>' to skip expensive XML well-formedness checks.
 	if !strings.ContainsAny(value, "<&>") {
+		return value
+	}
+
+	// BOLT OPTIMIZATION: Zero-allocation fast-path to check XML fragment well-formedness
+	// without creating a bytes.Buffer or instantiating an xml.Decoder.
+	if fastIsXMLFragmentWellFormed(value, namespaceAttrs) {
 		return value
 	}
 

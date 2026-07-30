@@ -1,5 +1,23 @@
 # Crowdin Steward's Journal
 
+## 2026-07-29 - Validate derived exportWithMinApprovalsCount from exportApprovedOnly
+
+**Learning:** `ExportTranslationRequest.MarshalJSON` maps `exportApprovedOnly=true` to `exportWithMinApprovalsCount=1` when no explicit approval count is set. Validating only the explicit `ExportWithMinApprovalsCount` field let `exportApprovedOnly=true` + `exportStringsThatPassedWorkflow=true` pass client validation and still serialize into the incompatible API pair.
+
+**Action:** Updated `ExportTranslationRequest.Validate()` to apply the same derived approvals-count logic as `MarshalJSON` before enforcing mutual exclusivity with `exportStringsThatPassedWorkflow`, and added regression tests covering both the derived and explicit-zero cases.
+
+## 2026-12-20 - Add ExportTranslationRequest validation parity
+
+**Learning:** In Crowdin API v2, the Export Project Translation request body contains several fields that are strictly mutually exclusive, such as `branchIds`, `directoryIds`, and `fileIds` (only one can be targeted per request), as well as boolean flag pairs like `skipUntranslatedStrings`/`skipUntranslatedFiles` and `exportWithMinApprovalsCount`/`exportStringsThatPassedWorkflow`. Lacking client-side validation for these constraints could lead to invalid payloads being transmitted and failing at the API gateway layer.
+
+**Action:** Added validations to `ExportTranslationRequest.Validate()` in `model/translations.go` to enforce these mutual exclusivity constraints and expanded the unit test suite in `model/translations_test.go` and `translations_test.go` to assert correct validation behavior and request alignment.
+
+## 2026-12-19 - Align AI Translate with Crowdin API v2
+
+**Learning:** The `POST /ai/translate` endpoint accepts several optional body fields like `sourceLanguageId`, `aiPromptId`, `tmIds`, `glossaryIds`, and `instructions` to customize on-demand translations. Additionally, its response contains `sourceLanguageId` and `targetLanguageId`. The initial SDK implementation was heavily simplified and missing these fields, which prevented utilizing Corporate AI pipelines with custom glossaries and translation memories.
+
+**Action:** Updated `AITranslateRequest` and `AITranslate` response models in `crowdin/model/ai.go` to include the missing fields with proper JSON mappings, and expanded the test suite in `crowdin/ai_test.go` and `crowdin/model/ai_test.go` to validate and test serialize/parse these fields end-to-end.
+
 ## 2026-12-12 - Fix CheckGlossaryImportStatus importID type mismatch
 
 **Learning:** In Crowdin API v2, the glossary import background job is initiated by `ImportGlossary` which returns a string UUID `identifier` representing the job. Consequently, checking the status of this background job via the Check Glossary Import Status endpoint (`GET /api/v2/glossaries/{glossaryId}/imports/{importId}`) requires passing this string UUID. However, the SDK incorrectly typed `importID` as an `int` and formatted the request URL using `%d`, rendering the status check unusable under real-world scenarios.

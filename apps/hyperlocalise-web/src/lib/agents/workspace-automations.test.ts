@@ -22,6 +22,8 @@ import { claimGithubRepositoryAutomationJob } from "./github/github-repository-a
 import {
   createWorkspaceAutomation,
   createWorkspaceAutomationRun,
+  getWorkspaceAutomationById,
+  hoistLegacyWorkspaceAutomationProjectId,
   listDueContentfulWorkspaceAutomations,
   listWorkspaceAutomations,
   listWorkspaceAutomationRuns,
@@ -109,6 +111,37 @@ async function seedWorkspaceAutomationScope() {
   };
 }
 
+describe("hoistLegacyWorkspaceAutomationProjectId", () => {
+  it("hoists when every legacy tool projectId agrees", () => {
+    expect(
+      hoistLegacyWorkspaceAutomationProjectId({
+        contentful: { projectId: "project-a" },
+        translation: { projectId: "project-a" },
+        github: { projectId: "project-a" },
+      }),
+    ).toBe("project-a");
+  });
+
+  it("hoists the only non-empty legacy tool projectId", () => {
+    expect(
+      hoistLegacyWorkspaceAutomationProjectId({
+        contentful: { enabled: true },
+        github: { projectId: "project-b" },
+      }),
+    ).toBe("project-b");
+  });
+
+  it("refuses to hoist when legacy tool projectIds conflict", () => {
+    expect(
+      hoistLegacyWorkspaceAutomationProjectId({
+        contentful: { projectId: "project-contentful" },
+        translation: { projectId: "project-header" },
+        github: { projectId: "project-header" },
+      }),
+    ).toBeNull();
+  });
+});
+
 describe("workspace automations", () => {
   beforeAll(async () => {
     await db.$client.query("select 1");
@@ -118,6 +151,60 @@ describe("workspace automations", () => {
     for (const organizationId of organizationIds.splice(0)) {
       await db.delete(schema.organizations).where(eq(schema.organizations.id, organizationId));
     }
+  });
+
+  it("does not collapse conflicting legacy tool projectIds onto one automation project", async () => {
+    const scope = await seedWorkspaceAutomationScope();
+    const otherProjectId = `project-other-${scope.organizationId.slice(0, 8)}`;
+    await db.insert(schema.projects).values({
+      id: otherProjectId,
+      organizationId: scope.organizationId,
+      createdByUserId: scope.userId,
+      name: "Contentful Project",
+    });
+
+    const [row] = await db
+      .insert(schema.workspaceAutomations)
+      .values({
+        organizationId: scope.organizationId,
+        authorUserId: scope.userId,
+        status: "active",
+        name: "Legacy mismatched projects",
+        instructions: "Translate Contentful and sync GitHub.",
+        projectId: null,
+        triggerConfig: { mode: "manual" },
+        repositoryTarget: {
+          kind: "github",
+          githubInstallationRepositoryId: scope.githubInstallationRepositoryId,
+        },
+        githubInstallationRepositoryId: scope.githubInstallationRepositoryId,
+        toolConfig: {
+          contentful: {
+            enabled: true,
+            connectionId: crypto.randomUUID(),
+            projectId: otherProjectId,
+            sourceLocale: "en",
+            targetLocales: ["fr"],
+          },
+          github: {
+            enabled: true,
+            mode: "sync",
+            projectId: scope.projectId,
+            pushSource: true,
+            pullTranslations: false,
+            validation: false,
+          },
+        },
+      })
+      .returning();
+
+    const automation = await getWorkspaceAutomationById({
+      automationId: row!.id,
+      organizationId: scope.organizationId,
+    });
+
+    // Fail closed: do not prefer Contentful (or any tool) and retarget GitHub.
+    expect(automation?.projectId).toBeNull();
   });
 
   it("creates automations with safe defaults and serializes next-run storage", async () => {
@@ -158,6 +245,7 @@ describe("workspace automations", () => {
       authorUserId: scope.userId,
       name: "Broken GitHub automation",
       instructions: "Run GitHub automation.",
+      projectId: scope.projectId,
       toolConfig: {
         github: {
           enabled: true,
@@ -197,7 +285,7 @@ describe("workspace automations", () => {
     if (missingProject.ok) {
       throw new Error("expected validation error");
     }
-    expect(missingProject.error.code).toBe("github_project_required");
+    expect(missingProject.error.code).toBe("project_required");
   });
 
   it("rejects scheduled automations without a GitHub or Contentful workflow", async () => {
@@ -284,12 +372,12 @@ describe("workspace automations", () => {
       authorUserId: scope.userId,
       name: "Scheduled Contentful automation",
       instructions: "Translate the configured entry on a schedule.",
+      projectId: scope.projectId,
       triggerConfig,
       toolConfig: {
         contentful: {
           enabled: true,
           connectionId: crypto.randomUUID(),
-          projectId: scope.projectId,
           sourceLocale: "en",
           targetLocales: ["fr"],
           contentTypeIds: ["article"],
@@ -329,6 +417,7 @@ describe("workspace automations", () => {
         authorUserId: scope.userId,
         name: "Due GitHub automation",
         instructions: "Run GitHub automation first.",
+        projectId: scope.projectId,
         repositoryTarget: {
           kind: "github",
           githubInstallationRepositoryId: scope.githubInstallationRepositoryId,
@@ -338,7 +427,6 @@ describe("workspace automations", () => {
           github: {
             enabled: true,
             mode: "sync",
-            projectId: scope.projectId,
             pushSource: true,
             pullTranslations: false,
             validation: false,
@@ -353,12 +441,12 @@ describe("workspace automations", () => {
         authorUserId: scope.userId,
         name: "Earlier due Contentful automation",
         instructions: "Run Contentful automation first.",
+        projectId: scope.projectId,
         triggerConfig,
         toolConfig: {
           contentful: {
             enabled: true,
             connectionId: crypto.randomUUID(),
-            projectId: scope.projectId,
             sourceLocale: "en",
             entryId: "entry-scheduled-1",
             targetLocales: ["fr"],
@@ -378,12 +466,12 @@ describe("workspace automations", () => {
         authorUserId: scope.userId,
         name: "Later due Contentful automation",
         instructions: "Run Contentful automation second.",
+        projectId: scope.projectId,
         triggerConfig,
         toolConfig: {
           contentful: {
             enabled: true,
             connectionId: crypto.randomUUID(),
-            projectId: scope.projectId,
             sourceLocale: "en",
             entryId: "entry-scheduled-2",
             targetLocales: ["fr"],
@@ -427,6 +515,7 @@ describe("workspace automations", () => {
         authorUserId: scope.userId,
         name: "Repository automation",
         instructions: "Run repository automation.",
+        projectId: scope.projectId,
         repositoryTarget: {
           kind: "github",
           githubInstallationRepositoryId: scope.githubInstallationRepositoryId,
@@ -443,7 +532,6 @@ describe("workspace automations", () => {
           github: {
             enabled: true,
             mode: "sync",
-            projectId: scope.projectId,
             pushSource: true,
             pullTranslations: false,
             validation: true,
@@ -706,5 +794,129 @@ describe("workspace automations", () => {
 
     expect(firstPage.map((item) => item.inputSnapshot)).toEqual([{ index: 3 }, { index: 2 }]);
     expect(secondPage.map((item) => item.inputSnapshot)).toEqual([{ index: 1 }]);
+  });
+
+  it("rejects Slack, email, and MCP tools when integrations are missing or disabled", async () => {
+    const scope = await seedWorkspaceAutomationScope();
+    const base = {
+      organizationId: scope.organizationId,
+      authorUserId: scope.userId,
+      name: "Integration gated automation",
+      instructions: "Notify operators.",
+      projectId: scope.projectId,
+      triggerConfig: { mode: "manual" as const },
+      repositoryTarget: { kind: "none" as const },
+    };
+
+    const slackMissing = await createWorkspaceAutomation({
+      ...base,
+      toolConfig: {
+        slack: { enabled: true, channelId: "C123" },
+      },
+    });
+    expect(slackMissing.ok).toBe(false);
+    if (slackMissing.ok) {
+      throw new Error("expected slack validation error");
+    }
+    expect(slackMissing.error.code).toBe("slack_not_connected");
+
+    await db.insert(schema.connectors).values({
+      organizationId: scope.organizationId,
+      kind: "email",
+      enabled: false,
+    });
+    const emailDisabled = await createWorkspaceAutomation({
+      ...base,
+      toolConfig: {
+        email: { enabled: true, recipients: ["ops@example.test"] },
+      },
+    });
+    expect(emailDisabled.ok).toBe(false);
+    if (emailDisabled.ok) {
+      throw new Error("expected email validation error");
+    }
+    expect(emailDisabled.error.code).toBe("email_not_connected");
+
+    const mcpMissing = await createWorkspaceAutomation({
+      ...base,
+      toolConfig: {
+        mcp: {
+          enabled: true,
+          connectionId: "11111111-1111-4111-8111-111111111111",
+        },
+      },
+    });
+    expect(mcpMissing.ok).toBe(false);
+    if (mcpMissing.ok) {
+      throw new Error("expected mcp not-found validation error");
+    }
+    expect(mcpMissing.error.code).toBe("mcp_connection_not_found");
+
+    const [mcpConnection] = await db
+      .insert(schema.mcpServerConnections)
+      .values({
+        organizationId: scope.organizationId,
+        createdByUserId: scope.userId,
+        displayName: "Disabled MCP",
+        serverUrl: "https://mcp.example.test/mcp",
+        transport: "http",
+        authKind: "none",
+        enabled: false,
+        encryptionAlgorithm: "aes-256-gcm",
+        ciphertext: "ciphertext",
+        iv: "iv",
+        authTag: "tag",
+        maskedTokenSuffix: "none",
+      })
+      .returning();
+    if (!mcpConnection) {
+      throw new Error("failed to seed mcp connection");
+    }
+
+    const mcpDisabled = await createWorkspaceAutomation({
+      ...base,
+      toolConfig: {
+        mcp: {
+          enabled: true,
+          connectionId: mcpConnection.id,
+        },
+      },
+    });
+    expect(mcpDisabled.ok).toBe(false);
+    if (mcpDisabled.ok) {
+      throw new Error("expected mcp disabled validation error");
+    }
+    expect(mcpDisabled.error.code).toBe("mcp_not_connected");
+  });
+
+  it("hoists legacy nested project IDs from tool config", () => {
+    expect(
+      hoistLegacyWorkspaceAutomationProjectId({
+        github: { projectId: " github-project " },
+      }),
+    ).toBe("github-project");
+    expect(
+      hoistLegacyWorkspaceAutomationProjectId({
+        contentful: { projectId: "shared-project" },
+        translation: { projectId: "shared-project" },
+        github: { projectId: "shared-project" },
+      }),
+    ).toBe("shared-project");
+    // Fail closed: do not prefer Contentful/translation when legacy IDs disagree.
+    expect(
+      hoistLegacyWorkspaceAutomationProjectId({
+        contentful: { projectId: "contentful-project" },
+        translation: { projectId: "translation-project" },
+        github: { projectId: "github-project" },
+      }),
+    ).toBeNull();
+    expect(
+      hoistLegacyWorkspaceAutomationProjectId({
+        translation: { projectId: "translation-project" },
+        github: { projectId: "github-project" },
+      }),
+    ).toBeNull();
+    expect(hoistLegacyWorkspaceAutomationProjectId({ github: { projectId: "   " } })).toBeNull();
+    expect(hoistLegacyWorkspaceAutomationProjectId({})).toBeNull();
   });
 });

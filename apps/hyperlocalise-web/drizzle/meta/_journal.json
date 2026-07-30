@@ -498,6 +498,13 @@
       "when": 1785329725960,
       "tag": "0070_slimy_nightmare",
       "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1785371643997,
+      "tag": "0071_next_whiplash",
+      "breakpoints": true
     }
   ]
 }

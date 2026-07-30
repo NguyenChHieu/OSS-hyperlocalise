@@ -39,6 +39,7 @@ function automation(): WorkspaceAutomationRecord {
     status: "active",
     name: "Nightly sync",
     instructions: "Keep product names consistent.",
+    projectId: null,
     triggerConfig: { mode: "manual" },
     repositoryTarget: { kind: "none" },
     toolConfig: {},

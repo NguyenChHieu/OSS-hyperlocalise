@@ -91,6 +91,11 @@ export const issueSheetPageContentMessages = defineMessages({
     id: "4No/FCwLf4",
     description: "Table column header for the issue link",
   },
+  columnAssignee: {
+    defaultMessage: "Assignee",
+    id: "hVUJVF+t4e",
+    description: "Table column header for issue assignee",
+  },
   loadingIssues: {
     defaultMessage: "Loading issues…",
     id: "NpTAZ+fM1z",
@@ -100,16 +105,6 @@ export const issueSheetPageContentMessages = defineMessages({
     defaultMessage: "Issues could not be loaded.",
     id: "dj9zRisspO",
     description: "Error state when Issue Sheet rows fail to load",
-  },
-  noDetailsYet: {
-    defaultMessage: "No details yet",
-    id: "fd5kFNowDQ",
-    description: "Fallback detail line when an issue has no description or source context",
-  },
-  issueKey: {
-    defaultMessage: "Key: {key}",
-    id: "DSKOYVYVQJ",
-    description: "Shows the string key associated with an Issue Sheet row",
   },
   emptyTitle: {
     defaultMessage: "No issues in this view.",

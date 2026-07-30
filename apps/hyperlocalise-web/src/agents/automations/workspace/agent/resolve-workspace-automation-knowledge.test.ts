@@ -99,4 +99,43 @@ describe("resolveWorkspaceAutomationKnowledgeContext", () => {
       context: "Nightly sync",
     });
   });
+
+  it("includeOverride: false excludes org knowledge even when the legacy toggle is enabled", async () => {
+    await expect(
+      resolveWorkspaceAutomationKnowledgeContext({
+        organizationId: "org-1",
+        automation: automation({ knowledge: { enabled: true } }),
+        includeOverride: false,
+      }),
+    ).resolves.toBeNull();
+    expect(getKnowledgeMemoryForOrganizationMock).not.toHaveBeenCalled();
+  });
+
+  it("includeOverride: true includes org knowledge even when the legacy toggle is disabled", async () => {
+    getKnowledgeMemoryForOrganizationMock.mockResolvedValue({
+      content: "# Style\nUse sentence case.",
+      updatedAt: null,
+      updatedByUserId: null,
+    });
+    selectKnowledgeMemoryContextMock.mockReturnValue({
+      compactText: "Use sentence case.",
+      segments: [],
+      metrics: {
+        selectedMemoryCount: 1,
+        selectedMemoryChars: 18,
+        wholeMemoryChars: 24,
+        reductionPercent: 25,
+        matchedHeadingPaths: [],
+        fallbackMode: "selective",
+      },
+    });
+
+    await expect(
+      resolveWorkspaceAutomationKnowledgeContext({
+        organizationId: "org-1",
+        automation: automation({}),
+        includeOverride: true,
+      }),
+    ).resolves.toBe("Use sentence case.");
+  });
 });

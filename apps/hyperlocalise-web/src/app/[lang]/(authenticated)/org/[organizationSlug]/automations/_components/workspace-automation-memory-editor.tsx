@@ -50,6 +50,7 @@ export function WorkspaceAutomationMemoryEditor({
   const [savedWorkspaceAutomationMemory, setSavedWorkspaceAutomationMemory] =
     useState<WorkspaceAutomationMemoryRecordDto | null>(null);
   const [includeOrgKnowledge, setIncludeOrgKnowledge] = useState(true);
+  const [savedIncludeOrgKnowledge, setSavedIncludeOrgKnowledge] = useState(true);
   const [summary, setSummary] = useState("");
   const [savedEtag, setSavedEtag] = useState('"0"');
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -79,7 +80,12 @@ export function WorkspaceAutomationMemoryEditor({
   useEffect(() => {
     if (
       !workspaceAutomationMemoryQuery.data ||
-      !shouldApplyWorkspaceAutomationMemoryRefresh({ content, savedContent })
+      !shouldApplyWorkspaceAutomationMemoryRefresh({
+        content,
+        savedContent,
+        includeOrgKnowledge,
+        savedIncludeOrgKnowledge,
+      })
     ) {
       return;
     }
@@ -88,11 +94,18 @@ export function WorkspaceAutomationMemoryEditor({
     setSavedContent(loaded.content);
     setSavedWorkspaceAutomationMemory(loaded);
     setIncludeOrgKnowledge(loaded.includeOrgKnowledge);
+    setSavedIncludeOrgKnowledge(loaded.includeOrgKnowledge);
     setSavedEtag(workspaceAutomationMemoryQuery.data.etag);
     setSummary("");
     setConflict(null);
     setContent(loaded.content);
-  }, [content, savedContent, workspaceAutomationMemoryQuery.data]);
+  }, [
+    content,
+    savedContent,
+    includeOrgKnowledge,
+    savedIncludeOrgKnowledge,
+    workspaceAutomationMemoryQuery.data,
+  ]);
 
   const applyLoadedWorkspaceAutomationMemory = useCallback(
     (workspaceAutomationMemory: WorkspaceAutomationMemoryRecordDto, etag: string) => {
@@ -100,6 +113,7 @@ export function WorkspaceAutomationMemoryEditor({
       setSavedContent(workspaceAutomationMemory.content);
       setSavedWorkspaceAutomationMemory(workspaceAutomationMemory);
       setIncludeOrgKnowledge(workspaceAutomationMemory.includeOrgKnowledge);
+      setSavedIncludeOrgKnowledge(workspaceAutomationMemory.includeOrgKnowledge);
       setSavedEtag(etag);
       setSummary("");
       setConflict(null);
@@ -162,6 +176,7 @@ export function WorkspaceAutomationMemoryEditor({
         setConflict({
           draftContent: input.content,
           draftSummary: input.summary,
+          draftIncludeOrgKnowledge: input.includeOrgKnowledge,
           latestEtag: result.latestEtag,
           latestWorkspaceAutomationMemory: result.latestWorkspaceAutomationMemory,
         });
@@ -180,6 +195,8 @@ export function WorkspaceAutomationMemoryEditor({
   const currentEditorState = getWorkspaceAutomationMemoryEditorState({
     content,
     savedContent,
+    includeOrgKnowledge,
+    savedIncludeOrgKnowledge,
     canUpdateWorkspaceAutomationMemory,
     isSaving: saveWorkspaceAutomationMemory.isPending,
   });
@@ -234,7 +251,7 @@ export function WorkspaceAutomationMemoryEditor({
           saveWorkspaceAutomationMemory.mutate({
             content: conflict.draftContent,
             summary: conflict.draftSummary,
-            includeOrgKnowledge,
+            includeOrgKnowledge: conflict.draftIncludeOrgKnowledge,
             expectedEtag: conflict.latestEtag,
           });
         }}
@@ -252,6 +269,9 @@ export function WorkspaceAutomationMemoryEditor({
           setConflict({
             draftContent: revision.content,
             draftSummary: `Restored version ${revision.version}`,
+            // Revisions don't carry includeOrgKnowledge (it's a head-only field, not versioned) —
+            // carry forward whatever is currently set in the editor.
+            draftIncludeOrgKnowledge: includeOrgKnowledge,
             latestEtag: etag,
             latestWorkspaceAutomationMemory: workspaceAutomationMemory,
           });

@@ -39,12 +39,16 @@ export function parseWorkspaceAutomationMemoryPreconditionFailure(
 export function getWorkspaceAutomationMemoryEditorState(input: {
   content: string;
   savedContent: string;
+  includeOrgKnowledge: boolean;
+  savedIncludeOrgKnowledge: boolean;
   canUpdateWorkspaceAutomationMemory: boolean;
   isSaving: boolean;
 }) {
   const characterCount = input.content.length;
   const isOverLimit = characterCount > WORKSPACE_AUTOMATION_MEMORY_CONTENT_MAX_LENGTH;
-  const hasChanges = input.content !== input.savedContent;
+  const hasChanges =
+    input.content !== input.savedContent ||
+    input.includeOrgKnowledge !== input.savedIncludeOrgKnowledge;
 
   return {
     characterCount,
@@ -59,6 +63,11 @@ export function getWorkspaceAutomationMemoryEditorState(input: {
 export function shouldApplyWorkspaceAutomationMemoryRefresh(input: {
   content: string;
   savedContent: string;
+  includeOrgKnowledge: boolean;
+  savedIncludeOrgKnowledge: boolean;
 }) {
-  return input.content === input.savedContent;
+  return (
+    input.content === input.savedContent &&
+    input.includeOrgKnowledge === input.savedIncludeOrgKnowledge
+  );
 }

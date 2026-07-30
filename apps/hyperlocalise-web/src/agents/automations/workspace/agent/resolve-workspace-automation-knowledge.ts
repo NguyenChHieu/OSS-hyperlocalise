@@ -18,14 +18,17 @@ export async function resolveWorkspaceAutomationKnowledgeContext(input: {
   organizationId: string;
   automation: WorkspaceAutomationRecord;
   /**
-   * Skips the `toolConfig.knowledge.enabled` gate. Used when the automation has its own Memory
-   * (see resolve-workspace-automation-memory.ts) — there, the Memory tab's "Also include
-   * organization-wide Memory" checkbox is the authority on org-knowledge inclusion, not this
-   * automation's older Memories tool toggle.
+   * Overrides the `toolConfig.knowledge.enabled` gate in both directions. Used when the
+   * automation has its own Memory (see resolve-workspace-automation-memory.ts) — there, the
+   * Memory tab's "Also include organization-wide Memory" checkbox is the authority on
+   * org-knowledge inclusion (true forces it in, false forces it out), not this automation's
+   * older Memories tool toggle. Leave undefined to fall back to that toggle unchanged.
    */
-  forceInclude?: boolean;
+  includeOverride?: boolean;
 }): Promise<string | null> {
-  if (!input.forceInclude && !input.automation.toolConfig.knowledge?.enabled) {
+  const shouldInclude =
+    input.includeOverride ?? Boolean(input.automation.toolConfig.knowledge?.enabled);
+  if (!shouldInclude) {
     return null;
   }
 

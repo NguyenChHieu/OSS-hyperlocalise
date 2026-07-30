@@ -61,6 +61,7 @@ const workspaceAutomationMemoryRevisionQueryKey = (
 export type WorkspaceAutomationMemoryConflict = {
   draftContent: string;
   draftSummary?: string;
+  draftIncludeOrgKnowledge: boolean;
   latestEtag: string;
   latestWorkspaceAutomationMemory: WorkspaceAutomationMemoryRecordDto;
 };

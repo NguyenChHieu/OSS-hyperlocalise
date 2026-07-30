@@ -167,8 +167,10 @@ export async function runWorkspaceOrchestrator(input: {
     automation,
     // With no automation-specific Memory, org knowledge stays gated by the existing
     // toolConfig.knowledge.enabled toggle (unchanged behavior). Once the automation has its own
-    // Memory, its "Also include organization-wide Memory" checkbox is the authority instead.
-    forceInclude: automationMemory.content !== null && automationMemory.includeOrgKnowledge,
+    // Memory, its "Also include organization-wide Memory" checkbox is authoritative in both
+    // directions — it can force org knowledge in OR out, overriding the legacy toggle.
+    includeOverride:
+      automationMemory.content !== null ? automationMemory.includeOrgKnowledge : undefined,
   });
   const composedInstructions = composeWorkspaceAutomationInstructions({
     templateSkillId,

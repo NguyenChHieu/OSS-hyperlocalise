@@ -250,6 +250,95 @@ describe("CatReviewController", () => {
       expect(workspace.getSegmentView("seg-02")?.status).toBe("needs_review");
     });
 
+    it("removes the approved row when Needs Review filter no longer matches", async () => {
+      const onApprove = vi.fn().mockResolvedValue("reviewed");
+      const workspace = createTestWorkspace({
+        selectedSegmentId: "seg-02",
+        segments: [
+          {
+            id: "seg-01",
+            index: 1,
+            key: "first",
+            sourceText: "First",
+            targetText: "Premier",
+            sourceLocale: "en-US",
+            targetLocale: "vi",
+            status: "needs_review",
+          },
+          {
+            id: "seg-02",
+            index: 2,
+            key: "second",
+            sourceText: "Second",
+            targetText: "Deuxième",
+            sourceLocale: "en-US",
+            targetLocale: "vi",
+            status: "needs_review",
+          },
+          {
+            id: "seg-03",
+            index: 3,
+            key: "third",
+            sourceText: "Third",
+            targetText: "Troisième",
+            sourceLocale: "en-US",
+            targetLocale: "vi",
+            status: "needs_review",
+          },
+        ],
+      });
+      const { controller } = createController(workspace, {
+        review: { onApprove },
+        queueFilter: "needs_review",
+        usesServerQueueFilter: true,
+      });
+
+      await controller.approve("seg-02", "Deuxième");
+
+      expect(workspace.queueSegments.map((segment) => segment.id)).toEqual(["seg-01", "seg-03"]);
+      expect(workspace.getSegmentView("seg-02")).toBeUndefined();
+      expect(workspace.selectedSegmentId).toBe("seg-03");
+    });
+
+    it("advances selection before dropping the last Needs Review row", async () => {
+      const onApprove = vi.fn().mockResolvedValue("reviewed");
+      const workspace = createTestWorkspace({
+        selectedSegmentId: "seg-02",
+        segments: [
+          {
+            id: "seg-01",
+            index: 1,
+            key: "first",
+            sourceText: "First",
+            targetText: "Premier",
+            sourceLocale: "en-US",
+            targetLocale: "vi",
+            status: "needs_review",
+          },
+          {
+            id: "seg-02",
+            index: 2,
+            key: "second",
+            sourceText: "Second",
+            targetText: "Deuxième",
+            sourceLocale: "en-US",
+            targetLocale: "vi",
+            status: "needs_review",
+          },
+        ],
+      });
+      const { controller } = createController(workspace, {
+        review: { onApprove },
+        queueFilter: "needs_review",
+        usesServerQueueFilter: true,
+      });
+
+      await controller.approve("seg-02", "Deuxième");
+
+      expect(workspace.queueSegments.map((segment) => segment.id)).toEqual(["seg-01"]);
+      expect(workspace.selectedSegmentId).toBe("seg-01");
+    });
+
     it("adds save failure checks when approve fails", async () => {
       const { controller, workspace } = createController(undefined, {
         review: {
@@ -389,6 +478,108 @@ describe("CatReviewController", () => {
 
       expect(workspace.getSegmentView("seg-02")?.status).toBe("skipped");
       expect(onSkip).toHaveBeenCalledWith("seg-02");
+    });
+
+    it("hides skipped rows under Needs Review without losing the local skipped status", () => {
+      const workspace = createTestWorkspace({
+        selectedSegmentId: "seg-02",
+        segments: [
+          {
+            id: "seg-01",
+            index: 1,
+            key: "first",
+            sourceText: "First",
+            targetText: "Premier",
+            sourceLocale: "en-US",
+            targetLocale: "vi",
+            status: "needs_review",
+          },
+          {
+            id: "seg-02",
+            index: 2,
+            key: "second",
+            sourceText: "Second",
+            targetText: "Deuxième",
+            sourceLocale: "en-US",
+            targetLocale: "vi",
+            status: "needs_review",
+          },
+          {
+            id: "seg-03",
+            index: 3,
+            key: "third",
+            sourceText: "Third",
+            targetText: "Troisième",
+            sourceLocale: "en-US",
+            targetLocale: "vi",
+            status: "needs_review",
+          },
+        ],
+      });
+      const { controller } = createController(workspace, {
+        queueFilter: "needs_review",
+        usesServerQueueFilter: true,
+      });
+
+      controller.skip("seg-02");
+
+      expect(workspace.getSegmentView("seg-02")?.status).toBe("skipped");
+      expect(workspace.localStatusOverrides.get("seg-02")).toBe("skipped");
+      expect(
+        workspace.getFilteredQueueSegments("needs_review", true).map((segment) => segment.id),
+      ).toEqual(["seg-01", "seg-03"]);
+      expect(workspace.selectedSegmentId).toBe("seg-03");
+      expect(
+        workspace.getFilteredQueueSegments("skipped", false).map((segment) => segment.id),
+      ).toEqual(["seg-02"]);
+    });
+
+    it("keeps local skipped status after the server queue snapshot refreshes", () => {
+      const workspace = createTestWorkspace({
+        selectedSegmentId: "seg-02",
+        segments: [
+          {
+            id: "seg-01",
+            index: 1,
+            key: "first",
+            sourceText: "First",
+            targetText: "Premier",
+            sourceLocale: "en-US",
+            targetLocale: "vi",
+            status: "needs_review",
+          },
+          {
+            id: "seg-02",
+            index: 2,
+            key: "second",
+            sourceText: "Second",
+            targetText: "Deuxième",
+            sourceLocale: "en-US",
+            targetLocale: "vi",
+            status: "needs_review",
+          },
+        ],
+      });
+      const { controller } = createController(workspace, {
+        queueFilter: "needs_review",
+        usesServerQueueFilter: true,
+      });
+
+      controller.skip("seg-02");
+      workspace.hydrateFromServerSnapshot(
+        createCatWorkspaceState({
+          selectedSegmentId: "seg-01",
+          queueSegments: [
+            { id: "seg-01", index: 1, key: "first", sourceText: "First" },
+            { id: "seg-02", index: 2, key: "second", sourceText: "Second" },
+          ],
+        }),
+      );
+
+      expect(workspace.getSegmentView("seg-02")?.status).toBe("skipped");
+      expect(
+        workspace.getFilteredQueueSegments("needs_review", true).map((segment) => segment.id),
+      ).toEqual(["seg-01"]);
     });
   });
 

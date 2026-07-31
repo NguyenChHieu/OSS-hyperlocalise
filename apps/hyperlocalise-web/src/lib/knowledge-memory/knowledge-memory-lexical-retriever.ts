@@ -106,6 +106,15 @@ function uniqueValues(values: Array<string | null | undefined>) {
   return [...new Set(values.map((value) => value?.trim()).filter(Boolean) as string[])];
 }
 
+/**
+ * Shared tokenizer (stopwords + spelling-variant expansion) used both to score segments during
+ * retrieval and to score sentences/bullets during excerpt selection, so scoring stays consistent
+ * across the two stages instead of duplicating tokenisation rules.
+ */
+export function expandKnowledgeMemoryTokens(value: string): Set<string> {
+  return expandTokens(tokenize(value));
+}
+
 function buildQueryParts(input: SelectKnowledgeMemoryContextInput) {
   const metadata = Object.values(input.metadata ?? {}).filter(Boolean) as string[];
   return uniqueValues([
@@ -199,12 +208,18 @@ function scoreSegment(
   return score;
 }
 
+export function buildKnowledgeMemoryQueryTokens(
+  query: SelectKnowledgeMemoryContextInput,
+): Set<string> {
+  return expandKnowledgeMemoryTokens(buildQueryParts(query).join(" "));
+}
+
 export const retrieveKnowledgeMemorySegmentsLexically: KnowledgeMemoryRetriever = ({
   segments,
   query,
 }) => {
   const queryParts = buildQueryParts(query);
-  const queryTokens = expandTokens(tokenize(queryParts.join(" ")));
+  const queryTokens = buildKnowledgeMemoryQueryTokens(query);
   if (queryTokens.size === 0) {
     return [];
   }

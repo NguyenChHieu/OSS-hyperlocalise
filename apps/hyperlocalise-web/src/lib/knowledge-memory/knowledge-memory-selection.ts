@@ -20,7 +20,11 @@ import {
   normalizeKnowledgeMemoryForSelection,
   parseMarkdownMemory,
 } from "./knowledge-memory-markdown-parser";
-import { retrieveKnowledgeMemorySegmentsLexically } from "./knowledge-memory-lexical-retriever";
+import { buildSegmentExcerpt } from "./knowledge-memory-excerpt";
+import {
+  buildKnowledgeMemoryQueryTokens,
+  retrieveKnowledgeMemorySegmentsLexically,
+} from "./knowledge-memory-lexical-retriever";
 import type {
   KnowledgeMemoryFallbackMode,
   KnowledgeMemoryRetriever,
@@ -171,6 +175,8 @@ function headingFallbackReservedChars(headingFallbackText: string, maxChars: num
   return Math.min(headingFallbackText.length, Math.min(maxChars, 1_200)) + 1;
 }
 
+const defaultMaxSegmentChars = 900;
+
 function buildSelectedContext(input: {
   wholeMemoryChars: number;
   selectedSegments: KnowledgeMemorySegment[];
@@ -178,9 +184,16 @@ function buildSelectedContext(input: {
   maxChars: number;
   headingFallbackText?: string;
   maxSegmentChars?: number;
+  /**
+   * Query tokens used to excerpt the sentence/bullet within each selected segment that actually
+   * matches, instead of a query-independent prefix slice. Only meaningful for the "selective"
+   * fallback mode — general/fallback/raw paths pass none, so their output stays unchanged.
+   */
+  queryTokens?: Set<string>;
 }) {
   const lines: string[] = [];
   const segments: SelectedKnowledgeMemorySegment[] = [];
+  const queryTokens = input.queryTokens ?? new Set<string>();
 
   if (input.headingFallbackText) {
     appendWithinBudget(
@@ -191,9 +204,11 @@ function buildSelectedContext(input: {
   }
 
   for (const segment of input.selectedSegments) {
-    const preview = input.maxSegmentChars
-      ? truncateFallbackText(segment.compactPromptText, input.maxSegmentChars)
-      : segment.compactPromptText;
+    const preview = buildSegmentExcerpt({
+      segment,
+      queryTokens,
+      maxChars: input.maxSegmentChars ?? defaultMaxSegmentChars,
+    });
 
     if (!appendWithinBudget(lines, preview, input.maxChars)) {
       break;
@@ -419,6 +434,7 @@ export function selectKnowledgeMemoryContext(
       selectedSegments,
       fallbackMode: "selective",
       maxChars,
+      queryTokens: buildKnowledgeMemoryQueryTokens(input),
       maxSegmentChars: maxCharsPerSelectedSegment({
         maxChars,
         selectedSegmentCount: selectedSegments.length,

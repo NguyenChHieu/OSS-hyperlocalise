@@ -12,6 +12,7 @@
  */
 import "dotenv/config";
 
+import { eq } from "drizzle-orm";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { app } from "@/api/app";
@@ -597,5 +598,373 @@ Second import issue,Done,EXT-2,P2`;
       { headers: outsiderHeaders },
     );
     expect(response.status).toBe(404);
+  });
+
+  it("assigns members, rejects invalid assignees, and records activity", async () => {
+    const { identity, organization, project, user } =
+      await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const organizationSlug = identity.organization.slug ?? "missing-slug";
+
+    const teammateIdentity = projectFixture.createWorkosIdentityForOrganization(
+      identity.organization,
+      "translator",
+    );
+    await projectFixture.authHeadersFor(teammateIdentity);
+    const teammateLocalId = await projectFixture.getLocalUserId(teammateIdentity.user.workosUserId);
+    await db.insert(schema.teamMemberships).values({
+      teamId: project.teamId!,
+      userId: teammateLocalId,
+      role: "member",
+    });
+
+    const outsiderIdentity = projectFixture.createWorkosIdentityForOrganization(
+      identity.organization,
+      "translator",
+    );
+    await projectFixture.authHeadersFor(outsiderIdentity);
+    const outsiderLocalId = await projectFixture.getLocalUserId(outsiderIdentity.user.workosUserId);
+
+    const [invitedUser] = await db
+      .insert(schema.users)
+      .values({
+        workosUserId: `invited_user_${crypto.randomUUID()}`,
+        email: `invited-${crypto.randomUUID()}@example.com`,
+        firstName: "Invited",
+        lastName: "User",
+      })
+      .returning();
+    await db.insert(schema.organizationMemberships).values({
+      organizationId: organization.id,
+      userId: invitedUser.id,
+      role: "translator",
+      workosMembershipId: null,
+    });
+
+    const createResponse = await requestJson(issueSheetUrl(organizationSlug, project.id), {
+      method: "POST",
+      headers,
+      body: {
+        title: "Assigned on create",
+        issueType: "general_question",
+        assigneeUserId: teammateLocalId,
+      },
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as IssueResponse & {
+      issue: { assigneeUserId: string | null };
+    };
+    expect(created.issue.assigneeUserId).toBe(teammateLocalId);
+
+    const activitiesResponse = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}/feed`),
+      { headers },
+    );
+    expect(activitiesResponse.status).toBe(200);
+    const activitiesBody = (await activitiesResponse.json()) as {
+      items: Array<
+        | {
+            kind: "activity";
+            activity: {
+              type: string;
+              nextAssignee?: { userId: string } | null;
+              previousAssignee?: { userId: string } | null;
+            };
+          }
+        | { kind: "comment_thread" }
+      >;
+      total: number;
+    };
+    expect(activitiesBody.total).toBe(2);
+    expect(
+      activitiesBody.items
+        .filter((item) => item.kind === "activity")
+        .map((item) => item.activity.type),
+    ).toEqual(["issue_created", "assignee_changed"]);
+    const assigneeChanged = activitiesBody.items.find(
+      (item) => item.kind === "activity" && item.activity.type === "assignee_changed",
+    );
+    expect(assigneeChanged).toMatchObject({
+      kind: "activity",
+      activity: {
+        type: "assignee_changed",
+        nextAssignee: { userId: teammateLocalId },
+        previousAssignee: null,
+      },
+    });
+
+    const assignableResponse = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, "/assignable-members"),
+      { headers },
+    );
+    expect(assignableResponse.status).toBe(200);
+    const assignableBody = (await assignableResponse.json()) as {
+      members: Array<{ userId: string }>;
+    };
+    const assignableIds = new Set(assignableBody.members.map((member) => member.userId));
+    expect(assignableIds.has(user.id)).toBe(true);
+    expect(assignableIds.has(teammateLocalId)).toBe(true);
+    expect(assignableIds.has(outsiderLocalId)).toBe(false);
+    expect(assignableIds.has(invitedUser.id)).toBe(false);
+
+    const rejectInvited = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}`),
+      {
+        method: "PATCH",
+        headers,
+        body: { assigneeUserId: invitedUser.id },
+      },
+    );
+    expect(rejectInvited.status).toBe(400);
+    expect(((await rejectInvited.json()) as { error: string }).error).toBe(
+      "assignee_not_assignable",
+    );
+
+    const rejectOutsider = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}`),
+      {
+        method: "PATCH",
+        headers,
+        body: { assigneeUserId: outsiderLocalId },
+      },
+    );
+    expect(rejectOutsider.status).toBe(400);
+    expect(((await rejectOutsider.json()) as { error: string }).error).toBe(
+      "assignee_not_assignable",
+    );
+
+    const unassign = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}`),
+      {
+        method: "PATCH",
+        headers,
+        body: { assigneeUserId: null },
+      },
+    );
+    expect(unassign.status).toBe(200);
+
+    const activitiesAfter = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}/feed`),
+      { headers },
+    );
+    const activitiesAfterBody = (await activitiesAfter.json()) as {
+      items: Array<
+        | {
+            kind: "activity";
+            activity: { type: string; nextAssignee?: { userId: string } | null };
+          }
+        | { kind: "comment_thread" }
+      >;
+      total: number;
+    };
+    expect(activitiesAfterBody.total).toBe(3);
+    const lastAfterUnassign = activitiesAfterBody.items.at(-1);
+    expect(lastAfterUnassign).toMatchObject({
+      kind: "activity",
+      activity: { type: "assignee_changed", nextAssignee: null },
+    });
+
+    const statusChange = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}`),
+      {
+        method: "PATCH",
+        headers,
+        body: { status: "in_progress" },
+      },
+    );
+    expect(statusChange.status).toBe(200);
+
+    const activitiesAfterStatus = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}/feed`),
+      { headers },
+    );
+    const activitiesAfterStatusBody = (await activitiesAfterStatus.json()) as {
+      items: Array<
+        | {
+            kind: "activity";
+            activity: {
+              type: string;
+              previousStatus?: string;
+              nextStatus?: string;
+            };
+          }
+        | { kind: "comment_thread" }
+      >;
+      total: number;
+    };
+    expect(activitiesAfterStatusBody.total).toBe(4);
+    expect(activitiesAfterStatusBody.items.at(-1)).toMatchObject({
+      kind: "activity",
+      activity: {
+        type: "status_changed",
+        previousStatus: "open",
+        nextStatus: "in_progress",
+      },
+    });
+
+    const reassign = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}`),
+      {
+        method: "PATCH",
+        headers,
+        body: { assigneeUserId: teammateLocalId },
+      },
+    );
+    expect(reassign.status).toBe(200);
+
+    await db
+      .delete(schema.organizationMemberships)
+      .where(eq(schema.organizationMemberships.userId, teammateLocalId));
+
+    const getAfterRemoval = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}`),
+      { headers },
+    );
+    expect(getAfterRemoval.status).toBe(200);
+    const afterRemoval = (await getAfterRemoval.json()) as {
+      issue: { assigneeUserId: string | null; assignee: string | null };
+    };
+    expect(afterRemoval.issue.assigneeUserId).toBe(teammateLocalId);
+    expect(afterRemoval.issue.assignee).toBeTruthy();
+
+    const rejectRemoved = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}`),
+      {
+        method: "PATCH",
+        headers,
+        body: { assigneeUserId: teammateLocalId },
+      },
+    );
+    expect(rejectRemoved.status).toBe(400);
+  });
+
+  it("returns a unified feed of activities and comment threads ordered in SQL", async () => {
+    const { identity, project } = await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const organizationSlug = identity.organization.slug ?? "missing-slug";
+
+    const createResponse = await requestJson(issueSheetUrl(organizationSlug, project.id), {
+      method: "POST",
+      headers,
+      body: {
+        title: "Feed interleave",
+        issueType: "general_question",
+      },
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as IssueResponse;
+
+    const commentResponse = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}/comments`),
+      {
+        method: "POST",
+        headers,
+        body: { body: "Root comment" },
+      },
+    );
+    expect(commentResponse.status).toBe(201);
+    const commentBody = (await commentResponse.json()) as {
+      issueComment: { id: string; path: string };
+    };
+
+    const replyResponse = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}/comments`),
+      {
+        method: "POST",
+        headers,
+        body: { body: "Reply comment", parentId: commentBody.issueComment.id },
+      },
+    );
+    expect(replyResponse.status).toBe(201);
+
+    const statusChange = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}`),
+      {
+        method: "PATCH",
+        headers,
+        body: { status: "in_progress" },
+      },
+    );
+    expect(statusChange.status).toBe(200);
+
+    const feedResponse = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}/feed`),
+      { headers },
+    );
+    expect(feedResponse.status).toBe(200);
+    const feedBody = (await feedResponse.json()) as {
+      items: Array<
+        | { kind: "activity"; activity: { type: string } }
+        | {
+            kind: "comment_thread";
+            root: { id: string; body: string };
+            replies: Array<{ id: string; body: string; parentId: string | null }>;
+          }
+      >;
+      total: number;
+      nextCursor: string | null;
+    };
+
+    expect(feedBody.total).toBe(3);
+    expect(feedBody.nextCursor).toBeNull();
+    expect(feedBody.items.map((item) => item.kind)).toEqual([
+      "activity",
+      "comment_thread",
+      "activity",
+    ]);
+    expect(feedBody.items[0]).toMatchObject({
+      kind: "activity",
+      activity: { type: "issue_created" },
+    });
+    expect(feedBody.items[1]).toMatchObject({
+      kind: "comment_thread",
+      root: { id: commentBody.issueComment.id, body: "Root comment" },
+    });
+    const thread = feedBody.items[1];
+    if (thread?.kind !== "comment_thread") {
+      throw new Error("expected comment_thread");
+    }
+    expect(thread.replies).toHaveLength(1);
+    expect(thread.replies[0]).toMatchObject({
+      body: "Reply comment",
+      parentId: commentBody.issueComment.id,
+    });
+    expect(feedBody.items[2]).toMatchObject({
+      kind: "activity",
+      activity: { type: "status_changed" },
+    });
+
+    const pageOne = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}/feed`),
+      { headers, query: { limit: "2" } },
+    );
+    expect(pageOne.status).toBe(200);
+    const pageOneBody = (await pageOne.json()) as {
+      items: Array<{ kind: string }>;
+      nextCursor: string | null;
+      total: number;
+    };
+    expect(pageOneBody.total).toBe(3);
+    expect(pageOneBody.items).toHaveLength(2);
+    expect(pageOneBody.nextCursor).toBeTruthy();
+
+    const pageTwo = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}/feed`),
+      {
+        headers,
+        query: { limit: "2", cursor: pageOneBody.nextCursor! },
+      },
+    );
+    expect(pageTwo.status).toBe(200);
+    const pageTwoBody = (await pageTwo.json()) as {
+      items: Array<{ kind: string; activity?: { type: string } }>;
+      nextCursor: string | null;
+    };
+    expect(pageTwoBody.items).toHaveLength(1);
+    expect(pageTwoBody.items[0]).toMatchObject({
+      kind: "activity",
+      activity: { type: "status_changed" },
+    });
+    expect(pageTwoBody.nextCursor).toBeNull();
   });
 });

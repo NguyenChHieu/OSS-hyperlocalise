@@ -21,8 +21,21 @@ import {
   type IssueSheetUpdateIssueBody,
 } from "@/api/routes/project/issue-sheet.schema";
 import type { IssueSheetImportBody } from "@/api/routes/project/issue-sheet.schema";
-import { db, schema } from "@/lib/database";
+import { db, schema, type DatabaseClient } from "@/lib/database";
+import type { OrganizationMembershipRole } from "@/lib/database/types";
 
+import { isErr } from "@/lib/primitives/result/results";
+
+import {
+  assertAssignableIssueAssignee,
+  listAssignableIssueMembers,
+  type AssignableIssueMember,
+} from "./issue-sheet-assignee";
+import {
+  issueSheetCommentSelect,
+  mapIssueSheetCommentRow,
+  type IssueSheetComment,
+} from "./issue-sheet-comment-service";
 import {
   runIssueSheetCsvImport,
   type IssueSheetImportResult,
@@ -37,6 +50,109 @@ import {
   priorityValueJoin,
   priorityValues,
 } from "./issue-list-query";
+
+export const ISSUE_SHEET_ACTIVITY_ASSIGNEE_CHANGED = "assignee_changed" as const;
+export const ISSUE_SHEET_ACTIVITY_ISSUE_CREATED = "issue_created" as const;
+export const ISSUE_SHEET_ACTIVITY_STATUS_CHANGED = "status_changed" as const;
+
+export type IssueSheetActivityUserSummary = {
+  userId: string;
+  displayName: string;
+  email: string | null;
+  avatarUrl: string | null;
+};
+
+type IssueSheetActivityBase = {
+  id: string;
+  actor: IssueSheetActivityUserSummary | null;
+  createdAt: string;
+};
+
+export type IssueSheetActivity =
+  | (IssueSheetActivityBase & {
+      type: typeof ISSUE_SHEET_ACTIVITY_ASSIGNEE_CHANGED;
+      previousAssignee: IssueSheetActivityUserSummary | null;
+      nextAssignee: IssueSheetActivityUserSummary | null;
+    })
+  | (IssueSheetActivityBase & {
+      type: typeof ISSUE_SHEET_ACTIVITY_ISSUE_CREATED;
+    })
+  | (IssueSheetActivityBase & {
+      type: typeof ISSUE_SHEET_ACTIVITY_STATUS_CHANGED;
+      previousStatus: string;
+      nextStatus: string;
+    });
+
+export type IssueSheetFeedItem =
+  | { kind: "activity"; activity: IssueSheetActivity }
+  | {
+      kind: "comment_thread";
+      root: IssueSheetComment;
+      replies: IssueSheetComment[];
+    };
+
+export type IssueSheetFeedResult = {
+  items: IssueSheetFeedItem[];
+  total: number;
+  nextCursor: string | null;
+};
+
+const FEED_CURSOR_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function parseFeedCursor(
+  cursor: string,
+): { createdAt: string; sortRank: number; id: string } | null {
+  const parts = cursor.split("|");
+  if (parts.length !== 3) {
+    return null;
+  }
+  const [createdAt, sortRankRaw, id] = parts;
+  if (!createdAt || Number.isNaN(Date.parse(createdAt))) {
+    return null;
+  }
+  if (sortRankRaw !== "0" && sortRankRaw !== "1") {
+    return null;
+  }
+  if (!id || !FEED_CURSOR_UUID_PATTERN.test(id)) {
+    return null;
+  }
+  return { createdAt, sortRank: Number(sortRankRaw), id };
+}
+
+function encodeFeedCursor(input: { createdAt: string; sortRank: number; id: string }) {
+  return `${input.createdAt}|${input.sortRank}|${input.id}`;
+}
+
+type ActivityRow = {
+  id: string;
+  type: string;
+  payload: unknown;
+  createdAt: Date;
+  actorUserId: string | null;
+};
+
+type FeedPageRow = {
+  id: string;
+  kind: string;
+  created_at: Date | string;
+  created_at_cursor: string;
+  sort_rank: number | string;
+};
+
+function rowsFromExecute<T>(result: unknown): T[] {
+  if (Array.isArray(result)) {
+    return result as T[];
+  }
+  if (
+    result &&
+    typeof result === "object" &&
+    "rows" in result &&
+    Array.isArray((result as { rows: unknown }).rows)
+  ) {
+    return (result as { rows: T[] }).rows;
+  }
+  return [];
+}
 
 export type IssueSheetColumn = {
   id: string;
@@ -344,6 +460,355 @@ export class IssueSheetService {
     };
   }
 
+  async listAssignableMembers(input: {
+    organizationId: string;
+    projectId: string;
+    actorUserId: string;
+  }): Promise<AssignableIssueMember[]> {
+    return listAssignableIssueMembers({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      actorUserId: input.actorUserId,
+      database: this.database,
+    });
+  }
+
+  async listFeed(input: {
+    organizationId: string;
+    projectId: string;
+    issueId: string;
+    actorUserId: string;
+    role: OrganizationMembershipRole;
+    limit?: number;
+    cursor?: string;
+  }): Promise<IssueSheetFeedResult> {
+    const [issue] = await this.database
+      .select({ id: schema.issueSheetIssues.id })
+      .from(schema.issueSheetIssues)
+      .where(
+        and(
+          eq(schema.issueSheetIssues.organizationId, input.organizationId),
+          eq(schema.issueSheetIssues.projectId, input.projectId),
+          eq(schema.issueSheetIssues.id, input.issueId),
+        ),
+      )
+      .limit(1);
+
+    if (!issue) {
+      throw new Error("issue_sheet_issue_not_found");
+    }
+
+    const limit = input.limit ?? 100;
+    const parsedCursor = input.cursor ? parseFeedCursor(input.cursor) : null;
+    if (input.cursor && !parsedCursor) {
+      throw new Error("invalid_issue_sheet_feed_cursor");
+    }
+
+    const cursorFilter = parsedCursor
+      ? sql`and (feed.created_at, feed.sort_rank, feed.id) > (${parsedCursor.createdAt}::timestamptz, ${parsedCursor.sortRank}, ${parsedCursor.id}::uuid)`
+      : sql``;
+
+    const [totalRow, feedResult] = await Promise.all([
+      this.database.execute(sql`
+        select (
+          (
+            select count(*)::int
+            from ${schema.issueSheetActivities}
+            where ${schema.issueSheetActivities.organizationId} = ${input.organizationId}
+              and ${schema.issueSheetActivities.projectId} = ${input.projectId}
+              and ${schema.issueSheetActivities.issueId} = ${input.issueId}
+          )
+          +
+          (
+            select count(*)::int
+            from ${schema.issueSheetComments}
+            where ${schema.issueSheetComments.organizationId} = ${input.organizationId}
+              and ${schema.issueSheetComments.projectId} = ${input.projectId}
+              and ${schema.issueSheetComments.issueId} = ${input.issueId}
+              and ${schema.issueSheetComments.depth} = 0
+          )
+        ) as total
+      `),
+      this.database.execute(sql`
+        select feed.id, feed.kind, feed.created_at, feed.created_at_cursor, feed.sort_rank
+        from (
+          select
+            ${schema.issueSheetActivities.id} as id,
+            'activity'::text as kind,
+            ${schema.issueSheetActivities.createdAt} as created_at,
+            ${schema.issueSheetActivities.createdAt}::text as created_at_cursor,
+            case
+              when ${schema.issueSheetActivities.type} = ${ISSUE_SHEET_ACTIVITY_ISSUE_CREATED}
+              then 0
+              else 1
+            end as sort_rank
+          from ${schema.issueSheetActivities}
+          where ${schema.issueSheetActivities.organizationId} = ${input.organizationId}
+            and ${schema.issueSheetActivities.projectId} = ${input.projectId}
+            and ${schema.issueSheetActivities.issueId} = ${input.issueId}
+          union all
+          select
+            ${schema.issueSheetComments.id} as id,
+            'comment_thread'::text as kind,
+            ${schema.issueSheetComments.createdAt} as created_at,
+            ${schema.issueSheetComments.createdAt}::text as created_at_cursor,
+            1 as sort_rank
+          from ${schema.issueSheetComments}
+          where ${schema.issueSheetComments.organizationId} = ${input.organizationId}
+            and ${schema.issueSheetComments.projectId} = ${input.projectId}
+            and ${schema.issueSheetComments.issueId} = ${input.issueId}
+            and ${schema.issueSheetComments.depth} = 0
+        ) as feed
+        where true
+        ${cursorFilter}
+        order by feed.created_at asc, feed.sort_rank asc, feed.id asc
+        limit ${limit + 1}
+      `),
+    ]);
+
+    const total = Number(rowsFromExecute<{ total?: number }>(totalRow)[0]?.total ?? 0);
+    const feedRows = rowsFromExecute<FeedPageRow>(feedResult);
+    const hasMore = feedRows.length > limit;
+    const pageRows = hasMore ? feedRows.slice(0, limit) : feedRows;
+
+    const activityIds = pageRows
+      .filter((row) => row.kind === "activity")
+      .map((row) => String(row.id));
+    const rootCommentIds = pageRows
+      .filter((row) => row.kind === "comment_thread")
+      .map((row) => String(row.id));
+
+    const activityRows =
+      activityIds.length === 0
+        ? []
+        : await this.database
+            .select({
+              id: schema.issueSheetActivities.id,
+              type: schema.issueSheetActivities.type,
+              payload: schema.issueSheetActivities.payload,
+              createdAt: schema.issueSheetActivities.createdAt,
+              actorUserId: schema.issueSheetActivities.actorUserId,
+            })
+            .from(schema.issueSheetActivities)
+            .where(inArray(schema.issueSheetActivities.id, activityIds));
+
+    const activities = await this.hydrateActivityRows(activityRows);
+    const activitiesById = new Map(activities.map((activity) => [activity.id, activity] as const));
+
+    const actor = { userId: input.actorUserId, role: input.role };
+    const rootCommentRows =
+      rootCommentIds.length === 0
+        ? []
+        : await this.database
+            .select(issueSheetCommentSelect)
+            .from(schema.issueSheetComments)
+            .leftJoin(schema.users, eq(schema.issueSheetComments.authorUserId, schema.users.id))
+            .where(inArray(schema.issueSheetComments.id, rootCommentIds));
+
+    const roots = rootCommentRows.map((row) => mapIssueSheetCommentRow(row, actor));
+    const rootsById = new Map(roots.map((root) => [root.id, root] as const));
+
+    const replyRows =
+      roots.length === 0
+        ? []
+        : await this.database
+            .select(issueSheetCommentSelect)
+            .from(schema.issueSheetComments)
+            .leftJoin(schema.users, eq(schema.issueSheetComments.authorUserId, schema.users.id))
+            .where(
+              and(
+                eq(schema.issueSheetComments.organizationId, input.organizationId),
+                eq(schema.issueSheetComments.projectId, input.projectId),
+                eq(schema.issueSheetComments.issueId, input.issueId),
+                sql`${schema.issueSheetComments.depth} > 0`,
+                or(
+                  ...roots.map(
+                    (root) => sql`${schema.issueSheetComments.path} like ${`${root.path}.%`}`,
+                  ),
+                ),
+              ),
+            )
+            .orderBy(asc(schema.issueSheetComments.createdAt), asc(schema.issueSheetComments.id));
+
+    const repliesByRootId = new Map<string, IssueSheetComment[]>();
+    for (const row of replyRows) {
+      const reply = mapIssueSheetCommentRow(row, actor);
+      const root = roots.find((candidate) => reply.path.startsWith(`${candidate.path}.`));
+      if (!root) {
+        continue;
+      }
+      const existing = repliesByRootId.get(root.id);
+      if (existing) {
+        existing.push(reply);
+      } else {
+        repliesByRootId.set(root.id, [reply]);
+      }
+    }
+
+    const items: IssueSheetFeedItem[] = [];
+    for (const row of pageRows) {
+      const id = String(row.id);
+      if (row.kind === "activity") {
+        const activity = activitiesById.get(id);
+        if (activity) {
+          items.push({ kind: "activity", activity });
+        }
+        continue;
+      }
+
+      const root = rootsById.get(id);
+      if (root) {
+        items.push({
+          kind: "comment_thread",
+          root,
+          replies: repliesByRootId.get(root.id) ?? [],
+        });
+      }
+    }
+
+    let nextCursor: string | null = null;
+    if (hasMore && pageRows.length > 0) {
+      const last = pageRows[pageRows.length - 1]!;
+      nextCursor = encodeFeedCursor({
+        createdAt: String(last.created_at_cursor),
+        sortRank: Number(last.sort_rank),
+        id: String(last.id),
+      });
+    }
+
+    return { items, total, nextCursor };
+  }
+
+  private async hydrateActivityRows(rows: ActivityRow[]): Promise<IssueSheetActivity[]> {
+    const userIds = new Set<string>();
+    for (const row of rows) {
+      if (row.actorUserId) {
+        userIds.add(row.actorUserId);
+      }
+      if (
+        row.type === ISSUE_SHEET_ACTIVITY_ASSIGNEE_CHANGED &&
+        row.payload &&
+        typeof row.payload === "object" &&
+        "previousAssigneeUserId" in row.payload
+      ) {
+        const payload = row.payload as {
+          previousAssigneeUserId?: unknown;
+          nextAssigneeUserId?: unknown;
+        };
+        if (typeof payload.previousAssigneeUserId === "string") {
+          userIds.add(payload.previousAssigneeUserId);
+        }
+        if (typeof payload.nextAssigneeUserId === "string") {
+          userIds.add(payload.nextAssigneeUserId);
+        }
+      }
+    }
+
+    const userRows =
+      userIds.size === 0
+        ? []
+        : await this.database
+            .select({
+              id: schema.users.id,
+              firstName: schema.users.firstName,
+              lastName: schema.users.lastName,
+              email: schema.users.email,
+              avatarUrl: schema.users.avatarUrl,
+            })
+            .from(schema.users)
+            .where(inArray(schema.users.id, [...userIds]));
+
+    const usersById = new Map(userRows.map((row) => [row.id, row] as const));
+
+    const activities: IssueSheetActivity[] = [];
+    for (const row of rows) {
+      const actorRow = row.actorUserId ? usersById.get(row.actorUserId) : undefined;
+      const actor = this.mapActivityUser({
+        userId: row.actorUserId,
+        firstName: actorRow?.firstName ?? null,
+        lastName: actorRow?.lastName ?? null,
+        email: actorRow?.email ?? null,
+        avatarUrl: actorRow?.avatarUrl ?? null,
+      });
+      const createdAt = row.createdAt.toISOString();
+      const payload =
+        row.payload && typeof row.payload === "object"
+          ? (row.payload as Record<string, unknown>)
+          : {};
+
+      if (row.type === ISSUE_SHEET_ACTIVITY_ISSUE_CREATED) {
+        activities.push({
+          id: row.id,
+          type: ISSUE_SHEET_ACTIVITY_ISSUE_CREATED,
+          actor,
+          createdAt,
+        });
+        continue;
+      }
+
+      if (row.type === ISSUE_SHEET_ACTIVITY_STATUS_CHANGED) {
+        const previousStatus =
+          "previousStatus" in payload && typeof payload.previousStatus === "string"
+            ? payload.previousStatus
+            : null;
+        const nextStatus =
+          "nextStatus" in payload && typeof payload.nextStatus === "string"
+            ? payload.nextStatus
+            : null;
+        if (!previousStatus || !nextStatus) {
+          continue;
+        }
+        activities.push({
+          id: row.id,
+          type: ISSUE_SHEET_ACTIVITY_STATUS_CHANGED,
+          actor,
+          previousStatus,
+          nextStatus,
+          createdAt,
+        });
+        continue;
+      }
+
+      if (row.type !== ISSUE_SHEET_ACTIVITY_ASSIGNEE_CHANGED) {
+        continue;
+      }
+
+      const previousId =
+        "previousAssigneeUserId" in payload && typeof payload.previousAssigneeUserId === "string"
+          ? payload.previousAssigneeUserId
+          : null;
+      const nextId =
+        "nextAssigneeUserId" in payload && typeof payload.nextAssigneeUserId === "string"
+          ? payload.nextAssigneeUserId
+          : null;
+      const previous = previousId ? usersById.get(previousId) : undefined;
+      const next = nextId ? usersById.get(nextId) : undefined;
+
+      activities.push({
+        id: row.id,
+        type: ISSUE_SHEET_ACTIVITY_ASSIGNEE_CHANGED,
+        actor,
+        previousAssignee: this.mapActivityUser({
+          userId: previousId,
+          firstName: previous?.firstName ?? null,
+          lastName: previous?.lastName ?? null,
+          email: previous?.email ?? null,
+          avatarUrl: previous?.avatarUrl ?? null,
+        }),
+        nextAssignee: this.mapActivityUser({
+          userId: nextId,
+          firstName: next?.firstName ?? null,
+          lastName: next?.lastName ?? null,
+          email: next?.email ?? null,
+          avatarUrl: next?.avatarUrl ?? null,
+        }),
+        createdAt,
+      });
+    }
+
+    return activities;
+  }
+
   async createIssue(input: {
     organizationId: string;
     projectId: string;
@@ -356,34 +821,81 @@ export class IssueSheetService {
       return existing;
     }
 
-    const [issue] = await this.database
-      .insert(schema.issueSheetIssues)
-      .values({
+    const assigneeUserId = input.body.assigneeUserId ?? null;
+    if (assigneeUserId) {
+      const assignable = await assertAssignableIssueAssignee({
         organizationId: input.organizationId,
         projectId: input.projectId,
-        title: input.body.title,
-        description: input.body.description ?? "",
-        issueType: input.body.issueType ?? "general_question",
-        status: input.body.status ?? "open",
-        targetLocale: input.body.targetLocale ?? null,
-        sourcePath: input.body.sourcePath ?? null,
-        segmentId: input.body.segmentId ?? null,
-        translationKeyId: input.body.translationKeyId ?? null,
-        linkedCommentId: input.body.linkedCommentId ?? null,
-        linkedAgentRunId: input.body.linkedAgentRunId ?? null,
-        linkKind: input.body.linkKind ?? null,
-        linkLabel: input.body.linkLabel ?? null,
-        linkUrl: input.body.linkUrl ?? null,
-        externalRef: input.body.externalRef ?? null,
-        reporterUserId: input.actorUserId,
-        assigneeUserId: input.body.assigneeUserId ?? null,
-        resolvedAt:
-          input.body.status === "resolved" || input.body.status === "wont_fix" ? new Date() : null,
-      })
-      .onConflictDoNothing()
-      .returning({ id: schema.issueSheetIssues.id });
+        assigneeUserId,
+        database: this.database,
+      });
+      if (isErr(assignable)) {
+        throw new Error(assignable.error.code);
+      }
+    }
 
-    if (!issue) {
+    const issueId = await this.database.transaction(async (tx) => {
+      const [issue] = await tx
+        .insert(schema.issueSheetIssues)
+        .values({
+          organizationId: input.organizationId,
+          projectId: input.projectId,
+          title: input.body.title,
+          description: input.body.description ?? "",
+          issueType: input.body.issueType ?? "general_question",
+          status: input.body.status ?? "open",
+          targetLocale: input.body.targetLocale ?? null,
+          sourcePath: input.body.sourcePath ?? null,
+          segmentId: input.body.segmentId ?? null,
+          translationKeyId: input.body.translationKeyId ?? null,
+          linkedCommentId: input.body.linkedCommentId ?? null,
+          linkedAgentRunId: input.body.linkedAgentRunId ?? null,
+          linkKind: input.body.linkKind ?? null,
+          linkLabel: input.body.linkLabel ?? null,
+          linkUrl: input.body.linkUrl ?? null,
+          externalRef: input.body.externalRef ?? null,
+          reporterUserId: input.actorUserId,
+          assigneeUserId,
+          resolvedAt:
+            input.body.status === "resolved" || input.body.status === "wont_fix"
+              ? new Date()
+              : null,
+        })
+        .onConflictDoNothing()
+        .returning({ id: schema.issueSheetIssues.id });
+
+      if (!issue) {
+        return null;
+      }
+
+      const activityCreatedAt = new Date();
+
+      await this.insertIssueCreatedActivity({
+        database: tx,
+        organizationId: input.organizationId,
+        projectId: input.projectId,
+        issueId: issue.id,
+        actorUserId: input.actorUserId,
+        createdAt: activityCreatedAt,
+      });
+
+      if (assigneeUserId) {
+        await this.insertAssigneeChangedActivity({
+          database: tx,
+          organizationId: input.organizationId,
+          projectId: input.projectId,
+          issueId: issue.id,
+          actorUserId: input.actorUserId,
+          previousAssigneeUserId: null,
+          nextAssigneeUserId: assigneeUserId,
+          createdAt: new Date(activityCreatedAt.getTime() + 1),
+        });
+      }
+
+      return issue.id;
+    });
+
+    if (!issueId) {
       const conflicted = await this.findExistingLinkedIssue(input);
       if (conflicted) {
         return conflicted;
@@ -395,7 +907,7 @@ export class IssueSheetService {
       await this.setValue({
         organizationId: input.organizationId,
         projectId: input.projectId,
-        issueId: issue.id,
+        issueId,
         body: { columnKey: "priority", value: input.body.priority },
       });
     }
@@ -403,7 +915,7 @@ export class IssueSheetService {
     const created = await this.getIssueById({
       organizationId: input.organizationId,
       projectId: input.projectId,
-      issueId: issue.id,
+      issueId,
       actorUserId: input.actorUserId,
     });
     if (!created) {
@@ -427,32 +939,104 @@ export class IssueSheetService {
           ? null
           : undefined;
 
-    const [updated] = await this.database
-      .update(schema.issueSheetIssues)
-      .set({
-        title: input.body.title,
-        description: input.body.description,
-        issueType: input.body.issueType,
-        status: input.body.status,
-        targetLocale: input.body.targetLocale,
-        sourcePath: input.body.sourcePath,
-        segmentId: input.body.segmentId,
-        linkKind: input.body.linkKind,
-        linkLabel: input.body.linkLabel,
-        linkUrl: input.body.linkUrl,
-        assigneeUserId: input.body.assigneeUserId,
-        ...(resolvedAt !== undefined ? { resolvedAt } : {}),
-      })
-      .where(
-        and(
-          eq(schema.issueSheetIssues.organizationId, input.organizationId),
-          eq(schema.issueSheetIssues.projectId, input.projectId),
-          eq(schema.issueSheetIssues.id, input.issueId),
-        ),
-      )
-      .returning({ id: schema.issueSheetIssues.id });
+    const assigneeChanging = Object.hasOwn(input.body, "assigneeUserId");
+    const requestedAssigneeUserId = assigneeChanging ? (input.body.assigneeUserId ?? null) : null;
 
-    if (!updated) {
+    if (assigneeChanging && requestedAssigneeUserId) {
+      const assignable = await assertAssignableIssueAssignee({
+        organizationId: input.organizationId,
+        projectId: input.projectId,
+        assigneeUserId: requestedAssigneeUserId,
+        database: this.database,
+      });
+      if (isErr(assignable)) {
+        throw new Error(assignable.error.code);
+      }
+    }
+
+    const found = await this.database.transaction(async (tx) => {
+      const [current] = await tx
+        .select({
+          id: schema.issueSheetIssues.id,
+          status: schema.issueSheetIssues.status,
+          assigneeUserId: schema.issueSheetIssues.assigneeUserId,
+        })
+        .from(schema.issueSheetIssues)
+        .where(
+          and(
+            eq(schema.issueSheetIssues.organizationId, input.organizationId),
+            eq(schema.issueSheetIssues.projectId, input.projectId),
+            eq(schema.issueSheetIssues.id, input.issueId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+
+      if (!current) {
+        return false;
+      }
+
+      const nextAssigneeUserId = assigneeChanging
+        ? requestedAssigneeUserId
+        : current.assigneeUserId;
+      const statusChanging =
+        Object.hasOwn(input.body, "status") &&
+        input.body.status != null &&
+        input.body.status !== current.status;
+      const nextStatusValue = statusChanging ? input.body.status! : current.status;
+
+      await tx
+        .update(schema.issueSheetIssues)
+        .set({
+          title: input.body.title,
+          description: input.body.description,
+          issueType: input.body.issueType,
+          status: input.body.status,
+          targetLocale: input.body.targetLocale,
+          sourcePath: input.body.sourcePath,
+          segmentId: input.body.segmentId,
+          linkKind: input.body.linkKind,
+          linkLabel: input.body.linkLabel,
+          linkUrl: input.body.linkUrl,
+          ...(assigneeChanging ? { assigneeUserId: nextAssigneeUserId } : {}),
+          ...(resolvedAt !== undefined ? { resolvedAt } : {}),
+        })
+        .where(
+          and(
+            eq(schema.issueSheetIssues.organizationId, input.organizationId),
+            eq(schema.issueSheetIssues.projectId, input.projectId),
+            eq(schema.issueSheetIssues.id, input.issueId),
+          ),
+        );
+
+      if (statusChanging) {
+        await this.insertStatusChangedActivity({
+          database: tx,
+          organizationId: input.organizationId,
+          projectId: input.projectId,
+          issueId: input.issueId,
+          actorUserId: input.actorUserId,
+          previousStatus: current.status,
+          nextStatus: nextStatusValue,
+        });
+      }
+
+      if (assigneeChanging && current.assigneeUserId !== nextAssigneeUserId) {
+        await this.insertAssigneeChangedActivity({
+          database: tx,
+          organizationId: input.organizationId,
+          projectId: input.projectId,
+          issueId: input.issueId,
+          actorUserId: input.actorUserId,
+          previousAssigneeUserId: current.assigneeUserId,
+          nextAssigneeUserId,
+        });
+      }
+
+      return true;
+    });
+
+    if (!found) {
       return null;
     }
 
@@ -536,6 +1120,95 @@ export class IssueSheetService {
       columnKey: column.key,
       value,
     };
+  }
+
+  private mapActivityUser(input: {
+    userId: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    email: string | null;
+    avatarUrl: string | null;
+  }): IssueSheetActivityUserSummary | null {
+    if (!input.userId) {
+      return null;
+    }
+    const displayName =
+      formatUser({
+        firstName: input.firstName,
+        lastName: input.lastName,
+        email: input.email,
+      }) ?? input.userId;
+    return {
+      userId: input.userId,
+      displayName,
+      email: input.email,
+      avatarUrl: input.avatarUrl,
+    };
+  }
+
+  private async insertAssigneeChangedActivity(input: {
+    database: DatabaseClient;
+    organizationId: string;
+    projectId: string;
+    issueId: string;
+    actorUserId: string;
+    previousAssigneeUserId: string | null;
+    nextAssigneeUserId: string | null;
+    createdAt?: Date;
+  }) {
+    await input.database.insert(schema.issueSheetActivities).values({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      issueId: input.issueId,
+      actorUserId: input.actorUserId,
+      type: ISSUE_SHEET_ACTIVITY_ASSIGNEE_CHANGED,
+      payload: {
+        previousAssigneeUserId: input.previousAssigneeUserId,
+        nextAssigneeUserId: input.nextAssigneeUserId,
+      },
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+    });
+  }
+
+  private async insertIssueCreatedActivity(input: {
+    database: DatabaseClient;
+    organizationId: string;
+    projectId: string;
+    issueId: string;
+    actorUserId: string;
+    createdAt?: Date;
+  }) {
+    await input.database.insert(schema.issueSheetActivities).values({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      issueId: input.issueId,
+      actorUserId: input.actorUserId,
+      type: ISSUE_SHEET_ACTIVITY_ISSUE_CREATED,
+      payload: {},
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+    });
+  }
+
+  private async insertStatusChangedActivity(input: {
+    database: DatabaseClient;
+    organizationId: string;
+    projectId: string;
+    issueId: string;
+    actorUserId: string;
+    previousStatus: string;
+    nextStatus: string;
+  }) {
+    await input.database.insert(schema.issueSheetActivities).values({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      issueId: input.issueId,
+      actorUserId: input.actorUserId,
+      type: ISSUE_SHEET_ACTIVITY_STATUS_CHANGED,
+      payload: {
+        previousStatus: input.previousStatus,
+        nextStatus: input.nextStatus,
+      },
+    });
   }
 
   private async findExistingLinkedIssue(input: {

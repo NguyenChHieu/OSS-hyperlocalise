@@ -1,5 +1,5 @@
 {
-  "id": "186946ce-c1b1-489d-8bf4-d5e61934ec22",
+  "id": "b8e99762-ed40-4540-96a3-6b57c1947688",
   "prevId": "9e2bafc9-8a6d-4d2e-8e18-f26a16b00e96",
   "version": "7",
   "dialect": "postgresql",
@@ -14495,6 +14495,178 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.issue_sheet_activities": {
+      "name": "issue_sheet_activities",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "project_id": {
+          "name": "project_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "issue_id": {
+          "name": "issue_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "actor_user_id": {
+          "name": "actor_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "payload": {
+          "name": "payload",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_issue_sheet_activities_issue_created": {
+          "name": "idx_issue_sheet_activities_issue_created",
+          "columns": [
+            {
+              "expression": "issue_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_issue_sheet_activities_org_project_issue": {
+          "name": "idx_issue_sheet_activities_org_project_issue",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "project_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "issue_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "issue_sheet_activities_organization_id_organizations_id_fk": {
+          "name": "issue_sheet_activities_organization_id_organizations_id_fk",
+          "tableFrom": "issue_sheet_activities",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "issue_sheet_activities_project_id_projects_id_fk": {
+          "name": "issue_sheet_activities_project_id_projects_id_fk",
+          "tableFrom": "issue_sheet_activities",
+          "tableTo": "projects",
+          "columnsFrom": [
+            "project_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "issue_sheet_activities_issue_id_issue_sheet_issues_id_fk": {
+          "name": "issue_sheet_activities_issue_id_issue_sheet_issues_id_fk",
+          "tableFrom": "issue_sheet_activities",
+          "tableTo": "issue_sheet_issues",
+          "columnsFrom": [
+            "issue_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "issue_sheet_activities_actor_user_id_users_id_fk": {
+          "name": "issue_sheet_activities_actor_user_id_users_id_fk",
+          "tableFrom": "issue_sheet_activities",
+          "tableTo": "users",
+          "columnsFrom": [
+            "actor_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.issue_sheet_columns": {
       "name": "issue_sheet_columns",
       "schema": "",
@@ -15908,321 +16080,6 @@
         "knowledge_memory_revisions_version_check": {
           "name": "knowledge_memory_revisions_version_check",
           "value": "\"knowledge_memory_revisions\".\"version\" >= 1"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.workspace_automation_memories": {
-      "name": "workspace_automation_memories",
-      "schema": "",
-      "columns": {
-        "automation_id": {
-          "name": "automation_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "revision_id": {
-          "name": "revision_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'Initial version'"
-        },
-        "include_org_knowledge": {
-          "name": "include_org_knowledge",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": true
-        },
-        "updated_by_user_id": {
-          "name": "updated_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "workspace_automation_memories_revision_id_key": {
-          "name": "workspace_automation_memories_revision_id_key",
-          "columns": [
-            {
-              "expression": "revision_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_workspace_automation_memories_organization_id": {
-          "name": "idx_workspace_automation_memories_organization_id",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "workspace_automation_memories_automation_id_workspace_automations_id_fk": {
-          "name": "workspace_automation_memories_automation_id_workspace_automations_id_fk",
-          "tableFrom": "workspace_automation_memories",
-          "tableTo": "workspace_automations",
-          "columnsFrom": [
-            "automation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "workspace_automation_memories_organization_id_organizations_id_fk": {
-          "name": "workspace_automation_memories_organization_id_organizations_id_fk",
-          "tableFrom": "workspace_automation_memories",
-          "tableTo": "organizations",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "workspace_automation_memories_updated_by_user_id_users_id_fk": {
-          "name": "workspace_automation_memories_updated_by_user_id_users_id_fk",
-          "tableFrom": "workspace_automation_memories",
-          "tableTo": "users",
-          "columnsFrom": [
-            "updated_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "workspace_automation_memories_content_length_check": {
-          "name": "workspace_automation_memories_content_length_check",
-          "value": "char_length(\"workspace_automation_memories\".\"content\") <= 20000"
-        },
-        "workspace_automation_memories_summary_length_check": {
-          "name": "workspace_automation_memories_summary_length_check",
-          "value": "char_length(\"workspace_automation_memories\".\"summary\") <= 160"
-        },
-        "workspace_automation_memories_version_check": {
-          "name": "workspace_automation_memories_version_check",
-          "value": "\"workspace_automation_memories\".\"version\" >= 1"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.workspace_automation_memory_revisions": {
-      "name": "workspace_automation_memory_revisions",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "automation_id": {
-          "name": "automation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "organization_id": {
-          "name": "organization_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "content": {
-          "name": "content",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_by_user_id": {
-          "name": "created_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "workspace_automation_memory_revisions_automation_version_key": {
-          "name": "workspace_automation_memory_revisions_automation_version_key",
-          "columns": [
-            {
-              "expression": "automation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "version",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_workspace_automation_memory_revisions_organization_id": {
-          "name": "idx_workspace_automation_memory_revisions_organization_id",
-          "columns": [
-            {
-              "expression": "organization_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "workspace_automation_memory_revisions_automation_id_workspace_automations_id_fk": {
-          "name": "workspace_automation_memory_revisions_automation_id_workspace_automations_id_fk",
-          "tableFrom": "workspace_automation_memory_revisions",
-          "tableTo": "workspace_automations",
-          "columnsFrom": [
-            "automation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "workspace_automation_memory_revisions_organization_id_organizations_id_fk": {
-          "name": "workspace_automation_memory_revisions_organization_id_organizations_id_fk",
-          "tableFrom": "workspace_automation_memory_revisions",
-          "tableTo": "organizations",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "workspace_automation_memory_revisions_created_by_user_id_users_id_fk": {
-          "name": "workspace_automation_memory_revisions_created_by_user_id_users_id_fk",
-          "tableFrom": "workspace_automation_memory_revisions",
-          "tableTo": "users",
-          "columnsFrom": [
-            "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "workspace_automation_memory_revisions_content_length_check": {
-          "name": "workspace_automation_memory_revisions_content_length_check",
-          "value": "char_length(\"workspace_automation_memory_revisions\".\"content\") <= 20000"
-        },
-        "workspace_automation_memory_revisions_summary_length_check": {
-          "name": "workspace_automation_memory_revisions_summary_length_check",
-          "value": "char_length(\"workspace_automation_memory_revisions\".\"summary\") <= 160"
-        },
-        "workspace_automation_memory_revisions_version_check": {
-          "name": "workspace_automation_memory_revisions_version_check",
-          "value": "\"workspace_automation_memory_revisions\".\"version\" >= 1"
         }
       },
       "isRLSEnabled": false

@@ -65,6 +65,11 @@ export const issuesPageViewMessages = defineMessages({
     id: "ou63JKkZ6w",
     description: "Table column header for target locale",
   },
+  columnAssignee: {
+    defaultMessage: "Assignee",
+    id: "paJg6jTRIA",
+    description: "Table column header for issue assignee on workspace issues",
+  },
   columnUpdated: {
     defaultMessage: "Updated",
     id: "rWXo8jdqPU",
@@ -79,11 +84,6 @@ export const issuesPageViewMessages = defineMessages({
     defaultMessage: "No issues match this view.",
     id: "rWc6Iosb8n",
     description: "Empty state when the filtered workspace issues list has no rows",
-  },
-  noDetailsYet: {
-    defaultMessage: "No details yet",
-    id: "m/76XCOVDx",
-    description: "Fallback detail line when an issue has no description or source path",
   },
   emptyValue: {
     defaultMessage: "—",

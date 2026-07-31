@@ -76,14 +76,19 @@ export async function getKnowledgeMemoryForOrganization(
   return toKnowledgeMemoryRecord(await getCurrentKnowledgeMemoryRow(db, organizationId));
 }
 
-const knowledgeMemoryHeadColumns = {
-  revisionId: schema.knowledgeMemories.revisionId,
-  version: schema.knowledgeMemories.version,
-  content: schema.knowledgeMemories.content,
-  summary: schema.knowledgeMemories.summary,
-  updatedAt: schema.knowledgeMemories.updatedAt,
-  updatedByUserId: schema.knowledgeMemories.updatedByUserId,
-};
+// A function, not a module-level constant: accessing schema.knowledgeMemories.* at import time
+// breaks any test that mocks @/lib/database without a full knowledgeMemories shape, even
+// transitively (vi.mock hoisting runs before this module's top-level code either way).
+function knowledgeMemoryHeadColumns() {
+  return {
+    revisionId: schema.knowledgeMemories.revisionId,
+    version: schema.knowledgeMemories.version,
+    content: schema.knowledgeMemories.content,
+    summary: schema.knowledgeMemories.summary,
+    updatedAt: schema.knowledgeMemories.updatedAt,
+    updatedByUserId: schema.knowledgeMemories.updatedByUserId,
+  };
+}
 
 export async function commitKnowledgeMemoryForOrganization(input: {
   organizationId: string;
@@ -123,7 +128,7 @@ export async function commitKnowledgeMemoryForOrganization(input: {
           updatedAt: values.now,
         })
         .onConflictDoNothing({ target: schema.knowledgeMemories.organizationId })
-        .returning(knowledgeMemoryHeadColumns);
+        .returning(knowledgeMemoryHeadColumns());
       return inserted;
     },
     updateHead: async (
@@ -147,7 +152,7 @@ export async function commitKnowledgeMemoryForOrganization(input: {
             eq(schema.knowledgeMemories.revisionId, expectedRevisionId),
           ),
         )
-        .returning(knowledgeMemoryHeadColumns);
+        .returning(knowledgeMemoryHeadColumns());
       return updated;
     },
     archivePrevious: async (tx: DatabaseTransaction, previous) => {

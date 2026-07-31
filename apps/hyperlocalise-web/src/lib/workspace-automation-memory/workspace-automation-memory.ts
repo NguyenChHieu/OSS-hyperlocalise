@@ -52,22 +52,28 @@ function toWorkspaceAutomationMemoryRecord(
   };
 }
 
-const workspaceAutomationMemoryHeadColumns = {
-  revisionId: schema.workspaceAutomationMemories.revisionId,
-  version: schema.workspaceAutomationMemories.version,
-  content: schema.workspaceAutomationMemories.content,
-  summary: schema.workspaceAutomationMemories.summary,
-  includeOrgKnowledge: schema.workspaceAutomationMemories.includeOrgKnowledge,
-  updatedAt: schema.workspaceAutomationMemories.updatedAt,
-  updatedByUserId: schema.workspaceAutomationMemories.updatedByUserId,
-};
+// A function, not a module-level constant: accessing schema.workspaceAutomationMemories.* at
+// import time breaks any test that mocks @/lib/database without a full
+// workspaceAutomationMemories shape, even transitively (vi.mock hoisting runs before this
+// module's top-level code either way).
+function workspaceAutomationMemoryHeadColumns() {
+  return {
+    revisionId: schema.workspaceAutomationMemories.revisionId,
+    version: schema.workspaceAutomationMemories.version,
+    content: schema.workspaceAutomationMemories.content,
+    summary: schema.workspaceAutomationMemories.summary,
+    includeOrgKnowledge: schema.workspaceAutomationMemories.includeOrgKnowledge,
+    updatedAt: schema.workspaceAutomationMemories.updatedAt,
+    updatedByUserId: schema.workspaceAutomationMemories.updatedByUserId,
+  };
+}
 
 async function getCurrentWorkspaceAutomationMemoryRow(
   database: DatabaseClient,
   automationId: string,
 ): Promise<CurrentWorkspaceAutomationMemoryRow | undefined> {
   const [row] = await database
-    .select(workspaceAutomationMemoryHeadColumns)
+    .select(workspaceAutomationMemoryHeadColumns())
     .from(schema.workspaceAutomationMemories)
     .where(eq(schema.workspaceAutomationMemories.automationId, automationId))
     .limit(1);
@@ -154,7 +160,7 @@ export async function commitWorkspaceAutomationMemory(input: {
           updatedAt: values.now,
         })
         .onConflictDoNothing({ target: schema.workspaceAutomationMemories.automationId })
-        .returning(workspaceAutomationMemoryHeadColumns);
+        .returning(workspaceAutomationMemoryHeadColumns());
       if (inserted) {
         includeOrgKnowledge = inserted.includeOrgKnowledge;
       }
@@ -181,7 +187,7 @@ export async function commitWorkspaceAutomationMemory(input: {
             eq(schema.workspaceAutomationMemories.revisionId, expectedRevisionId),
           ),
         )
-        .returning(workspaceAutomationMemoryHeadColumns);
+        .returning(workspaceAutomationMemoryHeadColumns());
       if (updated) {
         includeOrgKnowledge = updated.includeOrgKnowledge;
       }

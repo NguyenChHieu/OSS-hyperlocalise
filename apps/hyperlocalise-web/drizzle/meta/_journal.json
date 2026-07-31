@@ -505,6 +505,13 @@
       "when": 1785388586767,
       "tag": "0071_wakeful_skin",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1785509987035,
+      "tag": "0072_typical_hercules",
+      "breakpoints": true
     }
   ]
 }

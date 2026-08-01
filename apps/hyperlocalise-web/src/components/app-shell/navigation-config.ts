@@ -301,8 +301,8 @@ export function buildProjectNavigationItems(
     },
     {
       label: intl.formatMessage({
-        defaultMessage: "Issue Sheet",
-        id: "rDacSGpJfq",
+        defaultMessage: "Issues",
+        id: "enrIL8oTbj",
         description: "Project sidebar navigation item for the project issue sheet",
       }),
       href: project("issue-sheet"),

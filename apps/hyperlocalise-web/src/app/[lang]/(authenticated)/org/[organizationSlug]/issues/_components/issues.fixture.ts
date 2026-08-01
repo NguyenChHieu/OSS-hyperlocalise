@@ -46,6 +46,8 @@ export function createOrganizationIssue(
     linkUrl: null,
     reporter: "Mina Chen",
     assignee: "Otto Klein",
+    assigneeUserId: null,
+    priority: "P1",
     createdAt: iso(-86_400_000),
     updatedAt: iso(-1_800_000),
     ...overrides,

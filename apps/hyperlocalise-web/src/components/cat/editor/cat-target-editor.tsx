@@ -25,6 +25,7 @@ import { cn } from "@/lib/primitives/cn";
 
 import {
   analyzeCatMessageFormat,
+  catMessageTokenSignature,
   compareCatMessageFormats,
   missingCatMessageTokens,
   type CatIcuBlockSummary,
@@ -61,6 +62,8 @@ function tokenVisualKind(token: CatMessageToken): CatMessageTokenVisualKind {
       return "pound";
     case "tag":
       return "tag";
+    case "markup":
+      return "markup";
     default:
       return "placeholder";
   }
@@ -134,6 +137,15 @@ function createCatMessageFormatExtension() {
 
               analysis.tokens.forEach((token) => {
                 decorationRangesForToken(textRanges, token).forEach(({ from, to }) => {
+                  if (token.kind === "markup") {
+                    decorations.push(
+                      Decoration.inline(from, to, {
+                        class: cn(tokenClassName(token), "cat-mf-markup-chip"),
+                        "data-cat-label": token.displayLabel ?? token.name,
+                      }),
+                    );
+                    return;
+                  }
                   decorations.push(Decoration.inline(from, to, { class: tokenClassName(token) }));
                 });
               });
@@ -178,17 +190,15 @@ function tokenLabel(token: CatMessageToken) {
     return `<${token.name}>`;
   }
 
+  if (token.kind === "markup") {
+    return token.displayLabel ?? token.name;
+  }
+
   return token.literal || `{${token.name}}`;
 }
 
 function presentTokenSignatures(analysis: CatMessageAnalysis) {
-  return new Set(
-    analysis.tokens.map((token) =>
-      token.kind === "icu"
-        ? `${token.kind}:${token.name}:${token.type}`
-        : `${token.kind}:${token.name}`,
-    ),
-  );
+  return new Set(analysis.tokens.map((token) => catMessageTokenSignature(token)));
 }
 
 export function CatMessagePreview({ message, className }: { message: string; className?: string }) {
@@ -216,7 +226,10 @@ export function CatMessagePreview({ message, className }: { message: string; cla
     }
     parts.push({
       key: token.id,
-      text: message.slice(token.start, token.end),
+      text:
+        token.kind === "markup"
+          ? (token.displayLabel ?? token.name)
+          : message.slice(token.start, token.end),
       token,
     });
     cursor = token.end;
@@ -236,6 +249,7 @@ export function CatMessagePreview({ message, className }: { message: string; cla
               "rounded-md border px-1 py-0.5 font-mono text-[0.9em]",
               catMessageTokenToneClass(tokenVisualKind(part.token)),
             )}
+            title={part.token.kind === "markup" ? part.token.literal : undefined}
           >
             {part.text}
           </span>
@@ -401,6 +415,10 @@ export function CatTargetEditor({
             : "rounded-2xl border border-border bg-background shadow-sm transition-colors",
           "focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/50",
           "[&_.cat-mf-token]:rounded-md [&_.cat-mf-token]:px-1 [&_.cat-mf-token]:py-0.5 [&_.cat-mf-token]:font-mono [&_.cat-mf-token]:text-[0.9em]",
+          // Collapse raw HL*PH sentinel glyphs; ::before paints the short MD#n / HT#n / LQ#n chip.
+          "[&_.cat-mf-markup-chip]:text-[0px] [&_.cat-mf-markup-chip]:leading-none",
+          "[&_.cat-mf-markup-chip::before]:content-[attr(data-cat-label)] [&_.cat-mf-markup-chip::before]:text-[0.9rem]",
+          "[&_.cat-mf-markup-chip::before]:font-mono [&_.cat-mf-markup-chip::before]:leading-normal",
           "[&_.tiptap_p.is-editor-empty:first-child::before]:text-muted-foreground",
           "[&_.tiptap_p.is-editor-empty:first-child::before]:content-[attr(data-placeholder)]",
           "[&_.tiptap_p.is-editor-empty:first-child::before]:float-left",
@@ -461,11 +479,7 @@ export function CatTargetEditor({
           </span>
           {sourceTokens.map((token) => {
             const isMissing = missingTokens.some((missingToken) => missingToken.id === token.id);
-            const isPresent = targetSignatures.has(
-              token.kind === "icu"
-                ? `${token.kind}:${token.name}:${token.type}`
-                : `${token.kind}:${token.name}`,
-            );
+            const isPresent = targetSignatures.has(catMessageTokenSignature(token));
 
             return (
               <Button

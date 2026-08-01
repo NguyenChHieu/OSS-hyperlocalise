@@ -16,8 +16,8 @@ import { defineMessages } from "react-intl";
 
 export const automationEditorIllustrationMessages = defineMessages({
   automationName: {
-    defaultMessage: "Translate Contentful article",
-    id: "3nHm7zuXbR",
+    defaultMessage: "Medical device compliance check",
+    id: "3cyl65gUFm",
     description: "Automation name shown in the marketing automation editor mock",
   },
   settingsTab: {
@@ -30,20 +30,20 @@ export const automationEditorIllustrationMessages = defineMessages({
     id: "11wuxnX/XF",
     description: "Triggers section heading in the marketing automation editor mock",
   },
-  contentfulWebhook: {
-    defaultMessage: "Contentful webhook",
-    id: "c8Cee1xOoy",
-    description: "Contentful webhook trigger title in the marketing automation editor mock",
+  scheduledTrigger: {
+    defaultMessage: "Scheduled",
+    id: "GC8iH4BPwj",
+    description: "Scheduled trigger title in the marketing automation editor mock",
   },
-  space: {
-    defaultMessage: "Help Center",
-    id: "21wXbXIpMt",
-    description: "Contentful space label in the marketing automation editor mock",
+  scheduleCadence: {
+    defaultMessage: "Daily",
+    id: "x3xLP2YerQ",
+    description: "Schedule cadence pill in the marketing automation editor mock",
   },
-  contentType: {
-    defaultMessage: "Article",
-    id: "yxdCe3Hn5q",
-    description: "Content type label in the marketing automation editor mock",
+  scheduleTime: {
+    defaultMessage: "08:00 UTC",
+    id: "dStMwhojOw",
+    description: "Schedule time pill in the marketing automation editor mock",
   },
   instructionsSection: {
     defaultMessage: "Agent Instructions",
@@ -52,8 +52,8 @@ export const automationEditorIllustrationMessages = defineMessages({
   },
   instructionsBody: {
     defaultMessage:
-      "Translate help center article updates into the configured target locales. Read the updated entry, localize title, body, SEO, and CTAs, run QA, then write drafts back for review. Do not publish.",
-    id: "agJVrVF8yQ",
+      "Run a scheduled compliance check on medical device labelling and IFU translations. Compare locales against approved terminology, flag missing translations for regulated markets, check unit and warning phrase consistency, then report blockers for review. Do not publish.",
+    id: "MCViSbp0Sq",
     description: "Sample agent instructions in the marketing automation editor mock",
   },
   toolsSection: {
@@ -67,19 +67,19 @@ export const automationEditorIllustrationMessages = defineMessages({
     description: "Knowledge memories tool title in the marketing automation editor mock",
   },
   toolKnowledgeDescription: {
-    defaultMessage: "Use organization knowledge as guidance for this automation.",
-    id: "W+LYiFgyzf",
+    defaultMessage: "Use approved medical terminology and regulatory glossary as guidance.",
+    id: "BQ2Um1RaCK",
     description: "Knowledge memories tool description in the marketing automation editor mock",
   },
-  toolContentful: {
-    defaultMessage: "Contentful translate",
-    id: "xNGsvx/Hks",
-    description: "Contentful tool title in the marketing automation editor mock",
+  toolValidation: {
+    defaultMessage: "Validation",
+    id: "1xBioz9EDW",
+    description: "Validation tool title in the marketing automation editor mock",
   },
-  toolContentfulDescription: {
-    defaultMessage: "Translate fields, run QA, and write drafts for review.",
-    id: "M8WTB2rTQG",
-    description: "Contentful tool description in the marketing automation editor mock",
+  toolValidationDescription: {
+    defaultMessage: "Check locale coverage, terminology, and compliance gates.",
+    id: "jQ5TgyeZII",
+    description: "Validation tool description in the marketing automation editor mock",
   },
   toolSlack: {
     defaultMessage: "Slack",
@@ -87,8 +87,8 @@ export const automationEditorIllustrationMessages = defineMessages({
     description: "Slack tool title in the marketing automation editor mock",
   },
   toolSlackDescription: {
-    defaultMessage: "Notify #localization when drafts are ready.",
-    id: "7pTwJNAe0D",
+    defaultMessage: "Notify #compliance when findings need review.",
+    id: "X6g1omP0I1",
     description: "Slack tool description in the marketing automation editor mock",
   },
   addTool: {

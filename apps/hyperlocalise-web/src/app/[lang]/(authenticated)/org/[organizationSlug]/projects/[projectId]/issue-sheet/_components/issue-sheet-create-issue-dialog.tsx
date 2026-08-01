@@ -40,6 +40,8 @@ import { Spinner } from "@/components/ui/spinner";
 import { readApiResponseError } from "@/lib/api-error";
 import { cn } from "@/lib/primitives/cn";
 
+import { IssueAssigneePicker } from "../../../../_components/issue-detail/issue-assignee-picker";
+import { useAssignableIssueMembersQuery } from "../../../../_components/issue-detail/use-assignable-issue-members";
 import { issueTypeValues, type IssueTypeValue } from "./issue-sheet-constants";
 import { issueSheetCreateIssueDialogMessages as messages } from "./issue-sheet-create-issue-dialog.messages";
 import { issueSheetSharedMessages as sharedMessages } from "./issue-sheet-shared.messages";
@@ -138,6 +140,7 @@ export function IssueSheetCreateIssueDialog({
   const [sourcePath, setSourcePath] = useState("");
   const [linkLabel, setLinkLabel] = useState("");
   const [linkUrl, setLinkUrl] = useState("");
+  const [assigneeUserId, setAssigneeUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -150,6 +153,7 @@ export function IssueSheetCreateIssueDialog({
       setSourcePath("");
       setLinkLabel("");
       setLinkUrl("");
+      setAssigneeUserId(null);
       return;
     }
     if (projectId) {
@@ -162,7 +166,17 @@ export function IssueSheetCreateIssueDialog({
   }, [open, projectId, projects]);
 
   const resolvedProjectId = projectId ?? selectedProjectId;
+
+  useEffect(() => {
+    setAssigneeUserId(null);
+  }, [resolvedProjectId]);
+
   const showProjectPicker = Boolean(projects && projects.length > 0 && !projectId);
+  const assignableMembersQuery = useAssignableIssueMembersQuery({
+    organizationSlug,
+    projectId: resolvedProjectId || undefined,
+    enabled: open && Boolean(resolvedProjectId),
+  });
 
   const issueTypeItems = issueTypeValues.map((value) => ({
     value,
@@ -191,6 +205,7 @@ export function IssueSheetCreateIssueDialog({
           linkLabel: linkLabel.trim() || undefined,
           linkUrl: linkUrl.trim() || undefined,
           priority,
+          ...(assigneeUserId ? { assigneeUserId } : {}),
         }),
       });
       return readJsonOrThrow<{ issue: { id: string } }>(
@@ -237,7 +252,10 @@ export function IssueSheetCreateIssueDialog({
                 <Select
                   value={selectedProjectId || undefined}
                   items={projectItems}
-                  onValueChange={(value) => setSelectedProjectId(value ?? "")}
+                  onValueChange={(value) => {
+                    setSelectedProjectId(value ?? "");
+                    setAssigneeUserId(null);
+                  }}
                 >
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder={intl.formatMessage(messages.projectPlaceholder)} />
@@ -331,6 +349,18 @@ export function IssueSheetCreateIssueDialog({
                   </Select>
                 </Field>
               </div>
+              {resolvedProjectId ? (
+                <Field label={<FormattedMessage {...messages.assigneeLabel} />}>
+                  <IssueAssigneePicker
+                    value={assigneeUserId}
+                    members={assignableMembersQuery.data?.members ?? []}
+                    isLoading={assignableMembersQuery.isLoading}
+                    disabled={createIssue.isPending}
+                    onChange={setAssigneeUserId}
+                    triggerClassName="w-full"
+                  />
+                </Field>
+              ) : null}
             </FormSection>
 
             <FormSection title={<FormattedMessage {...messages.contextSection} />}>

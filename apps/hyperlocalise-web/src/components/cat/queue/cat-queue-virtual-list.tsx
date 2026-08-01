@@ -18,6 +18,7 @@ import { useIntl } from "react-intl";
 
 import { cn } from "@/lib/primitives/cn";
 
+import { formatInternalMarkupForDisplay } from "@/components/cat/message-format/cat-internal-markup";
 import { CatSegmentKeyMeta } from "@/components/cat/segment/cat-segment-key-meta";
 import { catQueuePanelMessages } from "@/components/cat/shared/cat.messages";
 import type { CatSegment } from "@/components/cat/shared/types";
@@ -72,11 +73,13 @@ export function CatQueueVirtualList({
     },
     [hasMore, isLoadingMore, onNearEnd, segments.length],
   );
+  const getItemKey = useCallback((index: number) => segments[index]?.id ?? index, [segments]);
   const virtualizer = useVirtualizer({
     count: segments.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => ESTIMATED_ROW_HEIGHT,
     overscan: 8,
+    getItemKey,
     onChange: (instance) => {
       checkForNearEnd(instance.getVirtualItems());
     },
@@ -107,7 +110,7 @@ export function CatQueueVirtualList({
 
           return (
             <li
-              key={segment.id}
+              key={virtualRow.key}
               ref={virtualizer.measureElement}
               data-index={virtualRow.index}
               className="absolute top-0 left-0 w-full"
@@ -148,7 +151,9 @@ export function CatQueueVirtualList({
                     {String(segment.index).padStart(2, "0")}
                   </span>
                   <div className="min-w-0 flex-1 space-y-1">
-                    <p className="line-clamp-2 text-sm text-foreground">{segment.sourceText}</p>
+                    <p className="line-clamp-2 text-sm text-foreground">
+                      {formatInternalMarkupForDisplay(segment.sourceText)}
+                    </p>
                     <CatSegmentKeyMeta
                       segmentKey={segment.key}
                       sourcePath={segment.sourcePath}

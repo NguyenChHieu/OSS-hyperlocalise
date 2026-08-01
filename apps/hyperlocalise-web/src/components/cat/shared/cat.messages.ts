@@ -60,13 +60,13 @@ export const catQueuePanelMessages = defineMessages({
     description: "Accessible label for the queue overflow actions button",
   },
   searchPlaceholder: {
-    defaultMessage: "Search key or text…",
-    id: "8TtvvjSylP",
+    defaultMessage: "Search key, source, or translation…",
+    id: "extNy23p4p",
     description: "Placeholder for CAT queue search input",
   },
   searchAria: {
-    defaultMessage: "Search segments by key or source text",
-    id: "Wk16E7zAqa",
+    defaultMessage: "Search segments by key, source text, or translation",
+    id: "Kjim0yzISM",
     description: "Accessible label for CAT queue search input",
   },
   emptySearchResults: {
@@ -876,6 +876,11 @@ export const catWorkspaceViewModeMessages = defineMessages({
     defaultMessage: "Side by side",
     id: "EkIRMNMq59",
     description: "CAT workspace view mode with source and translation columns",
+  },
+  fileView: {
+    defaultMessage: "File view",
+    id: "aHtGik8gUy",
+    description: "CAT workspace view mode that previews source and translated files side by side",
   },
 });
 

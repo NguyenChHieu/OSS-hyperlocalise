@@ -63,7 +63,7 @@ export const issueSheetQuerySchema = z.object({
   locale: z.string().trim().min(1).max(32).optional(),
   assignee: z.string().uuid().or(z.literal("me")).or(z.literal("unassigned")).optional(),
   search: z.string().trim().max(200).optional(),
-  sort: issueSheetSortSchema.default("updated_at"),
+  sort: issueSheetSortSchema.default("status"),
   sortDir: issueSheetSortDirSchema.optional(),
   limit: z.coerce.number().int().min(1).max(100).default(50),
   offset: z.coerce.number().int().min(0).default(0),
@@ -138,6 +138,94 @@ export const issueSheetSetValueBodySchema = z.object({
   columnKey: z.string().trim().min(1).max(64),
   value: z.unknown(),
 });
+
+export const issueSheetFeedQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(100).default(100),
+    cursor: z.string().trim().min(1).max(512).optional(),
+  })
+  .superRefine((query, ctx) => {
+    if (!query.cursor) {
+      return;
+    }
+
+    const parts = query.cursor.split("|");
+    if (parts.length !== 3) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["cursor"],
+        message: "feed cursor must be isoTimestamp|sortRank|uuid",
+      });
+      return;
+    }
+
+    const [createdAt, sortRank, id] = parts;
+    if (!createdAt || Number.isNaN(Date.parse(createdAt))) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["cursor"],
+        message: "feed cursor timestamp is invalid",
+      });
+    }
+    if (sortRank !== "0" && sortRank !== "1") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["cursor"],
+        message: "feed cursor sortRank must be 0 or 1",
+      });
+    }
+    if (!id || !z.uuid().safeParse(id).success) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["cursor"],
+        message: "feed cursor id is invalid",
+      });
+    }
+  });
+
+export const issueSheetAssignableMemberSchema = z.object({
+  userId: z.string().uuid(),
+  email: z.string(),
+  firstName: z.string().nullable(),
+  lastName: z.string().nullable(),
+  displayName: z.string(),
+  avatarUrl: z.string().nullable(),
+  isCurrentUser: z.boolean(),
+});
+
+export const issueSheetActivityUserSchema = z.object({
+  userId: z.string().uuid(),
+  displayName: z.string(),
+  email: z.string().nullable(),
+  avatarUrl: z.string().nullable(),
+});
+
+const issueSheetActivityBaseSchema = {
+  id: z.string().uuid(),
+  actor: issueSheetActivityUserSchema.nullable(),
+  createdAt: z.string(),
+};
+
+export const issueSheetActivitySchema = z.discriminatedUnion("type", [
+  z.object({
+    ...issueSheetActivityBaseSchema,
+    type: z.literal("assignee_changed"),
+    previousAssignee: issueSheetActivityUserSchema.nullable(),
+    nextAssignee: issueSheetActivityUserSchema.nullable(),
+  }),
+  z.object({
+    ...issueSheetActivityBaseSchema,
+    type: z.literal("issue_created"),
+  }),
+  z.object({
+    ...issueSheetActivityBaseSchema,
+    type: z.literal("status_changed"),
+    previousStatus: z.string(),
+    nextStatus: z.string(),
+  }),
+]);
+
+export type IssueSheetFeedQuery = z.infer<typeof issueSheetFeedQuerySchema>;
 
 export const issueSheetSystemFieldSchema = z.enum([
   "title",

@@ -27,6 +27,10 @@ export const supportedTranslationFileFormats = [
   "png",
   "jpeg",
   "webp",
+  "docx",
+  "xlsx",
+  "xls",
+  "pptx",
 ] as const;
 
 export type SupportedTranslationFileFormat = (typeof supportedTranslationFileFormats)[number];
@@ -71,6 +75,10 @@ const formatsByExtension: Record<string, SupportedTranslationFileFormat> = {
   ".jpg": "jpeg",
   ".jpeg": "jpeg",
   ".webp": "webp",
+  ".docx": "docx",
+  ".xlsx": "xlsx",
+  ".xls": "xls",
+  ".pptx": "pptx",
 };
 
 export const supportedImageTranslationFileFormats = ["png", "jpeg", "webp"] as const;
@@ -78,12 +86,32 @@ export const supportedImageTranslationFileFormats = ["png", "jpeg", "webp"] as c
 export type SupportedImageTranslationFileFormat =
   (typeof supportedImageTranslationFileFormats)[number];
 
+export const supportedOfficeTranslationFileFormats = ["docx", "xlsx", "xls", "pptx"] as const;
+
+export type SupportedOfficeTranslationFileFormat =
+  (typeof supportedOfficeTranslationFileFormats)[number];
+
 export function isImageTranslationFileFormat(
   format: SupportedTranslationFileFormat,
 ): format is SupportedImageTranslationFileFormat {
   return supportedImageTranslationFileFormats.includes(
     format as SupportedImageTranslationFileFormat,
   );
+}
+
+export function isOfficeTranslationFileFormat(
+  format: SupportedTranslationFileFormat,
+): format is SupportedOfficeTranslationFileFormat {
+  return supportedOfficeTranslationFileFormats.includes(
+    format as SupportedOfficeTranslationFileFormat,
+  );
+}
+
+/** Binary whole-file formats that skip string-key extraction (images + office). */
+export function isBinaryTranslationFileFormat(
+  format: SupportedTranslationFileFormat,
+): format is SupportedImageTranslationFileFormat | SupportedOfficeTranslationFileFormat {
+  return isImageTranslationFileFormat(format) || isOfficeTranslationFileFormat(format);
 }
 
 export function isSupportedFileTranslationFileFormat(
@@ -136,6 +164,28 @@ export function inferSupportedImageTranslationFileFormat(
   return format;
 }
 
+export function inferSupportedOfficeTranslationFileFormat(
+  filename: string,
+): SupportedOfficeTranslationFileFormat | null {
+  const format = inferSupportedTranslationFileFormat(filename);
+  if (!format || !isOfficeTranslationFileFormat(format)) {
+    return null;
+  }
+
+  return format;
+}
+
+export function inferSupportedBinaryTranslationFileFormat(
+  filename: string,
+): SupportedImageTranslationFileFormat | SupportedOfficeTranslationFileFormat | null {
+  const format = inferSupportedTranslationFileFormat(filename);
+  if (!format || !isBinaryTranslationFileFormat(format)) {
+    return null;
+  }
+
+  return format;
+}
+
 const IMAGE_URL_EXTENSION_PATTERN = /\.(png|jpe?g|webp)(?:[?#]|$)/i;
 
 /** Heuristic: http(s) URL that looks like an image asset. */
@@ -167,4 +217,9 @@ export function getLocaleScanExtensions(): string[] {
   }
 
   return [...extensions].toSorted();
+}
+
+/** Comma-separated `accept` value for project source upload file pickers. */
+export function getSupportedSourceUploadAccept(): string {
+  return Object.keys(formatsByExtension).toSorted().join(",");
 }

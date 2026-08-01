@@ -704,6 +704,9 @@
   "1Z393O2F5g": {
     "defaultMessage": "Kontaktieren Sie uns"
   },
+  "1c3qg2u74K": {
+    "defaultMessage": "Source file unavailable"
+  },
   "1c7WoNl9cJ": {
     "defaultMessage": "Abonnement"
   },
@@ -1186,6 +1189,9 @@
   },
   "3w6PJBQOmr": {
     "defaultMessage": "Zielsprache"
+  },
+  "3wxYCVb3wu": {
+    "defaultMessage": "No translated file yet"
   },
   "3xhOvPA3lu": {
     "defaultMessage": "Quell-Upload · {project}"
@@ -1958,6 +1964,9 @@
   "81SMUge/HF": {
     "defaultMessage": "KI-Entwürfe verfehlen UI-Einschränkungen, Glossarregeln und das, was sich im Pull Request tatsächlich geändert hat."
   },
+  "86pJK6MuXF": {
+    "defaultMessage": "Source image"
+  },
   "87YejAyMlf": {
     "defaultMessage": "Issue wird geladen …"
   },
@@ -2659,6 +2668,9 @@
   },
   "BeBJ6Gf6JS": {
     "defaultMessage": "Warnung bei Abweichungen nach der Veröffentlichung"
+  },
+  "BeXUx2ytXa": {
+    "defaultMessage": "Probleme"
   },
   "Bfwle3X1Yy": {
     "defaultMessage": "Verbinde {provider}, um die Ressource {resource} des Anbieters anzuzeigen."
@@ -3593,6 +3605,9 @@
   "GWSh8gMiHL": {
     "defaultMessage": "GB"
   },
+  "GWzwxQbAhe": {
+    "defaultMessage": "Translated image"
+  },
   "GZgOkkX0hj": {
     "defaultMessage": "Japanisch (Japan)"
   },
@@ -3649,6 +3664,9 @@
   },
   "GpQTuQOUij": {
     "defaultMessage": "{title} wird geladen"
+  },
+  "GpqbnnE7vn": {
+    "defaultMessage": "Use Add files above to upload JSON, YAML, XLIFF, PO, images, Office files, and other supported formats."
   },
   "GpsLS8ojw/": {
     "defaultMessage": "—"
@@ -4454,6 +4472,9 @@
   "LX+MrzNv6y": {
     "defaultMessage": "Abonnement wiederherstellen"
   },
+  "LZCFkSSHP6": {
+    "defaultMessage": "Source ({locale})"
+  },
   "LeSdkdB/lW": {
     "defaultMessage": "Vorherige Folie"
   },
@@ -4766,6 +4787,9 @@
   "NX9i6pdgvw": {
     "defaultMessage": "Erstellt am {date}"
   },
+  "NXryL5pUgk": {
+    "defaultMessage": "Approve"
+  },
   "NYa08Ow2+o": {
     "defaultMessage": "Prüfungstyp"
   },
@@ -4795,6 +4819,9 @@
   },
   "NfnpZsFAE9": {
     "defaultMessage": "Dieses Problem konnte nicht geladen werden."
+  },
+  "NglzlEjVxr": {
+    "defaultMessage": "Upload translated file"
   },
   "NhoTfXzaHI": {
     "defaultMessage": "Project"
@@ -5741,6 +5768,9 @@
   "Shd5zCFQ4K": {
     "defaultMessage": "Übersetzung konnte nicht gespeichert werden"
   },
+  "ShnGyATeRG": {
+    "defaultMessage": "Next file"
+  },
   "SiPCg9X6AE": {
     "defaultMessage": "Vorschau"
   },
@@ -6035,6 +6065,9 @@
   "UFI0ojyOjH": {
     "defaultMessage": "Send"
   },
+  "UL3odPVruI": {
+    "defaultMessage": "Markup order"
+  },
   "ULAiYLTSMp": {
     "defaultMessage": "Archivierte Repositories können keine Übersetzungsautomatisierung verwenden."
   },
@@ -6292,6 +6325,9 @@
   },
   "VkNsZOH7xT": {
     "defaultMessage": "Organisation auswählen"
+  },
+  "VkWvhhKis5": {
+    "defaultMessage": "Translated ({locale})"
   },
   "VpKHsNzJ6d": {
     "defaultMessage": "{repositoryFullName} aktivieren"
@@ -7220,6 +7256,9 @@
   "aGyTnZ8Dnd": {
     "defaultMessage": "Kann ich heute ein Konto erstellen?"
   },
+  "aHtGik8gUy": {
+    "defaultMessage": "File view"
+  },
   "aI9OdzlmW1": {
     "defaultMessage": "Löschen"
   },
@@ -8009,6 +8048,9 @@
   "enjVtZumks": {
     "defaultMessage": "Für diese Aufgabe ist kein Zielgebietsschema verfügbar."
   },
+  "enrIL8oTbj": {
+    "defaultMessage": "Probleme"
+  },
   "eogv8qHzO7": {
     "defaultMessage": "Direkte und vertraute französische SaaS-CTA-Formulierung."
   },
@@ -8350,6 +8392,9 @@
   },
   "gWx5l7VSDf": {
     "defaultMessage": "{source} · {memoryName} · {matchScore}%"
+  },
+  "gXL7Y0+DUP": {
+    "defaultMessage": "Save edits"
   },
   "gXZ1TC7mZA": {
     "defaultMessage": "Stunde"
@@ -9055,6 +9100,9 @@
   },
   "jletyEWDwl": {
     "defaultMessage": "Actions for {email}"
+  },
+  "jmazd5AXy4": {
+    "defaultMessage": "Probleme"
   },
   "joOR4TGsxW": {
     "defaultMessage": "Noch keine Beiträge. Schau bald wieder vorbei."
@@ -10856,6 +10904,9 @@
   "tToS3qyu6G": {
     "defaultMessage": "Kontext von {key}"
   },
+  "tUQYErY0nj": {
+    "defaultMessage": "Previous file"
+  },
   "tUtjQfuwWO": {
     "defaultMessage": "Mitglieder"
   },
@@ -11591,6 +11642,9 @@
   "x8HYMdg8Zs": {
     "defaultMessage": "In Warteschlange"
   },
+  "x8Rt8oWLMk": {
+    "defaultMessage": "Preview is not available for this file type yet."
+  },
   "x9bd7qMA5t": {
     "defaultMessage": "Team-Slug ist erforderlich."
   },
@@ -11662,6 +11716,9 @@
   },
   "xTpbtPORei": {
     "defaultMessage": "Dieses Crowdin-Projekt verknüpfen"
+  },
+  "xVvlWpH5FH": {
+    "defaultMessage": "Regenerate"
   },
   "xX2Nm+qioI": {
     "defaultMessage": "Wir haben den Workspace erstellt, konnten aber seine URL nicht vorbereiten. Bitte versuchen Sie es erneut."
@@ -11737,6 +11794,9 @@
   },
   "xqxlUUUa9e": {
     "defaultMessage": "Hyperlocalise"
+  },
+  "xrvyWAPhPg": {
+    "defaultMessage": "Target must keep source order for markup tokens {tokens}. Swapped openers and closers break export."
   },
   "xs2JNm6T2w": {
     "defaultMessage": "Die Semrush-Verbindung konnte nicht gelöscht werden."

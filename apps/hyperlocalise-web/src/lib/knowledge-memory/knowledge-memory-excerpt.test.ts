@@ -218,6 +218,26 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("特別コード");
   });
 
+  it("reserves body space instead of letting a long heading consume the whole budget", () => {
+    const deeplyNestedSegment = segment({
+      headingPath: [
+        "Memory.md",
+        "A very long section heading that eats most of the budget",
+        "An equally verbose subsection name",
+        "de-DE",
+      ],
+      segmentText: "Never translate the routingtoken internal identifier under any circumstances.",
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: deeplyNestedSegment,
+      queryTokens: tokens("routingtoken"),
+      maxChars: 80,
+    });
+
+    expect(excerpt.length).toBeLessThanOrEqual(80);
+  });
+
   it("is deterministic across repeated calls with the same input", () => {
     const longParagraph = [
       "The firstrule token applies at the start of this paragraph for every locale.",

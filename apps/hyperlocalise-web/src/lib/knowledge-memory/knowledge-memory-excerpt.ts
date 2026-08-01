@@ -227,7 +227,14 @@ export function buildSegmentExcerpt(input: {
     return truncateToBudget(segment.compactPromptText, maxChars);
   }
 
-  const headingPrefix = `${segment.headingPath.join(" > ")} -> `;
+  const rawHeadingPrefix = `${segment.headingPath.join(" > ")} -> `;
+  // Reserve at least a sliver of body space even when the heading path is long relative to
+  // maxChars (the 80-char minimum used for balanced multi-locale excerpts makes this easy to
+  // hit): otherwise a long heading alone could consume the entire per-segment budget, returning
+  // heading + "..." with none of the matched rule, and — when the heading alone is >= maxChars —
+  // exceeding maxChars outright.
+  const minBodyReserve = Math.min(20, Math.floor(maxChars / 4));
+  const headingPrefix = truncateToBudget(rawHeadingPrefix, Math.max(0, maxChars - minBodyReserve));
   const separator = segment.kind === "bullet_group" ? "; " : " ";
   const bodyBudget = Math.max(0, maxChars - headingPrefix.length);
 

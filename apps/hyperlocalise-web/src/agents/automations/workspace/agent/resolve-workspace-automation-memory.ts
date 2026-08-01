@@ -25,6 +25,21 @@ export type WorkspaceAutomationMemoryContext = {
   includeOrgKnowledge: boolean;
 };
 
+/**
+ * Decides what to pass as `includeOverride` to resolveWorkspaceAutomationKnowledgeContext.
+ *
+ * Tri-state on purpose — `undefined` means "defer to `toolConfig.knowledge.enabled`". The
+ * `includeOrgKnowledge` column defaults to `true`, so treating it as authoritative even when the
+ * automation has no Memory of its own would start injecting org knowledge into automations that
+ * have the legacy Memories tool switched off. See the tri-state table in
+ * docs/plans/2026-07-17-automation-knowledge-memories-design.md.
+ */
+export function resolveOrgKnowledgeInclusion(
+  memory: WorkspaceAutomationMemoryContext,
+): boolean | undefined {
+  return memory.content !== null ? memory.includeOrgKnowledge : undefined;
+}
+
 export async function resolveWorkspaceAutomationMemoryContext(input: {
   automation: WorkspaceAutomationRecord;
 }): Promise<WorkspaceAutomationMemoryContext> {

@@ -29,7 +29,10 @@ vi.mock("@/lib/knowledge-memory/knowledge-memory-selection", () => ({
   selectKnowledgeMemoryContext: selectKnowledgeMemoryContextMock,
 }));
 
-import { resolveWorkspaceAutomationMemoryContext } from "./resolve-workspace-automation-memory";
+import {
+  resolveOrgKnowledgeInclusion,
+  resolveWorkspaceAutomationMemoryContext,
+} from "./resolve-workspace-automation-memory";
 
 function automation(): WorkspaceAutomationRecord {
   return {
@@ -107,5 +110,32 @@ describe("resolveWorkspaceAutomationMemoryContext", () => {
       sourceText: "Keep product names consistent.",
       context: "Nightly sync",
     });
+  });
+});
+
+describe("resolveOrgKnowledgeInclusion", () => {
+  // Pins the tri-state that decides whether the automation's "Also include organization-wide
+  // Memory" checkbox overrides the legacy toolConfig.knowledge.enabled toggle. The awkward part
+  // is the first case: includeOrgKnowledge defaults to true, so deferring is what stops org
+  // knowledge leaking into automations that never opted in.
+  it("defers to the legacy toggle when the automation has no Memory of its own", () => {
+    expect(resolveOrgKnowledgeInclusion({ content: null, includeOrgKnowledge: true })).toBe(
+      undefined,
+    );
+    expect(resolveOrgKnowledgeInclusion({ content: null, includeOrgKnowledge: false })).toBe(
+      undefined,
+    );
+  });
+
+  it("forces org knowledge in when the automation has Memory and opts in", () => {
+    expect(resolveOrgKnowledgeInclusion({ content: "Some rules", includeOrgKnowledge: true })).toBe(
+      true,
+    );
+  });
+
+  it("forces org knowledge out when the automation has Memory and opts out", () => {
+    expect(
+      resolveOrgKnowledgeInclusion({ content: "Some rules", includeOrgKnowledge: false }),
+    ).toBe(false);
   });
 });

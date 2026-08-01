@@ -32,7 +32,10 @@ import { composeWorkspaceAutomationInstructions } from "./compose-workspace-inst
 import { createWorkspaceOrchestratorSession, type WorkspaceOrchestratorSession } from "./context";
 import { buildWorkspaceOrchestratorPlan } from "./plan";
 import { resolveWorkspaceAutomationKnowledgeContext } from "./resolve-workspace-automation-knowledge";
-import { resolveWorkspaceAutomationMemoryContext } from "./resolve-workspace-automation-memory";
+import {
+  resolveOrgKnowledgeInclusion,
+  resolveWorkspaceAutomationMemoryContext,
+} from "./resolve-workspace-automation-memory";
 import { buildWorkspaceOrchestratorOutputSummary } from "./workspace-orchestrator-output-summary";
 
 const logger = createLogger("workspace-orchestrator");
@@ -165,12 +168,7 @@ export async function runWorkspaceOrchestrator(input: {
   const knowledgeMemory = await resolveWorkspaceAutomationKnowledgeContext({
     organizationId: input.organizationId,
     automation,
-    // With no automation-specific Memory, org knowledge stays gated by the existing
-    // toolConfig.knowledge.enabled toggle (unchanged behavior). Once the automation has its own
-    // Memory, its "Also include organization-wide Memory" checkbox is authoritative in both
-    // directions — it can force org knowledge in OR out, overriding the legacy toggle.
-    includeOverride:
-      automationMemory.content !== null ? automationMemory.includeOrgKnowledge : undefined,
+    includeOverride: resolveOrgKnowledgeInclusion(automationMemory),
   });
   const composedInstructions = composeWorkspaceAutomationInstructions({
     templateSkillId,

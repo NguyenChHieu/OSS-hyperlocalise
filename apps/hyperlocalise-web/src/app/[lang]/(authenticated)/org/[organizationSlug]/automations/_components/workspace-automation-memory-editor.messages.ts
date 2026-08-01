@@ -40,6 +40,13 @@ export const workspaceAutomationMemoryEditorMessages = defineMessages({
     id: "jfGMJ5b7My",
     description: "Checkbox label controlling whether org-wide Knowledge Memory is also applied",
   },
+  includeOrgKnowledgeHint: {
+    defaultMessage:
+      "This editor changes only this automation's memory. Organization-wide Knowledge is edited on the <link>Knowledge page</link>.",
+    id: "dI6kbidE1/",
+    description:
+      "Hint clarifying that the automation memory editor does not edit org-wide Knowledge, with a link to the Knowledge page",
+  },
   versionNoteLabel: {
     defaultMessage: "Version note (optional)",
     id: "plxwzkWTV8",

@@ -213,6 +213,7 @@ export function WorkspaceAutomationMemoryEditor({
         onSummaryChange={setSummary}
         includeOrgKnowledge={includeOrgKnowledge}
         onIncludeOrgKnowledgeChange={setIncludeOrgKnowledge}
+        organizationSlug={organizationSlug}
         savedWorkspaceAutomationMemory={savedWorkspaceAutomationMemory}
         characterCount={currentEditorState.characterCount}
         characterLimit={currentEditorState.characterLimit}

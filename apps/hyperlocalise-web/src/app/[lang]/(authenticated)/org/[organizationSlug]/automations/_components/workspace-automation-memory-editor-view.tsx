@@ -13,6 +13,7 @@
  * Version 2.0 or later.
  */
 import { useState } from "react";
+import Link from "next/link";
 import { FloppyDiskIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { HistoryIcon } from "lucide-react";
@@ -56,6 +57,7 @@ export type WorkspaceAutomationMemoryEditorViewProps = {
   onSummaryChange: (value: string) => void;
   includeOrgKnowledge: boolean;
   onIncludeOrgKnowledgeChange: (value: boolean) => void;
+  organizationSlug: string;
   savedWorkspaceAutomationMemory: WorkspaceAutomationMemoryRecordDto | null;
   characterCount: number;
   characterLimit: number;
@@ -76,6 +78,7 @@ export function WorkspaceAutomationMemoryEditorView({
   onSummaryChange,
   includeOrgKnowledge,
   onIncludeOrgKnowledgeChange,
+  organizationSlug,
   savedWorkspaceAutomationMemory,
   characterCount,
   characterLimit,
@@ -169,6 +172,20 @@ export function WorkspaceAutomationMemoryEditorView({
               {...workspaceAutomationMemoryEditorMessages.includeOrgKnowledgeLabel}
             />
           </label>
+          {/* Manage used to open the org Knowledge editor; it now opens this one. Name the scope
+              and keep a route back, so the org-level document is still one click away. */}
+          <p className="pb-3 text-xs text-muted-foreground">
+            <FormattedMessage
+              {...workspaceAutomationMemoryEditorMessages.includeOrgKnowledgeHint}
+              values={{
+                link: (chunks) => (
+                  <Link href={`/org/${organizationSlug}/knowledge`} className="underline">
+                    {chunks}
+                  </Link>
+                ),
+              }}
+            />
+          </p>
 
           <Separator />
           <div className="flex flex-wrap items-center justify-between gap-3 py-3">

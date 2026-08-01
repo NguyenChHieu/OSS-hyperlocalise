@@ -36,9 +36,13 @@ function truncateToBudget(text: string, maxChars: number) {
 }
 
 function findEarliestMatchOffset(text: string, queryTokens: Set<string>): number | null {
+  // Plain substring search, not a \b-anchored word boundary: \b is defined in terms of ASCII
+  // word characters, so it never matches around CJK/other non-ASCII tokens, which would make
+  // this silently return null (and fall back to a plain prefix cut) for exactly the documents
+  // this function exists to handle correctly. Approximate positional accuracy is all this needs.
   let earliest: number | null = null;
   for (const token of queryTokens) {
-    const match = new RegExp(`\\b${escapeRegExp(token)}`, "i").exec(text);
+    const match = new RegExp(escapeRegExp(token), "i").exec(text);
     if (match && (earliest === null || match.index < earliest)) {
       earliest = match.index;
     }
@@ -152,17 +156,48 @@ function rankMatchingUnits(units: ExcerptUnit[], queryTokens: Set<string>): Exce
     .map((scored) => scored.unit);
 }
 
-function packUnitsWithinBudget(rankedUnits: ExcerptUnit[], budget: number, separator: string) {
-  const chosen: ExcerptUnit[] = [];
+function packUnitsWithinBudget(
+  rankedUnits: ExcerptUnit[],
+  unitsByOffset: Map<number, ExcerptUnit>,
+  budget: number,
+  separator: string,
+) {
+  const chosen = new Map<number, ExcerptUnit>();
   let used = 0;
+
+  const tryAdd = (unit: ExcerptUnit) => {
+    if (chosen.has(unit.offset)) {
+      return true;
+    }
+    const additional = (chosen.size > 0 ? separator.length : 0) + unit.text.length;
+    if (used + additional > budget) {
+      return false;
+    }
+    chosen.set(unit.offset, unit);
+    used += additional;
+    return true;
+  };
+
   for (const unit of rankedUnits) {
-    const additional = (chosen.length > 0 ? separator.length : 0) + unit.text.length;
-    if (used + additional <= budget) {
-      chosen.push(unit);
-      used += additional;
+    if (!tryAdd(unit)) {
+      continue;
+    }
+
+    // Pull in the immediate neighbours so a rule split across adjacent sentences/bullets — e.g.
+    // "When the source contains X" followed by "translate it as Y" — doesn't lose its other half
+    // just because that half alone has no query-token overlap. The prefix preview this replaces
+    // kept both as long as they fit within budget; this restores that for the units that matched.
+    const previous = unitsByOffset.get(unit.offset - 1);
+    if (previous) {
+      tryAdd(previous);
+    }
+    const next = unitsByOffset.get(unit.offset + 1);
+    if (next) {
+      tryAdd(next);
     }
   }
-  return chosen.sort((a, b) => a.offset - b.offset);
+
+  return [...chosen.values()].sort((a, b) => a.offset - b.offset);
 }
 
 /**
@@ -196,11 +231,17 @@ export function buildSegmentExcerpt(input: {
   const separator = segment.kind === "bullet_group" ? "; " : " ";
   const bodyBudget = Math.max(0, maxChars - headingPrefix.length);
 
-  const chosen = packUnitsWithinBudget(ranked, bodyBudget, separator);
-  const body =
-    chosen.length > 0
-      ? chosen.map((unit) => unit.text).join(separator)
-      : truncateAroundMatch(ranked[0]!.text, bodyBudget, queryTokens);
+  const topMatch = ranked[0]!;
+  if (topMatch.text.length > bodyBudget) {
+    // The single best match doesn't fit on its own. Truncate it around the query match rather
+    // than falling through to pack whichever weaker, shorter units happen to fit — otherwise the
+    // strongest match gets silently dropped in favour of less relevant ones.
+    return `${headingPrefix}${truncateAroundMatch(topMatch.text, bodyBudget, queryTokens)}`;
+  }
+
+  const unitsByOffset = new Map(units.map((unit) => [unit.offset, unit]));
+  const chosen = packUnitsWithinBudget(ranked, unitsByOffset, bodyBudget, separator);
+  const body = chosen.map((unit) => unit.text).join(separator);
 
   return `${headingPrefix}${body}`;
 }

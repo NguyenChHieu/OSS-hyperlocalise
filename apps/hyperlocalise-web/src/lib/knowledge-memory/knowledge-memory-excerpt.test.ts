@@ -169,6 +169,55 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt.length).toBeLessThanOrEqual(200);
   });
 
+  it("includes the adjacent unit for a rule split across a condition and its action", () => {
+    const paragraph = [
+      "When the source text contains a discountcode marker, treat it as a promotional string.",
+      "Always apply the promostyling guide to that label regardless of locale.",
+    ].join(" ");
+
+    const excerpt = buildSegmentExcerpt({
+      segment: segment({ segmentText: paragraph }),
+      queryTokens: tokens("discountcode"),
+      maxChars: 200,
+    });
+
+    expect(excerpt).toContain("discountcode");
+    expect(excerpt).toContain("promostyling");
+  });
+
+  it("keeps the highest-ranked oversized match instead of a smaller weaker one that fits", () => {
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: [
+        "- Keep the onlysmallword token unchanged and mention extramarker here.",
+        "- The bigmarker rule applies broadly and also involves extramarker handling across every locale and screen, with a great deal of additional padding text included here purely to push this bullet's total length well past what fits inside a tight one hundred and twenty character budget window used for this test.",
+      ].join("\n"),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("bigmarker", "extramarker"),
+      maxChars: 120,
+    });
+
+    expect(excerpt).toContain("bigmarker");
+    expect(excerpt).not.toContain("onlysmallword");
+  });
+
+  it("locates a match for CJK query tokens without relying on ASCII word boundaries", () => {
+    const padding =
+      "これは一般的な説明文であり詳細な背景情報を含みますがここでは重要ではありません".repeat(6);
+    const segmentText = `${padding} 特別コード は翻訳せずそのまま残してください`;
+
+    const excerpt = buildSegmentExcerpt({
+      segment: segment({ segmentText }),
+      queryTokens: tokens("特別コード"),
+      maxChars: 80,
+    });
+
+    expect(excerpt).toContain("特別コード");
+  });
+
   it("is deterministic across repeated calls with the same input", () => {
     const longParagraph = [
       "The firstrule token applies at the start of this paragraph for every locale.",

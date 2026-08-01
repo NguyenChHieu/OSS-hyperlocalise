@@ -10,6 +10,7 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
+import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 
 import { db, schema, type DatabaseClient, type DatabaseTransaction } from "@/lib/database";
@@ -92,23 +93,53 @@ export async function getWorkspaceAutomationMemory(input: {
 /**
  * Sets the additive/override toggle for whether org-wide Knowledge Memory is also included
  * alongside this automation's own Memory. Deliberately outside commitWorkspaceAutomationMemory:
- * it's live config, not versioned content, and shouldn't create a revision or interact with the
- * commit's optimistic-concurrency/no-op logic. A no-op if the automation has no Memory row yet.
+ * it's live config, not versioned content, so it never creates an archived revision or bumps
+ * `version`. It still goes through the same compare-and-swap as content commits, though — without
+ * that, two editors loading the same state could have one silently overwrite the other's toggle
+ * change, since a toggle-only write previously left revisionId (and therefore the ETag) unchanged.
  */
 export async function setWorkspaceAutomationMemoryIncludeOrgKnowledge(input: {
   automationId: string;
   organizationId: string;
   includeOrgKnowledge: boolean;
-}): Promise<void> {
-  await db
+  expectedRevisionId: string | null;
+}): Promise<Result<WorkspaceAutomationMemoryRecord, WorkspaceAutomationMemoryCommitError>> {
+  const current = await getCurrentWorkspaceAutomationMemoryRow(db, input.automationId);
+  const currentRecord = toWorkspaceAutomationMemoryRecord(current);
+
+  if (currentRecord.revisionId !== input.expectedRevisionId) {
+    return err({ code: "precondition_failed", current: currentRecord });
+  }
+
+  if (!current || current.includeOrgKnowledge === input.includeOrgKnowledge) {
+    return ok(currentRecord);
+  }
+
+  const [updated] = await db
     .update(schema.workspaceAutomationMemories)
-    .set({ includeOrgKnowledge: input.includeOrgKnowledge })
+    .set({
+      includeOrgKnowledge: input.includeOrgKnowledge,
+      revisionId: randomUUID(),
+      updatedAt: new Date(),
+    })
     .where(
       and(
         eq(schema.workspaceAutomationMemories.automationId, input.automationId),
         eq(schema.workspaceAutomationMemories.organizationId, input.organizationId),
+        eq(schema.workspaceAutomationMemories.revisionId, current.revisionId),
       ),
-    );
+    )
+    .returning(workspaceAutomationMemoryHeadColumns());
+
+  if (!updated) {
+    const latest = await getCurrentWorkspaceAutomationMemoryRow(db, input.automationId);
+    return err({
+      code: "precondition_failed",
+      current: toWorkspaceAutomationMemoryRecord(latest),
+    });
+  }
+
+  return ok(toWorkspaceAutomationMemoryRecord(updated));
 }
 
 export async function commitWorkspaceAutomationMemory(input: {

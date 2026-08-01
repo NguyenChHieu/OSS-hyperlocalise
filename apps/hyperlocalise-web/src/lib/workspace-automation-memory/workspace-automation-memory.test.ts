@@ -237,17 +237,67 @@ describe("workspace automation memory version history", () => {
     }
     expect(first.value.workspaceAutomationMemory.includeOrgKnowledge).toBe(true);
 
-    await setWorkspaceAutomationMemoryIncludeOrgKnowledge({
+    const toggled = await setWorkspaceAutomationMemoryIncludeOrgKnowledge({
       automationId: scope.automationId,
       organizationId: scope.organizationId,
       includeOrgKnowledge: false,
+      expectedRevisionId: first.value.workspaceAutomationMemory.revisionId,
     });
+    expect(isOk(toggled)).toBe(true);
+    if (!isOk(toggled)) {
+      return;
+    }
+    expect(toggled.value.includeOrgKnowledge).toBe(false);
+    // Toggling must not create an archived revision or bump the user-visible version, but it
+    // must still advance revisionId — that's the concurrency token guarding this field too.
+    expect(toggled.value.version).toBe(1);
+    expect(toggled.value.revisionId).not.toBe(first.value.workspaceAutomationMemory.revisionId);
 
     const afterToggle = await getWorkspaceAutomationMemory({ automationId: scope.automationId });
     expect(afterToggle.includeOrgKnowledge).toBe(false);
-    // Toggling must not create a new revision or bump the version.
-    expect(afterToggle.version).toBe(1);
-    expect(afterToggle.revisionId).toBe(first.value.workspaceAutomationMemory.revisionId);
+    expect(afterToggle.revisionId).toBe(toggled.value.revisionId);
+  });
+
+  it("rejects a stale includeOrgKnowledge toggle instead of silently overwriting a concurrent change", async () => {
+    const scope = await createScope();
+    const first = await commitWorkspaceAutomationMemory({
+      ...scope,
+      updatedByUserId: scope.userId,
+      content: "Some memory content",
+      expectedRevisionId: null,
+    });
+    expect(isOk(first)).toBe(true);
+    if (!isOk(first)) {
+      return;
+    }
+    const loadedRevisionId = first.value.workspaceAutomationMemory.revisionId;
+
+    // Editor A toggles first, based on the revision both editors loaded.
+    const editorA = await setWorkspaceAutomationMemoryIncludeOrgKnowledge({
+      automationId: scope.automationId,
+      organizationId: scope.organizationId,
+      includeOrgKnowledge: false,
+      expectedRevisionId: loadedRevisionId,
+    });
+    expect(isOk(editorA)).toBe(true);
+
+    // Editor B still has the original (now stale) revisionId and tries to toggle it back.
+    const editorB = await setWorkspaceAutomationMemoryIncludeOrgKnowledge({
+      automationId: scope.automationId,
+      organizationId: scope.organizationId,
+      includeOrgKnowledge: true,
+      expectedRevisionId: loadedRevisionId,
+    });
+    expect(isErr(editorB)).toBe(true);
+    if (!isErr(editorB)) {
+      return;
+    }
+    expect(editorB.error.code).toBe("precondition_failed");
+    expect(editorB.error.current.includeOrgKnowledge).toBe(false);
+
+    // Editor A's change must survive, not be silently clobbered by editor B's stale write.
+    const current = await getWorkspaceAutomationMemory({ automationId: scope.automationId });
+    expect(current.includeOrgKnowledge).toBe(false);
   });
 
   it("cascades deletion when the parent automation is deleted", async () => {

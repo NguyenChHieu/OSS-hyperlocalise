@@ -45,6 +45,7 @@ import {
   type WorkspaceAutomationToolConfig,
 } from "@/lib/agents/workspace-automations";
 import { db, schema } from "@/lib/database";
+import { workspaceKnowledgeFlag } from "@/lib/flags/workspace-flags";
 import { isErr } from "@/lib/primitives/result/results";
 import {
   commitWorkspaceAutomationMemory,
@@ -211,6 +212,37 @@ function parseWorkspaceAutomationMemoryIfMatch(
 }
 
 type WorkspaceAutomationMemoryRouteContext = Context<{ Variables: AuthVariables }>;
+
+async function isWorkspaceKnowledgeFeatureEnabled(auth: AuthVariables["auth"]) {
+  try {
+    return (
+      (await workspaceKnowledgeFlag.run({
+        identify: () => ({
+          organization: { id: auth.organization.workosOrganizationId },
+          user: { id: auth.user.workosUserId },
+        }),
+      })) === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+// Automation memory is gated by the same org-wide Knowledge feature flag as the standalone
+// Knowledge Memory routes (see knowledge-memory.route.ts) — not the automation's own
+// toolConfig.knowledge.enabled toggle, which only controls whether org knowledge is *additionally*
+// pulled into the prompt, not whether this feature exists for the org at all.
+async function requireWorkspaceKnowledgeFeature(c: WorkspaceAutomationMemoryRouteContext) {
+  const enabled = await isWorkspaceKnowledgeFeatureEnabled(c.var.auth);
+  if (!enabled) {
+    return forbiddenResponse(
+      c,
+      "feature_unavailable",
+      "Workspace knowledge is not enabled for this organization",
+    );
+  }
+  return null;
+}
 
 function setWorkspaceAutomationMemoryEtag(
   c: WorkspaceAutomationMemoryRouteContext,
@@ -687,6 +719,11 @@ export function createWorkspaceAutomationRoutes() {
       }
     })
     .get("/:automationId/memory", validateAutomationParams, async (c) => {
+      const featureCheck = await requireWorkspaceKnowledgeFeature(c);
+      if (featureCheck) {
+        return featureCheck;
+      }
+
       const params = c.req.valid("param");
       const organizationId = c.var.auth.organization.localOrganizationId;
       const automation = await getWorkspaceAutomationById({
@@ -705,6 +742,11 @@ export function createWorkspaceAutomationRoutes() {
       return c.json({ workspaceAutomationMemory }, 200);
     })
     .put("/:automationId/memory", validateAutomationParams, validateUpdateMemoryBody, async (c) => {
+      const featureCheck = await requireWorkspaceKnowledgeFeature(c);
+      if (featureCheck) {
+        return featureCheck;
+      }
+
       if (!hasCapability(c.var.auth.membership.role, "workspace:update")) {
         return forbiddenResponse(
           c,
@@ -742,18 +784,22 @@ export function createWorkspaceAutomationRoutes() {
         return workspaceAutomationMemoryPreconditionFailedResponse(c, result.error.current);
       }
 
+      let workspaceAutomationMemory = result.value.workspaceAutomationMemory;
+
       if (payload.includeOrgKnowledge !== undefined) {
-        await setWorkspaceAutomationMemoryIncludeOrgKnowledge({
+        const toggleResult = await setWorkspaceAutomationMemoryIncludeOrgKnowledge({
           automationId: automation.id,
           organizationId,
           includeOrgKnowledge: payload.includeOrgKnowledge,
+          expectedRevisionId: workspaceAutomationMemory.revisionId,
         });
-      }
 
-      const workspaceAutomationMemory =
-        payload.includeOrgKnowledge !== undefined
-          ? await getWorkspaceAutomationMemory({ automationId: automation.id })
-          : result.value.workspaceAutomationMemory;
+        if (isErr(toggleResult)) {
+          return workspaceAutomationMemoryPreconditionFailedResponse(c, toggleResult.error.current);
+        }
+
+        workspaceAutomationMemory = toggleResult.value;
+      }
 
       setWorkspaceAutomationMemoryEtag(c, workspaceAutomationMemory);
       return c.json({ workspaceAutomationMemory }, 200);
@@ -763,6 +809,11 @@ export function createWorkspaceAutomationRoutes() {
       validateAutomationParams,
       validateMemoryRevisionListQuery,
       async (c) => {
+        const featureCheck = await requireWorkspaceKnowledgeFeature(c);
+        if (featureCheck) {
+          return featureCheck;
+        }
+
         const params = c.req.valid("param");
         const organizationId = c.var.auth.organization.localOrganizationId;
         const automation = await getWorkspaceAutomationById({
@@ -784,6 +835,11 @@ export function createWorkspaceAutomationRoutes() {
       },
     )
     .get("/:automationId/memory/revisions/:revisionId", validateMemoryRevisionParams, async (c) => {
+      const featureCheck = await requireWorkspaceKnowledgeFeature(c);
+      if (featureCheck) {
+        return featureCheck;
+      }
+
       const params = c.req.valid("param");
       const organizationId = c.var.auth.organization.localOrganizationId;
       const automation = await getWorkspaceAutomationById({
@@ -812,6 +868,11 @@ export function createWorkspaceAutomationRoutes() {
       "/:automationId/memory/revisions/:revisionId/restore",
       validateMemoryRevisionParams,
       async (c) => {
+        const featureCheck = await requireWorkspaceKnowledgeFeature(c);
+        if (featureCheck) {
+          return featureCheck;
+        }
+
         if (!hasCapability(c.var.auth.membership.role, "workspace:update")) {
           return forbiddenResponse(
             c,

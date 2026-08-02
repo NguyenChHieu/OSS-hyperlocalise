@@ -315,7 +315,13 @@ export function buildSegmentExcerpt(input: {
     firstUnit && !ranked.includes(firstUnit) && headingMatchesQuery(segment, queryTokens)
       ? firstUnit
       : undefined;
-  const chosen = packUnitsWithinBudget(ranked, unitsByOffset, bodyBudget, separator, forcedFirstUnit);
+  const chosen = packUnitsWithinBudget(
+    ranked,
+    unitsByOffset,
+    bodyBudget,
+    separator,
+    forcedFirstUnit,
+  );
   const body = withNeighbourContext({
     body: chosen.map((unit) => unit.text).join(separator),
     segment,

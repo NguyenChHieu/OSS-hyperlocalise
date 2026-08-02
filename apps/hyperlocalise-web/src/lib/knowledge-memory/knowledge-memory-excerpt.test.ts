@@ -267,8 +267,7 @@ describe("buildSegmentExcerpt", () => {
     const bulletSegment = segment({
       kind: "bullet_group",
       segmentText: "- Never translate the discountcode identifier.",
-      nextNeighbourText:
-        "Always apply the promostyling guide to that label regardless of locale.",
+      nextNeighbourText: "Always apply the promostyling guide to that label regardless of locale.",
     });
 
     const excerpt = buildSegmentExcerpt({
@@ -285,8 +284,7 @@ describe("buildSegmentExcerpt", () => {
     const bulletSegment = segment({
       kind: "bullet_group",
       segmentText: "- Never translate the discountcode identifier.",
-      nextNeighbourText:
-        "Always apply the promostyling guide to that label regardless of locale.",
+      nextNeighbourText: "Always apply the promostyling guide to that label regardless of locale.",
     });
 
     const excerpt = buildSegmentExcerpt({

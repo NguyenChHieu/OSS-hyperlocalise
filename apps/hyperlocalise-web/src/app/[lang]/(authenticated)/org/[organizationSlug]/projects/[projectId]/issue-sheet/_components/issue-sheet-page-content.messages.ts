@@ -16,15 +16,14 @@ import { defineMessages } from "react-intl";
 
 export const issueSheetPageContentMessages = defineMessages({
   sectionTitle: {
-    defaultMessage: "Issue Sheet",
-    id: "wAvI6goI3/",
+    defaultMessage: "Issues",
+    id: "BeXUx2ytXa",
     description: "Section title for the project Issue Sheet page",
   },
   sectionDescription: {
-    defaultMessage:
-      "Track localization issues in Hyperlocalise, then link rows to CAT segments, native issues, provider threads, or external context.",
-    id: "fVnq1NHYYK",
-    description: "Section description for the project Issue Sheet page",
+    defaultMessage: "Triage localization issues for this project.",
+    id: "4UoHK4nCgZ",
+    description: "Short section description for the project Issue Sheet page",
   },
   importCsv: {
     defaultMessage: "Import CSV",

@@ -877,6 +877,11 @@ export const catWorkspaceViewModeMessages = defineMessages({
     id: "EkIRMNMq59",
     description: "CAT workspace view mode with source and translation columns",
   },
+  fileView: {
+    defaultMessage: "File view",
+    id: "aHtGik8gUy",
+    description: "CAT workspace view mode that previews source and translated files side by side",
+  },
 });
 
 export const catSideBySidePanelMessages = defineMessages({

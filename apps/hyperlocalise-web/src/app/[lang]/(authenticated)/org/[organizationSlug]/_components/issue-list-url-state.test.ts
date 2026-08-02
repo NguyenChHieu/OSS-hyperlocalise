@@ -41,8 +41,8 @@ describe("issue-list-url-state", () => {
       view: "qa_triage",
       status: "open",
       search: "checkout",
-      sort: "updated_at",
-      sortDir: "desc",
+      sort: "status",
+      sortDir: "asc",
     });
 
     expect(state.search).toBe("");
@@ -50,6 +50,22 @@ describe("issue-list-url-state", () => {
     expect(buildIssueListHref("/org/acme/issues", state, { includeProject: true })).toBe(
       "/org/acme/issues?view=qa_triage",
     );
+  });
+
+  it("defaults missing sortDir from the sort field", () => {
+    expect(parseIssueListSearchParams(new URLSearchParams({ sort: "updated_at" })).sortDir).toBe(
+      "desc",
+    );
+    expect(parseIssueListSearchParams(new URLSearchParams({ sort: "created_at" })).sortDir).toBe(
+      "desc",
+    );
+    expect(parseIssueListSearchParams(new URLSearchParams({ sort: "priority" })).sortDir).toBe(
+      "asc",
+    );
+    expect(
+      parseIssueListSearchParams(new URLSearchParams({ sort: "updated_at", sortDir: "asc" }))
+        .sortDir,
+    ).toBe("asc");
   });
 
   it("builds permanent issue detail hrefs", () => {

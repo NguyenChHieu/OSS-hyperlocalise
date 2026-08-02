@@ -272,6 +272,26 @@ export const issueListFiltersBarMessages = defineMessages({
     id: "07NPIW0cJ3",
     description: "Button that clears all active issue list filters",
   },
+  filterButton: {
+    defaultMessage: "Filter",
+    id: "Wdc+D1uETy",
+    description: "Button that opens the issue list filter popover",
+  },
+  filterButtonWithCount: {
+    defaultMessage: "Filter ({count})",
+    id: "9aly4LVdRp",
+    description: "Filter button label when issue list filters are active",
+  },
+  filterPopoverTitle: {
+    defaultMessage: "Filters",
+    id: "/ZyYtiK1Js",
+    description: "Title for the issue list filter popover",
+  },
+  sortButton: {
+    defaultMessage: "Sort",
+    id: "lf5Y/6HP3L",
+    description: "Button that opens the issue list sort menu",
+  },
 });
 
 const viewMessages = {

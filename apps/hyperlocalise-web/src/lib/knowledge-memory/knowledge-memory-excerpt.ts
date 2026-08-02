@@ -156,11 +156,29 @@ function rankMatchingUnits(units: ExcerptUnit[], queryTokens: Set<string>): Exce
     .map((scored) => scored.unit);
 }
 
+/**
+ * Whether the segment's own heading vocabulary overlaps the query — a signal that retrieval may
+ * have picked this segment for its heading rather than its body. When that's true, the opening
+ * unit is where a heading-associated rule is most likely to live (mirrors how the old prefix
+ * preview always started at the beginning), so it's worth keeping even if it has no token overlap
+ * of its own — see forcedFirstUnit below.
+ */
+function headingMatchesQuery(segment: KnowledgeMemorySegment, queryTokens: Set<string>): boolean {
+  const headingTokens = expandKnowledgeMemoryTokens(segment.headingPath.join(" "));
+  for (const token of queryTokens) {
+    if (headingTokens.has(token)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function packUnitsWithinBudget(
   rankedUnits: ExcerptUnit[],
   unitsByOffset: Map<number, ExcerptUnit>,
   budget: number,
   separator: string,
+  forcedFirstUnit: ExcerptUnit | undefined,
 ) {
   const chosen = new Map<number, ExcerptUnit>();
   let used = 0;
@@ -177,6 +195,10 @@ function packUnitsWithinBudget(
     used += additional;
     return true;
   };
+
+  if (forcedFirstUnit) {
+    tryAdd(forcedFirstUnit);
+  }
 
   for (const unit of rankedUnits) {
     if (!tryAdd(unit)) {
@@ -201,6 +223,44 @@ function packUnitsWithinBudget(
 }
 
 /**
+ * Appends parser-level neighbour context (text from the adjacent segment) when packing touched
+ * the very start or end of this segment and budget remains. A condition/action pair can be split
+ * across two parsed segments — e.g. a bullet followed by a paragraph — not just across sentences
+ * within one; those live outside `segment.segmentText` entirely, in `previousNeighbourText` /
+ * `nextNeighbourText`, which the old prefix preview included but per-unit packing otherwise can't
+ * reach. Best-effort: skipped whenever there's no budget left or the tail is too thin to be useful.
+ */
+function withNeighbourContext(input: {
+  body: string;
+  segment: KnowledgeMemorySegment;
+  touchesStart: boolean;
+  touchesEnd: boolean;
+  separator: string;
+  bodyBudget: number;
+}): string {
+  const minUsefulChars = 12;
+  let result = input.body;
+
+  if (input.touchesStart && input.segment.previousNeighbourText) {
+    const remaining = input.bodyBudget - result.length;
+    if (remaining >= minUsefulChars) {
+      const prefix = truncateToBudget(input.segment.previousNeighbourText, remaining);
+      result = `${prefix}${input.separator}${result}`;
+    }
+  }
+
+  if (input.touchesEnd && input.segment.nextNeighbourText) {
+    const remaining = input.bodyBudget - result.length;
+    if (remaining >= minUsefulChars) {
+      const suffix = truncateToBudget(input.segment.nextNeighbourText, remaining);
+      result = `${result}${input.separator}${suffix}`;
+    }
+  }
+
+  return result;
+}
+
+/**
  * Builds the text sent to the prompt for a single selected segment. Unlike the parser's
  * precomputed `compactPromptText` (a query-independent prefix slice), this picks the sentences
  * or bullets that actually match the query, wherever they sit in the segment, then re-emits them
@@ -208,7 +268,10 @@ function packUnitsWithinBudget(
  *
  * When nothing in the segment's own text matches the query — e.g. it was selected because its
  * heading matched, not its body — this falls back to the parser's prefix preview, so that path
- * stays consistent with today's behaviour.
+ * stays consistent with today's behaviour. When the heading matches but the body also has an
+ * incidental, unrelated match (e.g. a locale code near the end of an otherwise irrelevant
+ * segment), the segment's opening unit is kept alongside that match rather than dropped, since
+ * that's the most likely place a heading-associated rule lives.
  */
 export function buildSegmentExcerpt(input: {
   segment: KnowledgeMemorySegment;
@@ -247,8 +310,20 @@ export function buildSegmentExcerpt(input: {
   }
 
   const unitsByOffset = new Map(units.map((unit) => [unit.offset, unit]));
-  const chosen = packUnitsWithinBudget(ranked, unitsByOffset, bodyBudget, separator);
-  const body = chosen.map((unit) => unit.text).join(separator);
+  const firstUnit = unitsByOffset.get(0);
+  const forcedFirstUnit =
+    firstUnit && !ranked.includes(firstUnit) && headingMatchesQuery(segment, queryTokens)
+      ? firstUnit
+      : undefined;
+  const chosen = packUnitsWithinBudget(ranked, unitsByOffset, bodyBudget, separator, forcedFirstUnit);
+  const body = withNeighbourContext({
+    body: chosen.map((unit) => unit.text).join(separator),
+    segment,
+    touchesStart: chosen[0]?.offset === 0,
+    touchesEnd: chosen[chosen.length - 1]?.offset === units.length - 1,
+    separator,
+    bodyBudget,
+  });
 
   return `${headingPrefix}${body}`;
 }

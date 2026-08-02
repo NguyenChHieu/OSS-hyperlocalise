@@ -238,6 +238,68 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt.length).toBeLessThanOrEqual(80);
   });
 
+  it("keeps the opening rule for a heading-driven match instead of only an incidental body match", () => {
+    // Regression for a Codex finding: the segment is selected because "routingtoken" is in its
+    // heading, not because that word appears in its body. Its body's only literal query overlap
+    // is an incidental locale mention near the end, unrelated to the actual rule at the start.
+    const routingSegment = segment({
+      headingPath: ["Memory.md", "routingtoken"],
+      segmentText: [
+        "Never translate the internal identifier under any circumstances.",
+        "This section applies broadly across checkout flows.",
+        "This guidance also applies to the de-DE locale rollout.",
+      ].join(" "),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: routingSegment,
+      queryTokens: tokens("routingtoken", "de-DE"),
+      maxChars: 200,
+    });
+
+    expect(excerpt).toContain("Never translate the internal identifier");
+  });
+
+  it("includes the parser-level neighbour when a rule's action lives in the next segment", () => {
+    // Regression for a Codex finding: a condition/action pair can be split across two parsed
+    // segments (e.g. a bullet followed by a paragraph), not just across sentences within one.
+    // That context lives in previousNeighbourText/nextNeighbourText, outside segmentText.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: "- Never translate the discountcode identifier.",
+      nextNeighbourText:
+        "Always apply the promostyling guide to that label regardless of locale.",
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("discountcode"),
+      maxChars: 300,
+    });
+
+    expect(excerpt).toContain("discountcode");
+    expect(excerpt).toContain("promostyling");
+  });
+
+  it("does not pull in neighbour context when there is no budget left for it", () => {
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: "- Never translate the discountcode identifier.",
+      nextNeighbourText:
+        "Always apply the promostyling guide to that label regardless of locale.",
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("discountcode"),
+      maxChars: 60,
+    });
+
+    expect(excerpt.length).toBeLessThanOrEqual(60);
+    expect(excerpt).toContain("discountcode");
+    expect(excerpt).not.toContain("promostyling");
+  });
+
   it("is deterministic across repeated calls with the same input", () => {
     const longParagraph = [
       "The firstrule token applies at the start of this paragraph for every locale.",

@@ -12,8 +12,8 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { useEffect, useMemo, useRef, type CSSProperties } from "react";
-import type { FileTreeRowDecorationContext } from "@pierre/trees";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import type { ContextMenuOpenContext, FileTreeRowDecorationContext } from "@pierre/trees";
 import { FileTree as PierreFileTree, useFileTree } from "@pierre/trees/react";
 import { preloadFileTree } from "@pierre/trees/ssr";
 import "@pierre/trees/web-components";
@@ -35,6 +35,11 @@ const DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
   timeStyle: "short",
 });
+
+type ActiveFileContextMenu = {
+  file: ProjectFileRecord;
+  context: ContextMenuOpenContext;
+};
 
 function buildProjectFilesTreeStyle(fillHeight: boolean): CSSProperties {
   return {
@@ -151,6 +156,7 @@ function ProjectFilesTreeView({
   const treeStyle = useMemo(() => buildProjectFilesTreeStyle(fillHeight), [fillHeight]);
   const displayFiles = useMemo(() => dedupeProjectFilesBySourcePath(files), [files]);
   const paths = useMemo(() => displayFiles.map((file) => file.sourcePath), [displayFiles]);
+  const pathsKey = useMemo(() => paths.join("\0"), [paths]);
   const fileByPath = useMemo(
     () => new Map(displayFiles.map((file) => [file.sourcePath, file])),
     [displayFiles],
@@ -164,18 +170,33 @@ function ProjectFilesTreeView({
     onSelectFile,
     onActivateFile,
   });
-  const preloadedData = useMemo(
-    () =>
-      paths.length > 0
-        ? preloadFileTree({
-            id: "project-files-tree",
-            initialExpansion: "open",
-            paths,
-            initialVisibleRowCount: Math.max(paths.length, 8),
-          })
-        : null,
-    [paths],
+  const [activeFileContextMenu, setActiveFileContextMenu] = useState<ActiveFileContextMenu | null>(
+    null,
   );
+  const contextMenuHandlersRef = useRef({
+    onOpen: (_itemPath: string, _context: ContextMenuOpenContext) => {},
+    onClose: () => {},
+  });
+
+  /**
+   * Keep preload payload stable across parent re-renders that only change the
+   * `files` array identity. Pierre's React host effect resets composition to the
+   * model baseline whenever `preloadedData` changes; churning that object after
+   * dialogs open left the "..." menu shell open with no React content.
+   */
+  const preloadedData = useMemo(() => {
+    if (pathsKey.length === 0) {
+      return null;
+    }
+
+    const nextPaths = pathsKey.split("\0");
+    return preloadFileTree({
+      id: "project-files-tree",
+      initialExpansion: "open",
+      paths: nextPaths,
+      initialVisibleRowCount: Math.max(nextPaths.length, 8),
+    });
+  }, [pathsKey]);
 
   useEffect(() => {
     latestStateRef.current = {
@@ -186,6 +207,36 @@ function ProjectFilesTreeView({
       onSelectFile,
     };
   }, [fileActions, fileByPath, intl, onActivateFile, onSelectFile]);
+
+  contextMenuHandlersRef.current = {
+    onOpen: (itemPath, context) => {
+      if (!latestStateRef.current.fileActions) {
+        context.close({ restoreFocus: false });
+        return;
+      }
+
+      const file = latestStateRef.current.fileByPath.get(itemPath);
+      if (!file) {
+        context.close({ restoreFocus: false });
+        return;
+      }
+
+      setActiveFileContextMenu({ file, context });
+    },
+    onClose: () => {
+      setActiveFileContextMenu(null);
+    },
+  };
+
+  useEffect(() => {
+    if (!activeFileContextMenu) {
+      return;
+    }
+
+    if (!fileActions || !fileByPath.has(activeFileContextMenu.file.sourcePath)) {
+      activeFileContextMenu.context.close({ restoreFocus: false });
+    }
+  }, [activeFileContextMenu, fileActions, fileByPath]);
 
   useEffect(() => {
     if (!onActivateFile) {
@@ -216,6 +267,13 @@ function ProjectFilesTreeView({
     return () => container.removeEventListener("dblclick", handleDoubleClick);
   }, [onActivateFile]);
 
+  /**
+   * Own context-menu onOpen/onClose on the model baseline instead of
+   * `renderContextMenu`. Pierre's React wrapper rewrites renderContextMenu
+   * callbacks onto a composition object that is discarded whenever the host
+   * effect re-runs (for example after preload identity churn). Baseline
+   * callbacks survive that reset, so the "..." menu keeps rendering.
+   */
   const { model } = useFileTree({
     id: "project-files-tree",
     flattenEmptyDirectories: true,
@@ -232,6 +290,16 @@ function ProjectFilesTreeView({
             enabled: true,
             triggerMode: "button",
             buttonVisibility: "when-needed",
+            onOpen: (item, context) => {
+              if (item.kind !== "file") {
+                context.close({ restoreFocus: false });
+                return;
+              }
+              contextMenuHandlersRef.current.onOpen(item.path, context);
+            },
+            onClose: () => {
+              contextMenuHandlersRef.current.onClose();
+            },
           },
         }
       : undefined,
@@ -288,6 +356,22 @@ function ProjectFilesTreeView({
     return null;
   }
 
+  const activeMenuFile = activeFileContextMenu
+    ? (fileByPath.get(activeFileContextMenu.file.sourcePath) ?? null)
+    : null;
+  const activeMenuCapabilities =
+    activeMenuFile && fileActions
+      ? buildProjectFileActionCapabilities({
+          organizationSlug: fileActions.organizationSlug,
+          projectId: fileActions.projectId,
+          file: activeMenuFile,
+          highlightLocale: fileActions.highlightLocale,
+          projectTargetLocales: fileActions.projectTargetLocales,
+          branch: fileActions.branch,
+          intl,
+        })
+      : null;
+
   return (
     <div
       ref={containerRef}
@@ -301,42 +385,16 @@ function ProjectFilesTreeView({
         id="project-files-tree"
         model={model}
         preloadedData={preloadedData ?? undefined}
-        renderContextMenu={
-          fileActions
-            ? (item, context) => {
-                if (item.kind !== "file") {
-                  return null;
-                }
-
-                const file = latestStateRef.current.fileByPath.get(item.path);
-                const actions = latestStateRef.current.fileActions;
-                if (!file || !actions) {
-                  return null;
-                }
-
-                const capabilities = buildProjectFileActionCapabilities({
-                  organizationSlug: actions.organizationSlug,
-                  projectId: actions.projectId,
-                  file,
-                  highlightLocale: actions.highlightLocale,
-                  projectTargetLocales: actions.projectTargetLocales,
-                  branch: actions.branch,
-                  intl: latestStateRef.current.intl,
-                });
-
-                return (
-                  <ProjectFileTreeContextMenu
-                    file={file}
-                    context={context}
-                    fileActions={actions}
-                    capabilities={capabilities}
-                  />
-                );
-              }
-            : undefined
-        }
         style={treeStyle}
       />
+      {activeFileContextMenu && activeMenuFile && fileActions && activeMenuCapabilities ? (
+        <ProjectFileTreeContextMenu
+          file={activeMenuFile}
+          context={activeFileContextMenu.context}
+          fileActions={fileActions}
+          capabilities={activeMenuCapabilities}
+        />
+      ) : null}
     </div>
   );
 }

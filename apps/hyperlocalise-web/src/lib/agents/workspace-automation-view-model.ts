@@ -65,6 +65,7 @@ export type WorkspaceAutomationFormState = {
   translationUseProjectTargetLocales: boolean;
   translationTargetLocales: string[];
   knowledgeEnabled: boolean;
+  knowledgeAllowUpdates: boolean;
   mcpEnabled: boolean;
   mcpConnectionId: string;
   semrushEnabled: boolean;
@@ -183,6 +184,7 @@ export function createDefaultWorkspaceAutomationFormState(): WorkspaceAutomation
     translationUseProjectTargetLocales: true,
     translationTargetLocales: [],
     knowledgeEnabled: false,
+    knowledgeAllowUpdates: false,
     mcpEnabled: false,
     mcpConnectionId: "",
     semrushEnabled: false,
@@ -257,6 +259,7 @@ export function createWorkspaceAutomationFormStateFromRecord(
     translationUseProjectTargetLocales: translation?.useProjectTargetLocales ?? true,
     translationTargetLocales: translation?.targetLocales ? [...translation.targetLocales] : [],
     knowledgeEnabled: Boolean(knowledge?.enabled),
+    knowledgeAllowUpdates: Boolean(knowledge?.allowUpdates),
     mcpEnabled: Boolean(mcp?.enabled),
     mcpConnectionId: mcp?.connectionId ?? "",
     semrushEnabled: Boolean(semrush?.enabled),
@@ -418,6 +421,9 @@ export function formStateToWorkspaceAutomationPayload(form: WorkspaceAutomationF
       ? {
           knowledge: {
             enabled: true,
+            // Defense in depth: even if the UI's dependency between the two toggles ever drifts,
+            // updates can never be serialized as allowed without recall also being enabled.
+            allowUpdates: form.knowledgeAllowUpdates,
           },
         }
       : {}),

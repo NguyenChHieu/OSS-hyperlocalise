@@ -117,3 +117,59 @@ be clear about when deciding it:
 Agent-written memory is plausible as an **addition** later (there is precedent:
 several orchestrator tools already write back during a run). It does not
 require deleting the human-curated layer. **Decision owner: Minh.**
+
+---
+
+# Update 2026-08-03 — MVP decision: no per-automation store, tool-mediated org Memory
+
+Minh decided the open question above. The per-automation Memory design (previous section) is
+**abandoned for MVP**, not extended. There is still only one memory store — the org-level
+`Memory.md` — and #1616 was reworked to match rather than merged as originally shipped.
+
+## The decision
+
+- `workspace_automation_memories` and its revision table are removed. No separate agent/automation
+  memory store. The per-automation Manage sheet, editor, and REST routes from the previous section
+  no longer exist.
+- Automations get controlled access to the single org `Memory.md` through two `toolConfig.knowledge`
+  fields and the automation's own user-written instructions, which is the approval boundary:
+  - `enabled` ("Use organization memory") — same field as before, now also gates a callable
+    `recall_memory` tool instead of silently pasting content into composed instructions.
+  - `allowUpdates` ("Allow memory updates") — new, meaningless without `enabled`. Gates a callable
+    `save_memory` tool that appends to the shared `Memory.md`.
+- No automatic risk classification, no approval inbox, no per-automation trust levels. The tool
+  permission plus the automation's own instructions are the only gate, by design, for MVP.
+
+## Recall became a tool call, not passive injection
+
+Before this change, `toolConfig.knowledge.enabled` caused `selectKnowledgeMemoryContext` output to
+be silently pasted into the composed instructions before every run
+(`resolve-workspace-automation-knowledge.ts`, now deleted). Minh confirmed recall should instead be
+a real tool call the agent decides to make (`recall_memory.ts`), reusing the same
+`selectKnowledgeMemoryContext` call but driven by a model-supplied query instead of an automatic
+one. `compose-workspace-instructions.ts` adds a one-line nudge when the tool is available, so
+automations that relied on the old always-present context aren't silently worse off.
+
+## Save is append-only
+
+`save_memory.ts` appends to the existing `Memory.md` through the same
+`commitKnowledgeMemoryForOrganization` compare-and-swap every human edit goes through, so an
+agent-authored append is a normal, restorable revision — same optimistic concurrency, same
+50,000-character cap (checked in the tool, since it calls the commit function directly rather than
+through the HTTP route where that cap was previously enforced). It cannot edit, replace, or delete
+existing content. There is no human actor for these commits — `updatedByUserId` is `null` (the
+column and the shared `commitVersionedDocument` type were widened to allow this); real provenance
+(automation name, run id) goes in the revision `summary` instead.
+
+## What this makes moot
+
+The `includeOrgKnowledge` tri-state described above no longer applies — there is no separate
+automation Memory for it to arbitrate between. `resolveWorkspaceAutomationMemoryContext` and its
+resolver are deleted along with the table.
+
+## Still out of scope
+
+Everything the earlier open question flagged as unresolved stays unresolved, deliberately: Upstash,
+automatic write triggers without an explicit tool call, contradiction/dedup handling, and any
+approval workflow. If agent-written memory needs those later, they're new scope on top of this,
+not a gap in it.

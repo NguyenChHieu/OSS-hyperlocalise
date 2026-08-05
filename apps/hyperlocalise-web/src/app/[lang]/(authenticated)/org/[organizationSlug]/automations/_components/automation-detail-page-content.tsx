@@ -162,7 +162,6 @@ export function AutomationDetailPageContent({
       <WorkspaceAutomationEditor
         mode="detail"
         organizationSlug={organizationSlug}
-        automationId={automationId}
         form={form}
         errors={errors}
         knowledgeAvailable={knowledgeAvailable}

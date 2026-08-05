@@ -38,7 +38,7 @@ import {
 } from "simple-icons";
 
 import { SimpleBrandIcon } from "@/app/[lang]/(authenticated)/org/[organizationSlug]/integrations/_components/simple-brand-icon";
-import { WorkspaceAutomationMemoryEditor } from "./workspace-automation-memory-editor";
+import { KnowledgeMemoryEditor } from "@/app/[lang]/(authenticated)/org/[organizationSlug]/knowledge/_components/knowledge-memory-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -1442,7 +1442,6 @@ function ContentfulTargetLocalesPicker({
 }
 
 function ToolsSettings({
-  automationId,
   canUpdateKnowledgeMemory,
   contentfulConnections,
   disabled,
@@ -1462,8 +1461,6 @@ function ToolsSettings({
   slackChannelsLoading,
   slackConnected,
 }: {
-  /** The persisted automation's id. Undefined until first save (mode "create"). */
-  automationId?: string;
   canUpdateKnowledgeMemory: boolean;
   contentfulConnections: ContentfulConnectionOption[];
   disabled?: boolean;
@@ -1523,12 +1520,7 @@ function ToolsSettings({
                   type="button"
                   variant="secondary"
                   size="sm"
-                  disabled={disabled || !knowledgeAvailable || !automationId}
-                  title={
-                    !automationId
-                      ? intl.formatMessage(workspaceAutomationFormMessages.saveBeforeManagingMemory)
-                      : undefined
-                  }
+                  disabled={disabled || !knowledgeAvailable}
                   className="h-8 rounded-full px-3"
                   onClick={() => setMemoriesOpen(true)}
                 >
@@ -1537,11 +1529,32 @@ function ToolsSettings({
                 <DeleteToolButton
                   disabled={disabled}
                   label={intl.formatMessage(workspaceAutomationFormMessages.removeMemoriesTool)}
-                  onClick={() => onChange({ ...form, knowledgeEnabled: false })}
+                  onClick={() =>
+                    onChange({ ...form, knowledgeEnabled: false, knowledgeAllowUpdates: false })
+                  }
                 />
               </>
             }
-          />
+          >
+            <label className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2">
+              <span className="text-xs text-foreground">
+                <FormattedMessage {...workspaceAutomationFormMessages.allowMemoryUpdates} />
+              </span>
+              <Switch
+                size="sm"
+                checked={form.knowledgeAllowUpdates}
+                disabled={disabled || !knowledgeAvailable}
+                onCheckedChange={(checked) =>
+                  onChange({ ...form, knowledgeAllowUpdates: checked })
+                }
+              />
+            </label>
+            {form.knowledgeAllowUpdates ? (
+              <p className="mt-2 text-xs text-pretty text-muted-foreground">
+                <FormattedMessage {...workspaceAutomationFormMessages.allowMemoryUpdatesWarning} />
+              </p>
+            ) : null}
+          </EditorRow>
         ) : null}
 
         {form.githubEnabled && form.githubMode === "agent" ? (
@@ -2246,13 +2259,10 @@ function ToolsSettings({
             </SheetDescription>
           </SheetHeader>
           <div className="px-6 pb-6">
-            {automationId ? (
-              <WorkspaceAutomationMemoryEditor
-                organizationSlug={organizationSlug}
-                automationId={automationId}
-                canUpdateWorkspaceAutomationMemory={canUpdateKnowledgeMemory}
-              />
-            ) : null}
+            <KnowledgeMemoryEditor
+              organizationSlug={organizationSlug}
+              canUpdateKnowledgeMemory={canUpdateKnowledgeMemory}
+            />
           </div>
         </SheetContent>
       </Sheet>
@@ -2341,7 +2351,6 @@ function RunHistoryTable({ runs }: { runs: WorkspaceAutomationRunRecord[] }) {
 
 export function WorkspaceAutomationEditor({
   actions,
-  automationId,
   canUpdateKnowledgeMemory = false,
   disabled,
   errors,
@@ -2353,8 +2362,6 @@ export function WorkspaceAutomationEditor({
   runHistory,
 }: {
   actions?: ReactNode;
-  /** The persisted automation's id. Undefined until first save (mode "create"). */
-  automationId?: string;
   canUpdateKnowledgeMemory?: boolean;
   disabled?: boolean;
   errors: Record<string, string | undefined>;
@@ -2658,7 +2665,6 @@ export function WorkspaceAutomationEditor({
           </EditorSection>
 
           <ToolsSettings
-            automationId={automationId}
             canUpdateKnowledgeMemory={canUpdateKnowledgeMemory}
             contentfulConnections={contentfulConnections}
             disabled={disabled}

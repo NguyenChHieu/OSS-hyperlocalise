@@ -31,11 +31,6 @@ import { createWorkspaceOrchestratorAgent } from "./agent";
 import { composeWorkspaceAutomationInstructions } from "./compose-workspace-instructions";
 import { createWorkspaceOrchestratorSession, type WorkspaceOrchestratorSession } from "./context";
 import { buildWorkspaceOrchestratorPlan } from "./plan";
-import { resolveWorkspaceAutomationKnowledgeContext } from "./resolve-workspace-automation-knowledge";
-import {
-  resolveOrgKnowledgeInclusion,
-  resolveWorkspaceAutomationMemoryContext,
-} from "./resolve-workspace-automation-memory";
 import { buildWorkspaceOrchestratorOutputSummary } from "./workspace-orchestrator-output-summary";
 
 const logger = createLogger("workspace-orchestrator");
@@ -164,23 +159,11 @@ export async function runWorkspaceOrchestrator(input: {
 
   const templateSkillId = resolveTemplateSkillId(run.inputSnapshot);
   const plan = buildWorkspaceOrchestratorPlan(automation, { templateSkillId });
-  const automationMemory = await resolveWorkspaceAutomationMemoryContext({ automation });
-  const knowledgeMemory = await resolveWorkspaceAutomationKnowledgeContext({
-    organizationId: input.organizationId,
-    automation,
-    includeOverride: resolveOrgKnowledgeInclusion(automationMemory),
-  });
   const composedInstructions = composeWorkspaceAutomationInstructions({
     templateSkillId,
     userOverride: automation.instructions,
     triggerMode: automation.triggerConfig.mode,
     plan,
-    // Reflects whether org knowledge actually ended up included, whether via the classic toggle
-    // or the automation-Memory forceInclude path above — not the raw toolConfig flag, so the
-    // "Enabled tools" hint line stays accurate in both cases.
-    knowledgeEnabled: knowledgeMemory !== null,
-    knowledgeMemory,
-    automationMemory: automationMemory.content,
   });
 
   let repository: {

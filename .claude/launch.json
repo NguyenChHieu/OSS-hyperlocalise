@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hyperlocalise-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "apps/hyperlocalise-web", "run", "dev"],
+      "port": 3000
+    },
+    {
+      "name": "hyperlocalise-web-storybook",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--dir", "apps/hyperlocalise-web", "run", "storybook"],
+      "port": 6006
+    }
+  ]
+}

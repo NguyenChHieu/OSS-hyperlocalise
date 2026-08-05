@@ -12,7 +12,7 @@
  */
 import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
-import { expect, userEvent, waitFor, within } from "storybook/test";
+import { expect, fn, userEvent, waitFor, within } from "storybook/test";
 
 import type {
   CatSegment,
@@ -36,6 +36,7 @@ type CommentsStoryHostProps = {
   resolvingCommentId?: string | null;
   commentPostError?: string;
   simulatePostDelayMs?: number;
+  onOpenIssueSheet?: () => void;
 };
 
 function CommentsStoryHost({
@@ -48,6 +49,7 @@ function CommentsStoryHost({
   resolvingCommentId: forcedResolvingId,
   commentPostError,
   simulatePostDelayMs = 0,
+  onOpenIssueSheet,
 }: CommentsStoryHostProps) {
   const [segment, setSegment] = useState(initialSegment);
   const [isPostingComment, setIsPostingComment] = useState(false);
@@ -109,6 +111,7 @@ function CommentsStoryHost({
           }
           commentPostError={commentPostError}
           onAddComment={handleAddComment}
+          onOpenIssueSheet={onOpenIssueSheet}
           onResolveComment={handleResolveComment}
         />
       </div>
@@ -157,8 +160,9 @@ export const WithCommentsAndIssues: Story = {
     initialSegment: createCatEditorCommentsSegment({
       comments: catEditorCommentsFixture,
     }),
+    onOpenIssueSheet: fn(),
   },
-  play: async ({ canvasElement }) => {
+  play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
     await expect(canvas.getByText("3")).toBeInTheDocument();
     await expect(
@@ -169,6 +173,11 @@ export const WithCommentsAndIssues: Story = {
     ).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "Resolve" })).toBeInTheDocument();
     await expect(canvas.getAllByText("Issue")).toHaveLength(3);
+
+    const issueSheetButton = canvas.getByRole("button", { name: "Issues" });
+    await expect(issueSheetButton).toBeInTheDocument();
+    await userEvent.click(issueSheetButton);
+    await expect(args.onOpenIssueSheet).toHaveBeenCalledTimes(1);
   },
 };
 
@@ -210,19 +219,92 @@ export const CommentOnly: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.queryByRole("tab", { name: "Issue" })).not.toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "Add comment" })).toBeInTheDocument();
+    await expect(canvas.queryByRole("button", { name: "Issues" })).not.toBeInTheDocument();
+  },
+};
+
+export const IssueSheetCtaWithExistingIssues: Story = {
+  args: {
+    initialSegment: createCatEditorCommentsSegment({
+      comments: catEditorCommentsFixture,
+    }),
+    onOpenIssueSheet: fn(),
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+    const issueSheetButton = canvas.getByRole("button", { name: "Issues" });
+
+    await expect(issueSheetButton).toBeInTheDocument();
+    await expect(issueSheetButton).toBeEnabled();
+
+    await userEvent.click(issueSheetButton);
+    await expect(args.onOpenIssueSheet).toHaveBeenCalledTimes(1);
+  },
+};
+
+export const IssueSheetCtaOnIssueTab: Story = {
+  args: {
+    initialSegment: createCatEditorCommentsSegment({ comments: [] }),
+    onOpenIssueSheet: fn(),
+  },
+  play: async ({ canvasElement, args }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.queryByRole("button", { name: "Issues" })).not.toBeInTheDocument();
+
+    await userEvent.click(canvas.getByRole("tab", { name: "Issue" }));
+    await waitFor(() => expect(canvas.getByRole("button", { name: "Issues" })).toBeInTheDocument());
+
+    await userEvent.click(canvas.getByRole("button", { name: "Issues" }));
+    await expect(args.onOpenIssueSheet).toHaveBeenCalledTimes(1);
+  },
+};
+
+export const IssueSheetCtaHiddenOnCommentTab: Story = {
+  args: {
+    initialSegment: createCatEditorCommentsSegment({
+      comments: [catEditorCommentsFixture[0]!],
+    }),
+    onOpenIssueSheet: fn(),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByRole("tab", { name: "Comment" })).toHaveAttribute(
+      "data-state",
+      "active",
+    );
+    await expect(canvas.queryByRole("button", { name: "Issues" })).not.toBeInTheDocument();
+  },
+};
+
+export const IssueSheetCtaDisabledWhilePosting: Story = {
+  args: {
+    initialSegment: createCatEditorCommentsSegment({
+      comments: catEditorCommentsFixture,
+    }),
+    isPostingComment: true,
+    onOpenIssueSheet: fn(),
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+
+    await expect(canvas.getByRole("button", { name: "Issues" })).toBeDisabled();
   },
 };
 
 export const RaiseIssueInteraction: Story = {
   args: {
     initialSegment: createCatEditorCommentsSegment({ comments: [] }),
+    onOpenIssueSheet: fn(),
   },
-  play: async ({ canvasElement }) => {
+  play: async ({ canvasElement, args }) => {
     const canvas = within(canvasElement);
 
     await userEvent.click(canvas.getByRole("tab", { name: "Issue" }));
     await waitFor(() => expect(canvas.getByText("Issue type")).toBeInTheDocument());
     await expect(canvas.getByText("General question")).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Issues" })).toBeInTheDocument();
 
     const input = canvas.getByPlaceholderText("Add a comment...");
     await userEvent.type(input, "Wrong tone for ja-JP.");
@@ -232,5 +314,8 @@ export const RaiseIssueInteraction: Story = {
     await waitFor(() => expect(canvas.getByText("Wrong tone for ja-JP.")).toBeInTheDocument());
     await expect(canvas.getByText("1")).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "Resolve" })).toBeInTheDocument();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Issues" }));
+    await expect(args.onOpenIssueSheet).toHaveBeenCalledTimes(1);
   },
 };

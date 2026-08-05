@@ -18,6 +18,8 @@ import {
   hasWorkspaceAutomationAssignTranslateWithAgentTool,
   hasWorkspaceAutomationContentfulWorkflow,
   hasWorkspaceAutomationCreateNativeTmsJobTool,
+  hasWorkspaceAutomationKnowledgeTool,
+  hasWorkspaceAutomationKnowledgeUpdatesAllowed,
   type WorkspaceAutomationRecord,
   type WorkspaceAutomationToolConfig,
 } from "@/lib/agents/workspace-automations";
@@ -34,6 +36,8 @@ export const WORKSPACE_ORCHESTRATOR_TOOL_NAMES = [
   "use_ahrefs",
   "notify_slack",
   "notify_email",
+  "recall_memory",
+  "save_memory",
 ] as const;
 
 export type WorkspaceOrchestratorToolName = (typeof WORKSPACE_ORCHESTRATOR_TOOL_NAMES)[number];
@@ -57,6 +61,10 @@ const WORKFLOW_TOOLS: WorkspaceOrchestratorToolName[] = [
 ];
 
 const NOTIFICATION_TOOLS: WorkspaceOrchestratorToolName[] = ["notify_slack", "notify_email"];
+
+// Not part of WORKFLOW_TOOLS: memory tools are general availability, not ordered workflow steps,
+// so they skip orderWorkflowTools' template-skill-executor reordering entirely.
+const MEMORY_TOOLS: WorkspaceOrchestratorToolName[] = ["recall_memory", "save_memory"];
 
 function workflowToolEnabled(
   tool: WorkspaceOrchestratorToolName,
@@ -95,6 +103,20 @@ function notificationToolEnabled(
         toolConfig.email.recipients &&
         toolConfig.email.recipients.length > 0,
       );
+    default:
+      return false;
+  }
+}
+
+function memoryToolEnabled(
+  tool: WorkspaceOrchestratorToolName,
+  toolConfig: WorkspaceAutomationToolConfig,
+): boolean {
+  switch (tool) {
+    case "recall_memory":
+      return hasWorkspaceAutomationKnowledgeTool(toolConfig);
+    case "save_memory":
+      return hasWorkspaceAutomationKnowledgeUpdatesAllowed(toolConfig);
     default:
       return false;
   }
@@ -147,8 +169,9 @@ export function buildWorkspaceOrchestratorPlan(
   const notificationTools = NOTIFICATION_TOOLS.filter((tool) =>
     notificationToolEnabled(tool, automation.toolConfig),
   );
+  const memoryTools = MEMORY_TOOLS.filter((tool) => memoryToolEnabled(tool, automation.toolConfig));
 
   return {
-    tools: [...workflowTools, ...notificationTools],
+    tools: [...workflowTools, ...notificationTools, ...memoryTools],
   };
 }

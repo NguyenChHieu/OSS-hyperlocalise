@@ -102,6 +102,62 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toBe(fallbackSegment.compactPromptText);
   });
 
+  it("uses fallbackMaxChars for the no-match preview when the caller opts in", () => {
+    // Regression for a Codex finding: knowledge-memory-selection.ts can call this with maxChars
+    // already divided down for balancing across several selected segments. That's the right budget
+    // for the match-centering paths below (an oversized inner truncation there would just get
+    // corrupted by a second outer trim), but this fallback never centers on anything — it's always
+    // a plain prefix cut — so pre-shrinking it can only remove guidance from the end of a preview
+    // that would otherwise fit. selection.ts passes fallbackMaxChars only when there's no genuine
+    // balanced share to respect (maxSegmentChars was undefined); when a caller does pass it, this
+    // fallback should use it instead of the smaller maxChars.
+    const longPreview =
+      "Memory.md > Section -> " +
+      "Generic opening context repeated here to push the preview well past a small balancing " +
+      "budget so it needs truncating at all. ".repeat(3) +
+      "IMPORTANT_TAIL_GUIDANCE must never be dropped from the end of this preview.";
+    const fallbackSegment = segment({
+      segmentText: "Some unrelated body text that shares no vocabulary with the query at all.",
+      compactPromptText: longPreview,
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: fallbackSegment,
+      queryTokens: tokens("nomatchingtoken"),
+      maxChars: 100,
+      fallbackMaxChars: 900,
+    });
+
+    expect(excerpt).toContain("IMPORTANT_TAIL_GUIDANCE");
+  });
+
+  it("still respects maxChars for the no-match preview when fallbackMaxChars isn't given", () => {
+    // Companion to the test above: a caller with a genuine balanced share to respect (e.g.
+    // multiple fallback/general-mode segments sharing one budget) must not have this fallback
+    // silently balloon past that share — omitting fallbackMaxChars keeps the old maxChars-bound
+    // behavior, so an over-budget fallback segment still gets truncated (or, at the outer
+    // appendWithinBudget step in selection.ts, dropped) rather than exceeding its intended slice
+    // of a budget shared with other segments.
+    const longPreview =
+      "Memory.md > Section -> " +
+      "Generic opening context repeated here to push the preview well past a small balancing " +
+      "budget so it needs truncating at all. ".repeat(3) +
+      "IMPORTANT_TAIL_GUIDANCE must never be dropped from the end of this preview.";
+    const fallbackSegment = segment({
+      segmentText: "Some unrelated body text that shares no vocabulary with the query at all.",
+      compactPromptText: longPreview,
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: fallbackSegment,
+      queryTokens: tokens("nomatchingtoken"),
+      maxChars: 100,
+    });
+
+    expect(excerpt.length).toBeLessThanOrEqual(100);
+    expect(excerpt).not.toContain("IMPORTANT_TAIL_GUIDANCE");
+  });
+
   it("falls back to the prefix preview when queryTokens is empty", () => {
     const fallbackSegment = segment({
       segmentText: "Body text that would otherwise match a query.",

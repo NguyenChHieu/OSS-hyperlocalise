@@ -410,8 +410,21 @@ export function buildSegmentExcerpt(input: {
   segment: KnowledgeMemorySegment;
   queryTokens: Set<string>;
   maxChars: number;
+  /**
+   * Budget for the no-match fallback (segment.compactPromptText, used below when nothing in the
+   * segment's own text matches the query) when it should differ from maxChars. Callers that
+   * genuinely balance a shared budget across several selected segments (fallback/general modes)
+   * want this fallback to respect that same share, same as maxChars — so they should leave this
+   * unset. Callers with no real per-segment share (selective mode's common single/few-segment
+   * case) may still pass a maxChars pre-shrunk to protect the match-centering paths below from a
+   * later, corrupting outer re-trim; the no-match fallback doesn't center on anything and has no
+   * such risk, so it can use its own larger budget here instead of inheriting that shrink.
+   * Defaults to maxChars.
+   */
+  fallbackMaxChars?: number;
 }): string {
   const { segment, queryTokens, maxChars } = input;
+  const fallbackMaxChars = input.fallbackMaxChars ?? maxChars;
 
   const units =
     segment.kind === "bullet_group"
@@ -420,7 +433,7 @@ export function buildSegmentExcerpt(input: {
 
   const { ranked, tokenWeights } = rankMatchingUnits(units, queryTokens);
   if (ranked.length === 0) {
-    return truncateToBudget(segment.compactPromptText, maxChars);
+    return truncateToBudget(segment.compactPromptText, fallbackMaxChars);
   }
 
   const rawHeadingPrefix = `${segment.headingPath.join(" > ")} -> `;

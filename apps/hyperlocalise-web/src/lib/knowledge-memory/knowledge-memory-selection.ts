@@ -208,11 +208,17 @@ function buildSelectedContext(input: {
     // selected segment, not balancing across locales): otherwise buildSegmentExcerpt centers its
     // match inside the full 900-char default, and the dumb prefix-cut in appendWithinBudget below
     // can then chop that correctly-centered excerpt back down to the real (smaller) budget from
-    // the front, discarding the match this function exists to keep.
+    // the front, discarding the match this function exists to keep. The no-match fallback doesn't
+    // center on anything, so it isn't at risk from that same double-truncation — pass it the
+    // *unclamped* per-segment share (still respecting a genuine balanced share when one exists, via
+    // input.maxSegmentChars) so a segment with no query-token match doesn't lose guidance from the
+    // end of an otherwise-fitting preview just because this path also protects the match-centering
+    // one below it.
     const preview = buildSegmentExcerpt({
       segment,
       queryTokens,
       maxChars: Math.min(input.maxSegmentChars ?? defaultMaxSegmentChars, input.maxChars),
+      fallbackMaxChars: input.maxSegmentChars ?? defaultMaxSegmentChars,
     });
 
     if (!appendWithinBudget(lines, preview, input.maxChars)) {

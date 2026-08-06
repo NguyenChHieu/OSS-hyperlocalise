@@ -36,13 +36,15 @@ function truncateToBudget(text: string, maxChars: number) {
 }
 
 function findEarliestMatchOffset(text: string, queryTokens: Set<string>): number | null {
-  // Plain substring search, not a \b-anchored word boundary: \b is defined in terms of ASCII
-  // word characters, so it never matches around CJK/other non-ASCII tokens, which would make
-  // this silently return null (and fall back to a plain prefix cut) for exactly the documents
-  // this function exists to handle correctly. Approximate positional accuracy is all this needs.
+  // Lookaround on \p{L}\p{N}- instead of \b: \b is ASCII-only and would silently return null
+  // (falling back to a plain prefix cut) for CJK/other non-ASCII tokens, which this needs to
+  // handle correctly. The boundary set matches tokenize()'s split pattern in
+  // knowledge-memory-lexical-retriever.ts, so "cart" won't match inside "cartography" and center
+  // the excerpt on the wrong occurrence.
   let earliest: number | null = null;
   for (const token of queryTokens) {
-    const match = new RegExp(escapeRegExp(token), "i").exec(text);
+    const pattern = new RegExp(`(?<![\\p{L}\\p{N}-])${escapeRegExp(token)}(?![\\p{L}\\p{N}-])`, "iu");
+    const match = pattern.exec(text);
     if (match && (earliest === null || match.index < earliest)) {
       earliest = match.index;
     }
@@ -242,7 +244,10 @@ function withNeighbourContext(input: {
   let result = input.body;
 
   if (input.touchesStart && input.segment.previousNeighbourText) {
-    const remaining = input.bodyBudget - result.length;
+    // Reserve the separator's own length before truncating: the separator is appended in
+    // addition to this truncated text, so leaving it out of the truncation budget lets the
+    // result overrun bodyBudget by separator.length.
+    const remaining = input.bodyBudget - result.length - input.separator.length;
     if (remaining >= minUsefulChars) {
       const prefix = truncateToBudget(input.segment.previousNeighbourText, remaining);
       result = `${prefix}${input.separator}${result}`;
@@ -250,7 +255,7 @@ function withNeighbourContext(input: {
   }
 
   if (input.touchesEnd && input.segment.nextNeighbourText) {
-    const remaining = input.bodyBudget - result.length;
+    const remaining = input.bodyBudget - result.length - input.separator.length;
     if (remaining >= minUsefulChars) {
       const suffix = truncateToBudget(input.segment.nextNeighbourText, remaining);
       result = `${result}${input.separator}${suffix}`;

@@ -298,6 +298,42 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).not.toContain("promostyling");
   });
 
+  it("centers on the real token occurrence, not a false-positive substring match", () => {
+    // Regression for a Codex finding: a plain substring search for "cart" would match inside
+    // "cartography" first, centering the excerpt there and discarding the real "cart" rule later
+    // in the same oversized unit.
+    const longSentence =
+      `A cartography reference guide is unrelated filler text repeated to push this single ` +
+      `sentence well past the character budget so it must be truncated around a match. ${"padding word ".repeat(6)}Never abbreviate the cart label in checkout under any circumstances whatsoever here.`;
+
+    const excerpt = buildSegmentExcerpt({
+      segment: segment({ segmentText: longSentence }),
+      queryTokens: tokens("cart"),
+      maxChars: 80,
+    });
+
+    expect(excerpt).toContain("cart label");
+  });
+
+  it("does not let an appended neighbour separator push the excerpt past bodyBudget", () => {
+    // Regression for a Codex finding: appending `separator + suffix` after truncating the
+    // suffix to the full remaining budget overruns bodyBudget by separator.length.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: "- Never translate the discountcode identifier.",
+      nextNeighbourText: "Always apply the promostyling guide to that label regardless of locale.",
+    });
+
+    const maxChars = 120;
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("discountcode"),
+      maxChars,
+    });
+
+    expect(excerpt.length).toBeLessThanOrEqual(maxChars);
+  });
+
   it("is deterministic across repeated calls with the same input", () => {
     const longParagraph = [
       "The firstrule token applies at the start of this paragraph for every locale.",

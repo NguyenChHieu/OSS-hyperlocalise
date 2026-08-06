@@ -633,6 +633,38 @@ describe("selectKnowledgeMemoryContext", () => {
     expect(selected.metrics.selectedMemoryChars).toBeLessThanOrEqual(256);
   });
 
+  it("keeps a matched rule under a tight cap instead of a query-independent prefix cut", () => {
+    // Regression for a Codex finding: with a single selected segment (no multi-locale balancing),
+    // maxCharsPerSelectedSegment returns undefined, so buildSegmentExcerpt used to always get the
+    // 900-char default regardless of the caller's real maxChars. The correctly match-centered
+    // excerpt then got dumbly prefix-cut down to the real (smaller) cap afterward, discarding the
+    // match if it wasn't near the very start.
+    const content = [
+      "# Memory.md",
+      "",
+      "## Checkout guidance",
+      "",
+      "This section explains various general formatting details and covers many unrelated " +
+        "checkout process steps before finally explaining that the tailmarker identifier must " +
+        "never be translated under any circumstances.",
+      "",
+      "## Reference",
+      "",
+      "Unrelated reference details. ".repeat(80),
+    ].join("\n");
+
+    const selected = selectKnowledgeMemoryContext({
+      content,
+      targetLocale: "en-AU",
+      sourceText: "Translate the tailmarker string",
+      maxChars: 100,
+    });
+
+    expect(content.length).toBeGreaterThan(KNOWLEDGE_MEMORY_SMALL_CONTENT_MAX_LENGTH);
+    expect(selected.metrics.fallbackMode).toBe("selective");
+    expect(selected.compactText).toContain("tailmarker");
+  });
+
   it("never expands selected context beyond the source memory", () => {
     const checkoutParagraphs = Array.from(
       { length: 5 },

@@ -204,6 +204,31 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).not.toContain("onlysmallword");
   });
 
+  it("favors a discriminative rule match over a generic term that matches several bullets", () => {
+    // Regression for a Codex finding: raw integer scoring gave the generic "commonword" term the
+    // same weight per match as the specific "tailmarker" term. With "commonword" appearing in two
+    // bullets and "tailmarker" in one, the old flat scoring left all three bullets tied at 1, and
+    // ties broke by document order — the oversized, commonword-only bullet won and hid the
+    // tailmarker rule entirely. Weighting by 1/(matching unit count) makes "tailmarker" (rarer,
+    // more discriminative) outscore either "commonword" bullet.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: [
+        "- The commonword flow must render every step in order across every locale and screen for every commonword session, with substantial padding here to push this bullet's length well past what a tight budget window can hold in this test.",
+        "- The commonword should always show the order total above the shipping address.",
+        "- Never translate the tailmarker identifier.",
+      ].join("\n"),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("commonword", "tailmarker"),
+      maxChars: 120,
+    });
+
+    expect(excerpt).toContain("tailmarker");
+  });
+
   it("locates a match for CJK query tokens without relying on ASCII word boundaries", () => {
     const padding =
       "これは一般的な説明文であり詳細な背景情報を含みますがここでは重要ではありません".repeat(6);

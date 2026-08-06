@@ -204,10 +204,15 @@ function buildSelectedContext(input: {
   }
 
   for (const segment of input.selectedSegments) {
+    // Bound by input.maxChars even when no explicit per-segment budget was computed (single
+    // selected segment, not balancing across locales): otherwise buildSegmentExcerpt centers its
+    // match inside the full 900-char default, and the dumb prefix-cut in appendWithinBudget below
+    // can then chop that correctly-centered excerpt back down to the real (smaller) budget from
+    // the front, discarding the match this function exists to keep.
     const preview = buildSegmentExcerpt({
       segment,
       queryTokens,
-      maxChars: input.maxSegmentChars ?? defaultMaxSegmentChars,
+      maxChars: Math.min(input.maxSegmentChars ?? defaultMaxSegmentChars, input.maxChars),
     });
 
     if (!appendWithinBudget(lines, preview, input.maxChars)) {

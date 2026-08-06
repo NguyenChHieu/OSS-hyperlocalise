@@ -247,6 +247,10 @@
     "defaultMessage": "Monitor terminology consistency, locale coverage, and translation quality across product, marketing, and support content — with gates that block bad syncs before they go live.",
     "description": "Hero subheadline for the localisation-quality-monitoring use case"
   },
+  "/140Sd9x8r": {
+    "defaultMessage": "{count, plural, =0 {No assignees} one {# assignee} other {# assignees}}",
+    "description": "Crowdin assignee picker trigger label with selection count"
+  },
   "/14v/WK67D": {
     "defaultMessage": "Back to site",
     "description": "Button to return to the marketing site from the access denied page"
@@ -651,10 +655,6 @@
     "defaultMessage": "Your workspace at a glance — assigned work, latest activity, and recent projects.",
     "description": "Dashboard page description under the heading"
   },
-  "0iCvVxZ/5M": {
-    "defaultMessage": "Add to Issue Sheet",
-    "description": "Button to add the current CAT segment as an Issue Sheet row"
-  },
   "0jS/dbW8Df": {
     "defaultMessage": "Detect added, changed, and removed strings",
     "description": "Workflow step 1 description for the github-release-localisation use case"
@@ -766,10 +766,6 @@
   "19Yj5RY029": {
     "defaultMessage": "Capture the context and corrections your team already creates, then make them available when the next launch starts.",
     "description": "Bottom CTA description for the self-evolving knowledge product page"
-  },
-  "1AN+Q/JkbE": {
-    "defaultMessage": "Queue translation jobs for uploaded source files in the project selected above.",
-    "description": "Description for the translate tool"
   },
   "1Ax42ak5yi": {
     "defaultMessage": "This file can’t be opened in the CAT workspace.",
@@ -1063,6 +1059,10 @@
     "defaultMessage": "Show secret",
     "description": "Aria label for revealing a credential secret field"
   },
+  "2J9DBNioHN": {
+    "defaultMessage": "Unlink string",
+    "description": "Button to unlink the translation string from an issue"
+  },
   "2JWP4PXKxL": {
     "defaultMessage": "Slack",
     "description": "Slack integration label on the dashboard"
@@ -1199,10 +1199,6 @@
     "defaultMessage": "Does Hyperlocalise work with GitHub?",
     "description": "Homepage FAQ question about GitHub integration"
   },
-  "2oU/YE7MsU": {
-    "defaultMessage": "General question",
-    "description": "Crowdin issue type for general questions"
-  },
   "2p0kb15yT7": {
     "defaultMessage": "Failed to delete job ({status})",
     "description": "Error when deleting a Crowdin task fails with a status code"
@@ -1334,6 +1330,10 @@
   "3K/+e2NRMM": {
     "defaultMessage": "Hyperlocalise is an AI workforce that helps teams launch globally in days — with market nuance, translation, and first-class human review.",
     "description": "Meta description for the marketing homepage"
+  },
+  "3Kr+riOCmU": {
+    "defaultMessage": "Issue could not be unlinked.",
+    "description": "Toast when unlinking an issue fails"
   },
   "3M+guxg4Ll": {
     "defaultMessage": "Unable to load GitHub installation status right now.",
@@ -1743,6 +1743,10 @@
     "defaultMessage": "Engineering and localisation rely on manual spot checks before release instead of structured gates.",
     "description": "Problem pain point 4 for the product-localisation use case"
   },
+  "517eSE0isf": {
+    "defaultMessage": "{actor} assigned you to {issueTitle}",
+    "description": "Inbox notification preview for issue assignment"
+  },
   "54uRAqIrYn": {
     "defaultMessage": "Context-aware from GitHub and product briefs",
     "description": "Differentiator point 4 for the product-localisation use case"
@@ -1806,6 +1810,10 @@
   "5P6X7lQjQL": {
     "defaultMessage": "CAT workspace / Review queue",
     "description": "Location breadcrumb for the QA banner segment in the hero CAT mock"
+  },
+  "5PG+VBWgIw": {
+    "defaultMessage": "Couldn't load assignable members",
+    "description": "Error when job assignee member list fails to load"
   },
   "5PgTvcChVL": {
     "defaultMessage": "Open",
@@ -2014,6 +2022,14 @@
   "6MVGeLFs1Q": {
     "defaultMessage": "{count} resolved",
     "description": "Badge showing resolved issue count on the Issue Sheet page"
+  },
+  "6N3tTQGcSO": {
+    "defaultMessage": "Someone",
+    "description": "Fallback actor name when notification actor is missing"
+  },
+  "6OBycEw5vD": {
+    "defaultMessage": "Request failed",
+    "description": "Fallback error when an Issues API request fails"
   },
   "6PFnjoc6zP": {
     "defaultMessage": "Editor panel failed to load",
@@ -2250,6 +2266,10 @@
   "7L1IE082cR": {
     "defaultMessage": "Approve with confidence",
     "description": "Proof point 3 title for the next-gen CAT tool product page"
+  },
+  "7M/8dl8Baw": {
+    "defaultMessage": "This issue is unavailable.",
+    "description": "Shown when a selected notification issue cannot be loaded"
   },
   "7MZqOWE2cs": {
     "defaultMessage": "Failed to load provider job ({status})",
@@ -2771,6 +2791,10 @@
     "defaultMessage": "Hyperlocalise | The Best Agentic Localisation Platform",
     "description": "Page title for the marketing homepage"
   },
+  "9FhGZjmVTF": {
+    "defaultMessage": "Issue could not be linked.",
+    "description": "Toast when linking an existing issue fails"
+  },
   "9GZvF1K90w": {
     "defaultMessage": "View files",
     "description": "Button linking to the project files page"
@@ -2951,6 +2975,10 @@
     "defaultMessage": "Failed to generate GitHub install URL",
     "description": "Toast when GitHub App install URL generation fails"
   },
+  "9u6IERsgZA": {
+    "defaultMessage": "Remove Translate with agent",
+    "description": "Accessible label to remove the Translate with agent tool"
+  },
   "9u8Sq8abiS": {
     "defaultMessage": "Delete project?",
     "description": "Title of the delete project confirmation dialog"
@@ -3122,6 +3150,10 @@
   "AWZymO5ooC": {
     "defaultMessage": "Stop Chasing Localisation Work Across Tools | Hyperlocalise",
     "description": "Page title for the agents automation product page"
+  },
+  "AXYQB+ayG/": {
+    "defaultMessage": "Job title",
+    "description": "Accessible label for the editable job title field"
   },
   "AXYd5YvGYL": {
     "defaultMessage": "Tourfinder",
@@ -3547,6 +3579,10 @@
     "defaultMessage": "Cancel",
     "description": "Button that closes the global guidance save dialog"
   },
+  "CPX3MSYhG+": {
+    "defaultMessage": "Linked string",
+    "description": "Section heading for the translation string linked to an issue"
+  },
   "CPfzUKHSJO": {
     "defaultMessage": "Synced",
     "description": "Sync filter option for synced glossaries"
@@ -3731,6 +3767,10 @@
     "defaultMessage": "Leave a reply…",
     "description": "Placeholder for the inline reply row on a root comment card"
   },
+  "D622LHuyX8": {
+    "defaultMessage": "Mark all as read",
+    "description": "Button to mark all issue notifications as read in the inbox list"
+  },
   "D6N0QoCpN1": {
     "defaultMessage": "Reasoning failed to render",
     "description": "Error boundary title when reasoning UI crashes"
@@ -3895,6 +3935,10 @@
     "defaultMessage": "Ask any string. Get repo-backed context.",
     "description": "Title for the marketing chat dock mock section"
   },
+  "Db5EVZd7B1": {
+    "defaultMessage": "Linked issues could not be loaded.",
+    "description": "Error when fetching issues linked to a string fails"
+  },
   "Dcqju+Z+Wb": {
     "defaultMessage": "No conversations yet.",
     "description": "Empty state when the organization has no inbox conversations"
@@ -3946,6 +3990,10 @@
   "Dwu72TwwL/": {
     "defaultMessage": "Loading jobs…",
     "description": "Loading state while the jobs list is fetching"
+  },
+  "Dx55FkCrgu": {
+    "defaultMessage": "Link existing",
+    "description": "Button to open the picker for linking an existing issue"
   },
   "DxQL85kivW": {
     "defaultMessage": "Turn launch briefs, campaign assets, and regional messaging into reviewed, culturally adapted copy — with approval flows and glossary control built in.",
@@ -4054,6 +4102,10 @@
   "EO0pk2ty3D": {
     "defaultMessage": "{projectName} · {kindLabel} · updated {updatedAt}",
     "description": "Secondary metadata line for a job row on the dashboard"
+  },
+  "EOpyg02xLN": {
+    "defaultMessage": "Loading issue",
+    "description": "Aria label while issue detail loads in the inbox panel"
   },
   "EQ3mwHZJMl": {
     "defaultMessage": "{count} replies",
@@ -4375,6 +4427,10 @@
     "defaultMessage": "translation",
     "description": "Job kind label for translation jobs"
   },
+  "FlKUTB/6A0": {
+    "defaultMessage": "Unassigned",
+    "description": "Label when a native job has no owner"
+  },
   "FlXBmFercA": {
     "defaultMessage": "Remove GitHub sync workflows",
     "description": "Accessible label to remove GitHub sync workflows"
@@ -4402,6 +4458,10 @@
   "FrF4P2cRG5": {
     "defaultMessage": "Loading members…",
     "description": "Loading state for assignee picker members"
+  },
+  "FtQgWtXBLP": {
+    "defaultMessage": "Retry",
+    "description": "Retry button when issue sheet columns fail to load"
   },
   "FtS1qUeQJM": {
     "defaultMessage": "{progress}% translated",
@@ -4659,6 +4719,10 @@
     "defaultMessage": "New article",
     "description": "Workflow step 1 label for the help-center-localisation use case"
   },
+  "H/zIVmChfF": {
+    "defaultMessage": "{actor} changed assignee on {issueTitle}",
+    "description": "Inbox notification preview for an assignee change"
+  },
   "H02egE79hp": {
     "defaultMessage": "Pricing",
     "description": "Marketing navbar link to the pricing page"
@@ -4883,6 +4947,10 @@
     "defaultMessage": "Last synced {when}",
     "description": "Last sync timestamp on project overview ship section"
   },
+  "I3HI2ZtzmX": {
+    "defaultMessage": "Linking requires a native project string.",
+    "description": "Shown when translation key linking is unavailable for external CAT"
+  },
   "I3W7KYKnta": {
     "defaultMessage": "Failed to generate AI recommendation",
     "description": "Fallback error when AI translation recommendation generation fails"
@@ -4906,6 +4974,10 @@
   "I9aLSBsZbT": {
     "defaultMessage": "Choose an organization from your account or contact support if this continues.",
     "description": "Access denied page guidance when the organization slug is missing"
+  },
+  "IA5Kmwt4uK": {
+    "defaultMessage": "Issues",
+    "description": "Button to open linked Issues for the current CAT segment"
   },
   "IC06cS9nUd": {
     "defaultMessage": "Agent fixing",
@@ -5118,6 +5190,10 @@
   "J9N0QX7lou": {
     "defaultMessage": "{value} {unit}",
     "description": "Formatted file size with a unit abbreviation"
+  },
+  "J9Nh4r/Fsj": {
+    "defaultMessage": "Load more",
+    "description": "Button to load older issue notifications in the inbox list"
   },
   "J9zjZFCoFh": {
     "defaultMessage": "How it works",
@@ -5495,6 +5571,10 @@
     "defaultMessage": "Usage",
     "description": "Pricing matrix section title for usage quotas"
   },
+  "L0g+No60zf": {
+    "defaultMessage": "Context needed: {key}",
+    "description": "Default title when creating an issue from a CAT string"
+  },
   "L0gachMRlZ": {
     "defaultMessage": "Term base",
     "description": "Resource type filter option for term base resources"
@@ -5586,10 +5666,6 @@
   "LMGo1sN8VQ": {
     "defaultMessage": "This glossary is used only by the projects listed here.",
     "description": "Section description for projects assigned to a glossary"
-  },
-  "LMW/LqnbFb": {
-    "defaultMessage": "Source mistake",
-    "description": "Crowdin issue type for source mistakes"
   },
   "LOKE6DdX5z": {
     "defaultMessage": "Just now",
@@ -5722,6 +5798,10 @@
   "M2ZOmyFhbv": {
     "defaultMessage": "Collapse panel",
     "description": "Decorative collapse control label in the chat dock mock"
+  },
+  "M30SNTxWXn": {
+    "defaultMessage": "Title is required",
+    "description": "Toast when saving a job with an empty title"
   },
   "M3bbV5wmi2": {
     "defaultMessage": "Manage access on GitHub",
@@ -5958,6 +6038,10 @@
   "NBLnrSCLwC": {
     "defaultMessage": "Save provider",
     "description": "Button label to save a BYOK provider credential"
+  },
+  "NBzsgyShMP": {
+    "defaultMessage": "{actor} mentioned you on {issueTitle}",
+    "description": "Inbox notification preview for a mention"
   },
   "NEC/JxS1Sr": {
     "defaultMessage": "Words to do",
@@ -6351,6 +6435,10 @@
     "defaultMessage": "Deleting…",
     "description": "Confirm button label while deleting a Crowdin task"
   },
+  "OsfTn/OWg9": {
+    "defaultMessage": "No issues linked to this string yet.",
+    "description": "Empty state when the string has no linked issues"
+  },
   "OtoAcs/psJ": {
     "defaultMessage": "SSO / SAML",
     "description": "Enterprise plan feature: SSO"
@@ -6502,6 +6590,10 @@
   "PVXHS+qpRe": {
     "defaultMessage": "Founders",
     "description": "Heading above founder cards on the company page"
+  },
+  "PVpHHcgxIZ": {
+    "defaultMessage": "{actor} changed status of {issueTitle}",
+    "description": "Inbox notification preview for an issue status change"
   },
   "PXc6nRCKjm": {
     "defaultMessage": "Prefer market-specific idioms for onboarding CTAs, but keep product terms literal.",
@@ -6863,6 +6955,10 @@
     "defaultMessage": "Sync only",
     "description": "Shortcut hint when GitHub push is unavailable because agent mode is enabled"
   },
+  "QrUlBs3ARV": {
+    "defaultMessage": "No value",
+    "description": "Empty state when a long-text custom column has no value"
+  },
   "QsCILqwet/": {
     "defaultMessage": "Ask Hyperlocalise…",
     "description": "Default placeholder for the inbox reply composer textarea"
@@ -6898,6 +6994,10 @@
   "R68TUJrkVn": {
     "defaultMessage": "Add column",
     "description": "Title of the dialog to add a custom Issue Sheet column"
+  },
+  "R6n/KCAp4a": {
+    "defaultMessage": "Couldn't update assignees",
+    "description": "Toast when job assignee save fails"
   },
   "R7vhxRuwOx": {
     "defaultMessage": "Scheduled",
@@ -7971,6 +8071,10 @@
     "defaultMessage": "Translated ({locale})",
     "description": "Heading for the translated file pane in CAT File view"
   },
+  "Vm1k8EkL8L": {
+    "defaultMessage": "Issue",
+    "description": "Source label for issue notification rows in the inbox list"
+  },
   "VpKHsNzJ6d": {
     "defaultMessage": "Enable {repositoryFullName}",
     "description": "Aria label for a repository enable checkbox"
@@ -8054,10 +8158,6 @@
   "W3/qvnQA3o": {
     "defaultMessage": "Contentful webhook synced",
     "description": "Toast title when an existing Contentful webhook is updated"
-  },
-  "W3V5ERIIW9": {
-    "defaultMessage": "Linked context",
-    "description": "Section heading for linked issue context"
   },
   "W3mkNKamaw": {
     "defaultMessage": "Not connected",
@@ -8359,6 +8459,10 @@
     "defaultMessage": "Failed to load members",
     "description": "Error when the workspace members list request fails"
   },
+  "XLWvL1I9Sv": {
+    "defaultMessage": "Search issues…",
+    "description": "Placeholder for searching project issues to link"
+  },
   "XLbc3ZzNpD": {
     "defaultMessage": "All sources",
     "description": "Workspace files source filter option to show every origin"
@@ -8595,10 +8699,6 @@
     "defaultMessage": "Ask the localization agent",
     "description": "Dashboard quick-start card title"
   },
-  "YNB1czGowu": {
-    "defaultMessage": "Context request",
-    "description": "Crowdin issue type for context requests"
-  },
   "YNbxvilhkH": {
     "defaultMessage": "Catch what changed",
     "description": "AI feature capability title: recent change briefs"
@@ -8634,6 +8734,10 @@
   "YUmBaBzXHy": {
     "defaultMessage": "External job ID",
     "description": "Detail row label for the provider job identifier"
+  },
+  "YZ2plskMsH": {
+    "defaultMessage": "Assign the created job to Translate with agent and start localisation.",
+    "description": "Description for the Translate with agent automation tool"
   },
   "Ya0t4KyDVG": {
     "defaultMessage": "Copy failed",
@@ -8754,6 +8858,10 @@
   "YxQp9bMkby": {
     "defaultMessage": "Not yet. Self-serve signup is coming soon. Request a demo if you want early access or need Enterprise.",
     "description": "Pricing FAQ answer about account creation availability"
+  },
+  "YxgRjdqpTS": {
+    "defaultMessage": "{actor} commented on {issueTitle}",
+    "description": "Inbox notification preview for a comment on a watched issue"
   },
   "Yy3NR/q4ik": {
     "defaultMessage": "Delete team",
@@ -9315,6 +9423,10 @@
     "defaultMessage": "Surface quality issues in pull requests",
     "description": "Capability 5 title for the localisation-quality-monitoring use case"
   },
+  "bFbk34uFYE": {
+    "defaultMessage": "Loading…",
+    "description": "Loading state in the Crowdin assignee picker"
+  },
   "bHnFWGWqed": {
     "defaultMessage": "No files are linked to this task.",
     "description": "Empty state when a live TMS job has no linked files"
@@ -9663,6 +9775,10 @@
     "defaultMessage": "This conversation is no longer available.",
     "description": "Toast when a docked conversation returns 404"
   },
+  "dAeEJyCLaY": {
+    "defaultMessage": "Clear all",
+    "description": "Action to clear all Crowdin assignees"
+  },
   "dBWJx9vBQt": {
     "defaultMessage": "Starter",
     "description": "Starter plan name on the pricing page"
@@ -9823,6 +9939,10 @@
     "defaultMessage": "{provider} connected",
     "description": "Toast success after connecting a Crowdin account with a personal access token"
   },
+  "dg15k+jhq4": {
+    "defaultMessage": "Translate with agent",
+    "description": "Menu item and tool title for assigning Translate with agent"
+  },
   "dgJxXLu6Bs": {
     "defaultMessage": "Search: {value}",
     "description": "Active issue filter chip showing the current search query"
@@ -9846,10 +9966,6 @@
   "dmWGvUNewd": {
     "defaultMessage": "Choose push or scheduled triggers when workflows are enabled.",
     "description": "Validation error when workflows are enabled but no trigger mode is selected"
-  },
-  "dn9Ff93vY2": {
-    "defaultMessage": "Choose a project above to pick target locales.",
-    "description": "Empty state when translation target locales need a project first"
   },
   "do0p3JfCkF": {
     "defaultMessage": "View all workspaces",
@@ -10235,6 +10351,10 @@
     "defaultMessage": "Startups",
     "description": "Marketing navbar link to the startups program page"
   },
+  "fM2wynVWWB": {
+    "defaultMessage": "Search members…",
+    "description": "Placeholder in the Crowdin assignee picker search field"
+  },
   "fMyeM5BW3s": {
     "defaultMessage": "Custom",
     "description": "Enterprise plan price label on the pricing page"
@@ -10250,6 +10370,10 @@
   "fNsrVmOrc3": {
     "defaultMessage": "Early-stage startups can get up to 80% off the Growth plan for the first 12 months, or while you qualify. We confirm fit and pricing on the demo.",
     "description": "Supporting copy for the startup program eligibility section"
+  },
+  "fO8mdMfpdf": {
+    "defaultMessage": "Open in CAT",
+    "description": "Link label stored on issues created from CAT"
   },
   "fOd0uv4R/b": {
     "defaultMessage": "Failed to cancel job",
@@ -11011,6 +11135,10 @@
     "defaultMessage": "Saving",
     "description": "Commit button label while knowledge memory is saving"
   },
+  "iN2TlQe/rc": {
+    "defaultMessage": "Create job",
+    "description": "Menu item and tool title for creating a native TMS job"
+  },
   "iNt/60shfS": {
     "defaultMessage": "Make missed localisation work harder to miss.",
     "description": "Bottom CTA headline for the agents automation product page"
@@ -11555,6 +11683,10 @@
     "defaultMessage": "Billing request failed. Try again in a moment.",
     "description": "Generic fallback error for billing requests"
   },
+  "kO32zaHAd6": {
+    "defaultMessage": "Couldn't save title",
+    "description": "Toast when job title save fails"
+  },
   "kOJgaHjhFH": {
     "defaultMessage": "Renews on {date}",
     "description": "Renewal copy for an active plan that renews on a date"
@@ -11574,6 +11706,10 @@
   "kU9ZZlDF/l": {
     "defaultMessage": "Who is Hyperlocalise built for?",
     "description": "Homepage FAQ question about the target audience"
+  },
+  "kUu0YJ4PK9": {
+    "defaultMessage": "Issue linked",
+    "description": "Toast when an existing issue is linked to the string"
   },
   "kWeceyqgt+": {
     "defaultMessage": "LLM agnostic",
@@ -11814,6 +11950,10 @@
   "lIM6KQzx0j": {
     "defaultMessage": "{sourceTerm} → {targetTerm} ({targetLocale})",
     "description": "Source and target term pair for a glossary match detail row"
+  },
+  "lKE9esALm9": {
+    "defaultMessage": "String unlinked",
+    "description": "Toast when a translation string is unlinked from an issue"
   },
   "lMGKaGDLx4": {
     "defaultMessage": "A product launch campaign goes live in six markets",
@@ -12151,6 +12291,10 @@
     "defaultMessage": "Agent assignment",
     "description": "Workflow step 3 label for the localisation-operations use case"
   },
+  "mzBTNMYPpo": {
+    "defaultMessage": "Choose a project above to pick target locales.",
+    "description": "Empty state when Create job target locales need a project first"
+  },
   "n+YVQESgnK": {
     "defaultMessage": "Update the team name or slug used across the workspace.",
     "description": "Description of the edit team dialog on the teams list page"
@@ -12399,6 +12543,10 @@
     "defaultMessage": "{remaining} remaining",
     "description": "Usage row showing remaining allowance"
   },
+  "o7Q2VF9914": {
+    "defaultMessage": "Unlink",
+    "description": "Button to unlink an issue from the string"
+  },
   "o9256BhMtE": {
     "defaultMessage": "Failed to save Semrush connection.",
     "description": "Error when Semrush connection save fails"
@@ -12591,10 +12739,6 @@
     "defaultMessage": "Call tools from a connected remote MCP server during this automation.",
     "description": "Description for the MCP Server automation tool when a connection exists"
   },
-  "p83H7uOHst": {
-    "defaultMessage": "Translation mistake",
-    "description": "Crowdin issue type for translation mistakes"
-  },
   "p8Xes8vaYS": {
     "defaultMessage": "Source & context",
     "description": "Issue list view preset for source and context issues"
@@ -12610,6 +12754,10 @@
   "pCwlsos9AL": {
     "defaultMessage": "Choose a day of the week for weekly schedules.",
     "description": "API error when weekly schedule has an invalid day of week"
+  },
+  "pF/btP7bSZ": {
+    "defaultMessage": "Failed to update job",
+    "description": "Error when a native job title, description, or owner update fails"
   },
   "pFVKHpG8Q4": {
     "defaultMessage": "Target text",
@@ -12779,9 +12927,17 @@
     "defaultMessage": "Queue panel failed to load",
     "description": "Error boundary title when the CAT queue panel crashes"
   },
+  "ppqLcxUWCQ": {
+    "defaultMessage": "Custom fields could not be loaded.",
+    "description": "Error when issue sheet columns fail to load on issue detail"
+  },
   "prJEYrujJH": {
     "defaultMessage": "Live projects fetched from your connected TMS provider, ordered by recent activity.",
     "description": "Section description for live TMS provider projects"
+  },
+  "pryVUr/AGB": {
+    "defaultMessage": "Create a native TMS translation job for uploaded source files in the project selected above.",
+    "description": "Description for the Create job automation tool"
   },
   "puXgWXUT2y": {
     "defaultMessage": "Deleting…",
@@ -13035,9 +13191,17 @@
     "defaultMessage": "Czech (Czechia)",
     "description": "Display name for BCP-47 locale cs-CZ"
   },
+  "qyJpxYtcpE": {
+    "defaultMessage": "Create or link Issues for this string. Navigate to an issue to collaborate.",
+    "description": "Dialog description for managing issues linked to a CAT string"
+  },
   "qySc0NPK9C": {
     "defaultMessage": "Connect",
     "description": "Primary button to submit the Crowdin personal access token"
+  },
+  "r0gMCcsbGC": {
+    "defaultMessage": "No conversations or notifications yet.",
+    "description": "Empty state when the inbox has neither conversations nor notifications"
   },
   "r1aEK84u1V": {
     "defaultMessage": "Part of speech",
@@ -13142,10 +13306,6 @@
   "rUPw7LyUVG": {
     "defaultMessage": "Strikethrough",
     "description": "Bubble menu button to toggle strikethrough text"
-  },
-  "rVbcl0T6/F": {
-    "defaultMessage": "Translate",
-    "description": "Menu item and tool title for translation jobs"
   },
   "rW0O4vxb9w": {
     "defaultMessage": "Activity",
@@ -13503,6 +13663,10 @@
     "defaultMessage": "No TMS jobs assigned to you were returned from the live provider API.",
     "description": "Empty state for TMS jobs in personal workspace scope"
   },
+  "t3xDK2/UrI": {
+    "defaultMessage": "Create issue",
+    "description": "Button to create a new issue from the current string"
+  },
   "t4mhc63bGr": {
     "defaultMessage": "Waiting for review",
     "description": "Status label for review triage items"
@@ -13774,6 +13938,10 @@
   "uHYVTMAjs/": {
     "defaultMessage": "Job source files",
     "description": "Accessible label for the job source files tree"
+  },
+  "uHbVM9Pw9Y": {
+    "defaultMessage": "Assignees updated",
+    "description": "Toast when job assignees are saved"
   },
   "uIj8uezhZ9": {
     "defaultMessage": "Earth from space",
@@ -14219,6 +14387,10 @@
     "defaultMessage": "Manage membership and roles for the {slug} team.",
     "description": "Team detail page description when the team slug is known"
   },
+  "vtr+j44k6z": {
+    "defaultMessage": "Issue unlinked",
+    "description": "Toast when an issue is unlinked from the string"
+  },
   "vuJalRUhn9": {
     "defaultMessage": "Chat conversations",
     "description": "Accessible label for the chat dock tab list"
@@ -14266,6 +14438,10 @@
   "w1oESvG6DH": {
     "defaultMessage": "Job does not belong to this project",
     "description": "Error when a loaded job belongs to a different project"
+  },
+  "w29ko2pN3n": {
+    "defaultMessage": "Remove Create job",
+    "description": "Accessible label to remove the Create job tool"
   },
   "w2b0cdIV3S": {
     "defaultMessage": "Ask about strings, context, or anything else",
@@ -14370,6 +14546,10 @@
   "wUnHS3QtO/": {
     "defaultMessage": "Hyperlocalise logo",
     "description": "Alt text for the Hyperlocalise logo in the marketing footer"
+  },
+  "wYA642IjdA": {
+    "defaultMessage": "Unable to load inbox.",
+    "description": "Error when the unified inbox list fails to load"
   },
   "wYUzxhVyTO": {
     "defaultMessage": "e.g. Crowdin Production",
@@ -14603,10 +14783,6 @@
     "defaultMessage": "Provider",
     "description": "Job property row label for TMS provider name"
   },
-  "xKI0yR66AU": {
-    "defaultMessage": "Remove Translate",
-    "description": "Accessible label to remove the translate tool"
-  },
   "xMon4OObQB": {
     "defaultMessage": "Cannot save translation because the provider file identifier is missing.",
     "description": "Error when a CAT save cannot resolve the TMS provider file identifier"
@@ -14631,6 +14807,10 @@
     "defaultMessage": "Usage meter",
     "description": "Segment context label for the usage meter in the CAT mock"
   },
+  "xTMvZyc/zN": {
+    "defaultMessage": "No matching issues.",
+    "description": "Empty state when issue search returns no results"
+  },
   "xTYiHfPy3g": {
     "defaultMessage": "Workspace",
     "description": "Breadcrumb-style label above the members page title"
@@ -14642,6 +14822,10 @@
   "xVvlWpH5FH": {
     "defaultMessage": "Regenerate",
     "description": "Button to regenerate the translated file with the agent in CAT File view"
+  },
+  "xVxao1E4rb": {
+    "defaultMessage": "Assignees",
+    "description": "Accessible label for the Crowdin multi-assignee picker trigger"
   },
   "xX2Nm+qioI": {
     "defaultMessage": "We created the workspace, but could not prepare its URL. Please retry.",
@@ -14694,6 +14878,10 @@
   "xi4ZQRm848": {
     "defaultMessage": "Resources",
     "description": "Marketing navbar trigger for the resources mega-menu"
+  },
+  "xixmTqHWvz": {
+    "defaultMessage": "Open",
+    "description": "Button to open a linked issue detail page"
   },
   "xjcfJrUODP": {
     "defaultMessage": "e.g. de-DE",
@@ -15119,6 +15307,10 @@
     "defaultMessage": "Open account menu for {name}",
     "description": "Screen-reader label for the account menu trigger button"
   },
+  "zPUQ6rTETA": {
+    "defaultMessage": "No members found",
+    "description": "Empty state in the Crowdin assignee picker"
+  },
   "zQR9HH34IW": {
     "defaultMessage": "No translation memories yet",
     "description": "Empty state title when the workspace has no translation memories"
@@ -15230,6 +15422,10 @@
   "zl55Vhhf0L": {
     "defaultMessage": "Workspace members",
     "description": "Accessible label for the workspace members list section"
+  },
+  "zlTXMaTZ76": {
+    "defaultMessage": "Linked issues",
+    "description": "Dialog title for issues linked to a CAT translation string"
   },
   "znjMm102W+": {
     "defaultMessage": "API key",

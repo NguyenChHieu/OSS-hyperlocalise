@@ -10,7 +10,7 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { makeAutoObservable, observable } from "mobx";
+import { makeAutoObservable, observableRef, observableShallow } from "mobx";
 import type { UIMessage } from "ai";
 
 import {
@@ -50,7 +50,33 @@ export type ChatDockPageContext = {
   sourceText: string;
   contextLabel?: string;
   sourcePath?: string;
+  sourceLocale?: string;
+  targetLocale?: string;
+  projectId?: string;
+  projectName?: string;
+  projectSource?: "native" | "external_tms";
+  externalProviderKind?: string | null;
 };
+
+export function resolveChatDockMessageProjectId(input: {
+  explicitProjectId?: string;
+  pageContext: ChatDockPageContext | null;
+  isPending: boolean;
+  conversationProjectId: string | null | undefined;
+}) {
+  if (input.explicitProjectId) {
+    return input.explicitProjectId;
+  }
+
+  // Existing conversations: only auto-attach when the row is loaded and unscoped.
+  // `undefined` means the conversation list/row is still loading — do not guess.
+  // A non-null projectId means the conversation is already scoped — do not reassign.
+  if (!input.isPending && input.conversationProjectId !== null) {
+    return undefined;
+  }
+
+  return input.pageContext?.projectId;
+}
 
 const STREAM_ERROR_MESSAGE = "Sorry, I encountered an error while generating a response.";
 
@@ -144,9 +170,9 @@ export class ChatDockStore {
     makeAutoObservable(
       this,
       {
-        tabs: observable.shallow,
-        pageContext: observable.ref,
-        streamsByConversationId: observable.ref,
+        tabs: observableShallow,
+        pageContext: observableRef,
+        streamsByConversationId: observableRef,
       },
       { autoBind: true },
     );

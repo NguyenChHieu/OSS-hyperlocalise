@@ -131,8 +131,14 @@ function chunkByWords(text: string, wordsPerChunk: number): string[] {
 // there — even after adding the fullwidth punctuation itself — still failed to split them. ASCII
 // .!? keeps requiring \s+ (a bare "3.5" or "e.g." shouldn't split); 。！？ allow a zero-width
 // boundary immediately after, matching how those scripts are actually written.
+//
+// Both terminator branches also allow an optional closing quote ("'”’) between the terminator and
+// the whitespace: a quoted rule like `"Keep X." "Keep Y."` puts the closing quote, not the
+// terminator itself, immediately before the space, so the plain terminator-only lookbehind never
+// matched there. The lookahead correspondingly accepts typographic opening quotes (“‘) alongside
+// the straight ones, so a sentence that starts with one still counts as a valid boundary.
 const sentenceBoundary =
-  /(?:(?<=[.!?])\s+|(?<=[。！？])\s*)(?=[\p{Lu}\p{Nd}"'(]|(?:(?![\p{Ll}\p{Lu}\p{Lt}])\p{L}))/u;
+  /(?:(?<=[.!?]["”’]?)\s+|(?<=[。！？]["”’]?)\s*)(?=[\p{Lu}\p{Nd}"“‘(]|(?:(?![\p{Ll}\p{Lu}\p{Lt}])\p{L}))/u;
 
 function splitIntoSentences(normalized: string): string[] {
   const sentences = normalized
@@ -422,8 +428,15 @@ export function buildSegmentExcerpt(input: {
   // maxChars (the 80-char minimum used for balanced multi-locale excerpts makes this easy to
   // hit): otherwise a long heading alone could consume the entire per-segment budget, returning
   // heading + "..." with none of the matched rule, and — when the heading alone is >= maxChars —
-  // exceeding maxChars outright.
-  const minBodyReserve = Math.min(20, Math.floor(maxChars / 4));
+  // exceeding maxChars outright. A flat 20-char floor isn't actually enough on its own: up to 6 of
+  // those go to truncateAroundMatch's own leading/trailing "..." markers, so a protected identifier
+  // longer than ~14 characters (e.g. "routingtoken") could still get cut off mid-word. Size the
+  // floor from the longest token actually being matched in this segment instead of a constant.
+  const longestMatchedTokenLength = Math.max(0, ...[...tokenWeights.keys()].map((t) => t.length));
+  const minBodyReserve = Math.min(
+    Math.max(20, longestMatchedTokenLength + 10),
+    Math.max(0, maxChars - 1),
+  );
   const headingPrefix = truncateToBudget(rawHeadingPrefix, Math.max(0, maxChars - minBodyReserve));
   const separator = segment.kind === "bullet_group" ? "; " : " ";
   const bodyBudget = Math.max(0, maxChars - headingPrefix.length);

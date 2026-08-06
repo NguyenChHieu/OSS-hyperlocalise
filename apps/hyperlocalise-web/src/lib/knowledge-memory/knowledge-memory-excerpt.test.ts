@@ -418,6 +418,28 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("特別コード二");
   });
 
+  it("splits sentences wrapped in quotation marks", () => {
+    // Regression for a Codex finding: the sentence-boundary lookbehind required the terminator
+    // immediately before whitespace. A quoted rule like `"Keep X." "Keep Y."` puts the closing
+    // quote, not the terminator, right before the space, so the boundary never matched there —
+    // under a tight budget, the two quoted rules collapsed into one oversized unit and truncation
+    // centered on only one of them.
+    const paragraph = [
+      '"Keep alphamarker unchanged across every single translation and locale without exception."',
+      '"Keep betamarker unchanged across every single translation and locale without exception."',
+      "Final note.",
+    ].join(" ");
+
+    const excerpt = buildSegmentExcerpt({
+      segment: segment({ segmentText: paragraph }),
+      queryTokens: tokens("alphamarker", "betamarker"),
+      maxChars: 83,
+    });
+
+    expect(excerpt).toContain("alphamarker");
+    expect(excerpt).toContain("betamarker");
+  });
+
   it("reserves body space instead of letting a long heading consume the whole budget", () => {
     const deeplyNestedSegment = segment({
       headingPath: [
@@ -436,6 +458,31 @@ describe("buildSegmentExcerpt", () => {
     });
 
     expect(excerpt.length).toBeLessThanOrEqual(80);
+  });
+
+  it("keeps the whole matched token intact even when the heading eats most of the budget", () => {
+    // Regression for a Codex finding: the fixed 20-char body reserve wasn't actually enough to
+    // preserve a long protected identifier once truncateAroundMatch's own leading/trailing "..."
+    // markers (up to 6 characters) were subtracted from it — "routingtoken" (12 characters) still
+    // got cut mid-word ("...the routingto...") even with the reserve in place.
+    const deeplyNestedSegment = segment({
+      headingPath: [
+        "Memory.md",
+        "A very long section heading that eats most of the budget",
+        "An equally verbose subsection name",
+        "de-DE",
+      ],
+      segmentText: "Never translate the routingtoken internal identifier under any circumstances.",
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: deeplyNestedSegment,
+      queryTokens: tokens("routingtoken"),
+      maxChars: 80,
+    });
+
+    expect(excerpt.length).toBeLessThanOrEqual(80);
+    expect(excerpt).toContain("routingtoken");
   });
 
   it("keeps the opening rule for a heading-driven match instead of only an incidental body match", () => {

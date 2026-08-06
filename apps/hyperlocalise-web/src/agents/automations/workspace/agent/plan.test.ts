@@ -14,7 +14,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import type { WorkspaceAutomationRecord } from "@/lib/agents/workspace-automations";
 
-import { buildWorkspaceOrchestratorPlan } from "./plan";
+import { buildWorkspaceOrchestratorPlan, planHasActionableTool } from "./plan";
 
 function automation(overrides: Partial<WorkspaceAutomationRecord> = {}): WorkspaceAutomationRecord {
   return {
@@ -202,5 +202,40 @@ describe("buildWorkspaceOrchestratorPlan", () => {
 
     expect(plan.tools).toEqual(["recall_memory"]);
     expect(plan.tools).not.toContain("save_memory");
+  });
+});
+
+describe("planHasActionableTool", () => {
+  it("is false for a recall_memory-only plan", () => {
+    // Regression for a Codex finding: dispatchManualWorkspaceAutomationRun (and other dispatch
+    // paths) used to check plan.tools.length === 0 to decide whether a run is meaningful. Once
+    // recall_memory could be the plan's only tool, that check passed for a plan that reads Memory
+    // and performs no workflow or notification action, letting a no-op run be dispatched and
+    // reported as successful.
+    const plan = buildWorkspaceOrchestratorPlan(
+      automation({ toolConfig: { knowledge: { enabled: true, allowUpdates: false } } }),
+    );
+
+    expect(plan.tools).toEqual(["recall_memory"]);
+    expect(planHasActionableTool(plan)).toBe(false);
+  });
+
+  it("is true once a workflow or notification tool is planned alongside memory", () => {
+    const plan = buildWorkspaceOrchestratorPlan(
+      automation({
+        projectId: "project-1",
+        toolConfig: {
+          slack: { enabled: true, channelId: "C123" },
+          knowledge: { enabled: true, allowUpdates: false },
+        },
+      }),
+    );
+
+    expect(plan.tools).toEqual(["recall_memory", "notify_slack"]);
+    expect(planHasActionableTool(plan)).toBe(true);
+  });
+
+  it("is false for an empty plan", () => {
+    expect(planHasActionableTool(buildWorkspaceOrchestratorPlan(automation()))).toBe(false);
   });
 });

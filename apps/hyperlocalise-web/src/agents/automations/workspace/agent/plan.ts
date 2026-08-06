@@ -187,3 +187,13 @@ export function buildWorkspaceOrchestratorPlan(
     tools: [...memoryTools, ...workflowTools, ...notificationTools],
   };
 }
+
+/**
+ * Whether the plan includes at least one workflow or notification tool, not just memory tools.
+ * recall_memory being the only planned tool means the run would read Memory and take no other
+ * action; callers use this instead of a raw plan.tools.length check to decide whether a run is
+ * meaningful enough to dispatch, not just whether *any* tool at all is planned.
+ */
+export function planHasActionableTool(plan: WorkspaceOrchestratorPlan): boolean {
+  return plan.tools.some((tool) => !MEMORY_TOOLS.includes(tool));
+}

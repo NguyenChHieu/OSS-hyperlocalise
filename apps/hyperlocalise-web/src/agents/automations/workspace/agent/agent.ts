@@ -25,7 +25,13 @@ import type { WorkspaceOrchestratorSession } from "./context";
 export function createWorkspaceOrchestratorAgent(session: WorkspaceOrchestratorSession) {
   const tools = buildWorkspaceOrchestratorTools(session);
   const plannedToolCount = session.plan.tools.length;
-  const stepLimit = Math.min(WORKSPACE_ORCHESTRATOR_STEP_LIMIT, Math.max(plannedToolCount + 1, 1));
+  // WORKSPACE_ORCHESTRATOR_STEP_LIMIT is a floor, not a ceiling: prepareStep below forces the
+  // exact next planned tool at each step (or toolChoice: "none" past the plan), so there's no way
+  // for the loop to run past plannedToolCount + 1 steps regardless of how high this is set. Capping
+  // it with Math.min instead used to silently drop any planned tool beyond the limit — e.g. Memory
+  // enabled on an automation already planning 6 tools pushed the 7th (often the Slack/email
+  // notification) past the cap, so it never ran even though the automation reported success.
+  const stepLimit = Math.max(WORKSPACE_ORCHESTRATOR_STEP_LIMIT, plannedToolCount + 1);
 
   return new ToolLoopAgent({
     model: getHyperlocaliseAgentModel(),

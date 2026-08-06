@@ -104,7 +104,9 @@ describe("workspace orchestrator agent", () => {
 
     createWorkspaceOrchestratorAgent(session);
 
-    expect(isStepCountMock).toHaveBeenCalledWith(3);
+    // WORKSPACE_ORCHESTRATOR_STEP_LIMIT (6) is a floor, not a ceiling: a 2-tool plan still gets at
+    // least that many steps even though plannedToolCount + 1 (3) is smaller.
+    expect(isStepCountMock).toHaveBeenCalledWith(WORKSPACE_ORCHESTRATOR_STEP_LIMIT);
     expect(toolLoopAgentMock).toHaveBeenCalledWith(
       expect.objectContaining({
         activeTools: ["run_github_workflows", "notify_slack"],
@@ -129,6 +131,45 @@ describe("workspace orchestrator agent", () => {
     });
     expect(settings.prepareStep({ stepNumber: WORKSPACE_ORCHESTRATOR_STEP_LIMIT })).toEqual({
       toolChoice: "none",
+    });
+  });
+
+  it("never caps the step count below what a larger plan needs", () => {
+    // Regression for a Codex finding: WORKSPACE_ORCHESTRATOR_STEP_LIMIT (6) used to be an upper
+    // bound on stepLimit, so enabling Memory (prepending recall_memory) on an automation that
+    // already planned 6 workflow/notification tools produced a 7-tool plan capped down to 6 steps
+    // — silently dropping the last planned tool (often the Slack/email notification) even though
+    // the run still reported success.
+    const sevenTools = [
+      "recall_memory",
+      "use_github_repository",
+      "run_github_workflows",
+      "create_native_tms_job",
+      "assign_translate_with_agent",
+      "use_semrush",
+      "notify_slack",
+    ] as const;
+
+    const session = createWorkspaceOrchestratorSession({
+      organizationId: "org-1",
+      automation: automation(),
+      run: run(),
+      plan: { tools: [...sevenTools] },
+      repository: null,
+      composedInstructions: "Run the automation.",
+    });
+
+    createWorkspaceOrchestratorAgent(session);
+
+    expect(isStepCountMock).toHaveBeenCalledWith(sevenTools.length + 1);
+
+    const settings = toolLoopAgentMock.mock.calls.at(-1)?.[0] as {
+      prepareStep: (input: { stepNumber: number }) => unknown;
+    };
+
+    expect(settings.prepareStep({ stepNumber: 6 })).toEqual({
+      activeTools: ["notify_slack"],
+      toolChoice: { type: "tool", toolName: "notify_slack" },
     });
   });
 });

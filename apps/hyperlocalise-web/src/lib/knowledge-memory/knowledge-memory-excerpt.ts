@@ -256,11 +256,13 @@ function packUnitsWithinBudget(
     tryAdd(forcedFirstUnit);
   }
 
-  for (const unit of rankedUnits) {
-    if (!tryAdd(unit)) {
-      continue;
-    }
+  // Place every ranked match first, before spending any budget on optional neighbour context: an
+  // earlier match's filler neighbour could otherwise crowd out a later, independently-matching
+  // unit that would have fit on its own. Guaranteeing every real match a slot before any "nice to
+  // have" context keeps two matches that individually fit from losing one to the other's neighbour.
+  const placed = rankedUnits.filter((unit) => tryAdd(unit));
 
+  for (const unit of placed) {
     // Pull in the immediate neighbours so a rule split across adjacent sentences/bullets — e.g.
     // "When the source contains X" followed by "translate it as Y" — doesn't lose its other half
     // just because that half alone has no query-token overlap. The prefix preview this replaces
@@ -300,6 +302,17 @@ function withNeighbourContext(input: {
   const minUsefulChars = 12;
   let result = input.body;
 
+  // next before previous, same as packUnitsWithinBudget: a condition's action more often follows
+  // it than precedes it, so when both parser-level neighbours are eligible but budget fits only
+  // one, spend it on nextNeighbourText first rather than always taking previousNeighbourText.
+  if (input.touchesEnd && input.segment.nextNeighbourText) {
+    const remaining = input.bodyBudget - result.length - input.separator.length;
+    if (remaining >= minUsefulChars) {
+      const suffix = truncateToBudget(input.segment.nextNeighbourText, remaining);
+      result = `${result}${input.separator}${suffix}`;
+    }
+  }
+
   if (input.touchesStart && input.segment.previousNeighbourText) {
     // Reserve the separator's own length before truncating: the separator is appended in
     // addition to this truncated text, so leaving it out of the truncation budget lets the
@@ -308,14 +321,6 @@ function withNeighbourContext(input: {
     if (remaining >= minUsefulChars) {
       const prefix = truncateToBudget(input.segment.previousNeighbourText, remaining);
       result = `${prefix}${input.separator}${result}`;
-    }
-  }
-
-  if (input.touchesEnd && input.segment.nextNeighbourText) {
-    const remaining = input.bodyBudget - result.length - input.separator.length;
-    if (remaining >= minUsefulChars) {
-      const suffix = truncateToBudget(input.segment.nextNeighbourText, remaining);
-      result = `${result}${input.separator}${suffix}`;
     }
   }
 

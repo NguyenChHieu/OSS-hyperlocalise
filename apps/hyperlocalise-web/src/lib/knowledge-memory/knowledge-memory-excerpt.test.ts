@@ -374,6 +374,52 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("promostyling");
   });
 
+  it("keeps two independent matches instead of letting one's filler neighbour crowd out the other", () => {
+    // Regression for a Codex finding: packUnitsWithinBudget added each ranked match's neighbours
+    // immediately after that match, before moving on to the next ranked match. Two short matches
+    // that would both fit on their own could still lose one of them if the first match's filler
+    // neighbour got pulled in and used up the room the second match needed.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: [
+        "- Never translate the alphamarker identifier.",
+        "- This bullet is unrelated filler content used only to consume budget space for this test.",
+        "- Never translate the betamarker identifier.",
+      ].join("\n"),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("alphamarker", "betamarker"),
+      maxChars: 173,
+    });
+
+    expect(excerpt).toContain("alphamarker");
+    expect(excerpt).toContain("betamarker");
+  });
+
+  it("prefers the following parser-level neighbour over unrelated preceding filler", () => {
+    // Regression for a Codex finding: withNeighbourContext always spent budget on
+    // previousNeighbourText before considering nextNeighbourText. When a single-unit segment
+    // touches both segment boundaries and budget fits only one parser-level neighbour, unrelated
+    // preceding filler used to win over the segment's actual following action.
+    const singleUnitSegment = segment({
+      segmentText: "Never translate the discountcode identifier.",
+      previousNeighbourText:
+        "Unrelated preceding filler context used only for this test scenario padding out the text.",
+      nextNeighbourText: "Always apply the promostyling guide to that label regardless of locale.",
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: singleUnitSegment,
+      queryTokens: tokens("discountcode"),
+      maxChars: 153,
+    });
+
+    expect(excerpt).toContain("discountcode");
+    expect(excerpt).toContain("promostyling");
+  });
+
   it("includes the parser-level neighbour when a rule's action lives in the next segment", () => {
     // Regression for a Codex finding: a condition/action pair can be split across two parsed
     // segments (e.g. a bullet followed by a paragraph), not just across sentences within one.

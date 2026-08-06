@@ -35,6 +35,18 @@ function truncateToBudget(text: string, maxChars: number) {
   return `${text.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`;
 }
 
+function apostropheTolerantPattern(token: string): string {
+  // The shared tokenizer strips apostrophes before scoring (tokenize() in
+  // knowledge-memory-lexical-retriever.ts), so a query token for "don't" arrives here as "dont" —
+  // but this searches the *original* text, which still has the apostrophe. An optional apostrophe
+  // between every character finds "don't" (and still matches plain "dont") without a separate pass
+  // to map normalized offsets back onto the original string.
+  return token
+    .split("")
+    .map((char) => escapeRegExp(char))
+    .join("['’]?");
+}
+
 function findEarliestMatchOffset(text: string, queryTokens: Set<string>): number | null {
   // Lookaround on \p{L}\p{N}- instead of \b: \b is ASCII-only and would silently return null
   // (falling back to a plain prefix cut) for CJK/other non-ASCII tokens, which this needs to
@@ -44,7 +56,7 @@ function findEarliestMatchOffset(text: string, queryTokens: Set<string>): number
   let earliest: number | null = null;
   for (const token of queryTokens) {
     const pattern = new RegExp(
-      `(?<![\\p{L}\\p{N}-])${escapeRegExp(token)}(?![\\p{L}\\p{N}-])`,
+      `(?<![\\p{L}\\p{N}-])${apostropheTolerantPattern(token)}(?![\\p{L}\\p{N}-])`,
       "iu",
     );
     const match = pattern.exec(text);
@@ -230,7 +242,18 @@ function packUnitsWithinBudget(
     return true;
   };
 
-  if (forcedFirstUnit) {
+  // Reserve room for the top-ranked match before spending budget on the heading-driven opener:
+  // adding forcedFirstUnit unconditionally can fill most of a tight bodyBudget on its own, so the
+  // actual reason the segment was selected — its strongest match — fails tryAdd right after. Skip
+  // the opener when the two together wouldn't both fit; the match matters more than the opener.
+  const topRanked = rankedUnits[0];
+  const canAffordOpenerAndTopMatch =
+    !forcedFirstUnit ||
+    !topRanked ||
+    topRanked.offset === forcedFirstUnit.offset ||
+    forcedFirstUnit.text.length + separator.length + topRanked.text.length <= budget;
+
+  if (forcedFirstUnit && canAffordOpenerAndTopMatch) {
     tryAdd(forcedFirstUnit);
   }
 
@@ -243,13 +266,16 @@ function packUnitsWithinBudget(
     // "When the source contains X" followed by "translate it as Y" — doesn't lose its other half
     // just because that half alone has no query-token overlap. The prefix preview this replaces
     // kept both as long as they fit within budget; this restores that for the units that matched.
-    const previous = unitsByOffset.get(unit.offset - 1);
-    if (previous) {
-      tryAdd(previous);
-    }
+    // next before previous: a rule's condition is more often followed by its action ("When X...
+    // Translate as Y") than preceded by one, so when only one neighbour fits, prefer the one more
+    // likely to be the dependent half over unrelated prior context.
     const next = unitsByOffset.get(unit.offset + 1);
     if (next) {
       tryAdd(next);
+    }
+    const previous = unitsByOffset.get(unit.offset - 1);
+    if (previous) {
+      tryAdd(previous);
     }
   }
 

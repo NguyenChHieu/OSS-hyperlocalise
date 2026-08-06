@@ -285,6 +285,67 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("Never translate the internal identifier");
   });
 
+  it("reserves room for the top-ranked match instead of letting the forced opener crowd it out", () => {
+    // Regression for a Codex finding: forcedFirstUnit used to be added before the ranked loop
+    // unconditionally. When it very nearly fills a tight bodyBudget, the actual top-ranked match —
+    // the reason the segment was selected — fails tryAdd right after and gets silently dropped.
+    const routingSegment = segment({
+      headingPath: ["Memory.md", "Checkout"],
+      segmentText: [
+        "This covers general formatting practices.",
+        "Never translate the tailmarker identifier.",
+      ].join(" "),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: routingSegment,
+      queryTokens: tokens("checkout", "tailmarker"),
+      maxChars: 74,
+    });
+
+    expect(excerpt).toContain("tailmarker");
+  });
+
+  it("locates a match containing an apostrophe instead of falling back to a prefix cut", () => {
+    // Regression for a Codex finding: the shared tokenizer strips apostrophes before scoring, so
+    // a query for "don't" arrives as the token "dont" — but the match-locating search still ran
+    // against the original (apostrophe-intact) text and found nothing, silently falling back to a
+    // plain prefix cut instead of centering on the real match.
+    const longSentence =
+      "The onlymarker guidance covers many general formatting steps repeated here to push this " +
+      "single sentence well past the character budget, and remember please don't skip the final " +
+      "validation check under any circumstances whatsoever.";
+
+    const excerpt = buildSegmentExcerpt({
+      segment: segment({ segmentText: longSentence }),
+      queryTokens: tokens("don't"),
+      maxChars: 80,
+    });
+
+    expect(excerpt).toContain("don't");
+  });
+
+  it("prefers the following action over unrelated prior context when only one neighbour fits", () => {
+    // Regression for a Codex finding: packUnitsWithinBudget always tried the previous neighbour
+    // before the next one. When budget only fits the matched condition plus one neighbour, an
+    // unrelated preceding sentence used to win that slot even when the real dependent half — the
+    // rule's action — was the following sentence instead.
+    const paragraph = [
+      "This paragraph opens with unrelated formatting context only.",
+      "When the source text contains a discountcode marker, treat it as a promotional string here.",
+      "Always apply the promostyling guide to that label regardless of locale.",
+    ].join(" ");
+
+    const excerpt = buildSegmentExcerpt({
+      segment: segment({ segmentText: paragraph }),
+      queryTokens: tokens("discountcode"),
+      maxChars: 203,
+    });
+
+    expect(excerpt).toContain("discountcode");
+    expect(excerpt).toContain("promostyling");
+  });
+
   it("includes the parser-level neighbour when a rule's action lives in the next segment", () => {
     // Regression for a Codex finding: a condition/action pair can be split across two parsed
     // segments (e.g. a bullet followed by a paragraph), not just across sentences within one.

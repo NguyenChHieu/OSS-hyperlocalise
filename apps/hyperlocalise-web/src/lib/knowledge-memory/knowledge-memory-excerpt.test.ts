@@ -331,6 +331,31 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt.length).toBeGreaterThan("Memory.md > Section -> ".length);
   });
 
+  it("redistributes a short unit's unused share to a later unit that needs more room", () => {
+    // Regression for a Codex finding: the fair share was computed once up front and never
+    // reclaimed by later units when an earlier one used less than its share. A tiny first rule
+    // followed by a much longer second rule still truncated the second rule to the same fixed
+    // share, cutting it off before reaching a dependent action further along, even though the
+    // first rule's real (tiny) cost left far more room actually available.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: [
+        "- alphamarker",
+        "- betamarker identifier padding padding padding words here MUST REMAIN UNTRANSLATED " +
+          "always in every locale regardless of context or formatting rules applied elsewhere.",
+      ].join("\n"),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("alphamarker", "betamarker"),
+      maxChars: 143,
+    });
+
+    expect(excerpt).toContain("alphamarker");
+    expect(excerpt).toContain("MUST REMAIN UNTRANSLATED");
+  });
+
   it("locates a match for CJK query tokens without relying on ASCII word boundaries", () => {
     const padding =
       "これは一般的な説明文であり詳細な背景情報を含みますがここでは重要ではありません".repeat(6);

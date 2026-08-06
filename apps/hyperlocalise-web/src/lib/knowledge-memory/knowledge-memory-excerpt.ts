@@ -277,27 +277,25 @@ function packUnitsWithinBudget(
     return true;
   };
 
-  // Give every ranked match an equal share of the budget up front, rather than truncating into
-  // whatever happens to remain at the point each one is processed — a unit that doesn't fit whole
-  // still gets truncated instead of dropped outright (a partial rule beats no rule), but a fixed
-  // share means the first oversized match processed can't consume the entire budget and starve
-  // every match after it. Units already within their share are left untouched.
+  // Give every ranked match a fair share of what's actually left when its turn comes, rather than
+  // a fixed share computed once up front — a unit that doesn't fit whole still gets truncated
+  // instead of dropped outright (a partial rule beats no rule), but a share fixed in advance never
+  // reclaims budget a short earlier unit left unused: with an 8-char first rule and a much longer
+  // second rule, a fixed 60/60 split truncates the second rule well before the action it needs, even
+  // though ~112 characters are actually free after the first rule's real (tiny) cost. Recomputing
+  // the share from the units still to come each time — remaining budget divided by remaining
+  // units — folds any earlier surplus into what's left for the rest automatically.
   const minTruncatedChars = 12;
-  const separatorOverhead =
-    rankedUnits.length > 1 ? separator.length * (rankedUnits.length - 1) : 0;
-  const fairShare = Math.max(
-    0,
-    Math.floor((budget - separatorOverhead) / Math.max(1, rankedUnits.length)),
-  );
-  const tryAddRankedUnit = (unit: ExcerptUnit, isFirst: boolean) => {
+  const tryAddRankedUnit = (unit: ExcerptUnit, isFirst: boolean, unitsRemaining: number) => {
     const remaining = budget - used - (chosen.size > 0 ? separator.length : 0);
-    // Guarantee the top-ranked match a real shot at the full remaining budget when fairShare has
-    // been divided down below usefulness: enough ranked units matching the same common token under
-    // a tight budget (e.g. six "checkout" bullets in 80 characters) can make fairShare land under
-    // minTruncatedChars for every single one, rejecting them all and returning nothing but the
-    // heading — even though a truncated top match alone would easily have fit.
-    const cap =
-      isFirst && fairShare < minTruncatedChars ? remaining : Math.min(fairShare, remaining);
+    const projectedSeparators = unitsRemaining > 1 ? separator.length * (unitsRemaining - 1) : 0;
+    const share = Math.max(0, Math.floor((remaining - projectedSeparators) / unitsRemaining));
+    // Guarantee the top-ranked match a real shot at the full remaining budget when its share has
+    // collapsed below usefulness: enough ranked units matching the same common token under a tight
+    // budget (e.g. six "checkout" bullets in 80 characters) can make every unit's share land under
+    // minTruncatedChars, rejecting them all and returning nothing but the heading — even though a
+    // truncated top match alone would easily have fit.
+    const cap = isFirst && share < minTruncatedChars ? remaining : Math.min(share, remaining);
     if (unit.text.length <= cap) {
       return tryAdd(unit);
     }
@@ -316,7 +314,9 @@ function packUnitsWithinBudget(
   // top-ranked match here isn't enough — with more than one ranked match, the opener could still
   // fit alongside the first but crowd out a later, independently-matching unit that all of them
   // together would otherwise have fit without it.
-  const placed = rankedUnits.filter((unit, index) => tryAddRankedUnit(unit, index === 0));
+  const placed = rankedUnits.filter((unit, index) =>
+    tryAddRankedUnit(unit, index === 0, rankedUnits.length - index),
+  );
 
   if (forcedFirstUnit) {
     tryAdd(forcedFirstUnit);

@@ -47,24 +47,36 @@ function apostropheTolerantPattern(token: string): string {
     .join("['’]?");
 }
 
-function findEarliestMatchOffset(text: string, queryTokens: Set<string>): number | null {
-  // Lookaround on \p{L}\p{N}- instead of \b: \b is ASCII-only and would silently return null
-  // (falling back to a plain prefix cut) for CJK/other non-ASCII tokens, which this needs to
-  // handle correctly. The boundary set matches tokenize()'s split pattern in
-  // knowledge-memory-lexical-retriever.ts, so "cart" won't match inside "cartography" and center
-  // the excerpt on the wrong occurrence.
-  let earliest: number | null = null;
+/**
+ * Finds the offset of the highest-weighted query-token match, not just the first one. Weight
+ * comes from the same 1/(matching-unit-count) scheme rankMatchingUnits uses: a generic word that
+ * also matches other units in the segment (e.g. "checkout") is worth less than a rare one that
+ * matches only this unit (e.g. a protected identifier). Without this, a query for both, appearing
+ * early and late in one oversized unit, always centered on the earlier — usually more generic —
+ * occurrence and lost the specific one the query actually cared about. Ties (equal weight) break
+ * on earliest offset for determinism.
+ */
+function findBestMatchOffset(
+  text: string,
+  queryTokens: Set<string>,
+  tokenWeights: Map<string, number>,
+): number | null {
+  let best: { offset: number; weight: number } | null = null;
   for (const token of queryTokens) {
     const pattern = new RegExp(
       `(?<![\\p{L}\\p{N}-])${apostropheTolerantPattern(token)}(?![\\p{L}\\p{N}-])`,
       "iu",
     );
     const match = pattern.exec(text);
-    if (match && (earliest === null || match.index < earliest)) {
-      earliest = match.index;
+    if (!match) {
+      continue;
+    }
+    const weight = tokenWeights.get(token) ?? 1;
+    if (!best || weight > best.weight || (weight === best.weight && match.index < best.offset)) {
+      best = { offset: match.index, weight };
     }
   }
-  return earliest;
+  return best?.offset ?? null;
 }
 
 /**
@@ -72,12 +84,17 @@ function findEarliestMatchOffset(text: string, queryTokens: Set<string>): number
  * would reintroduce the exact bug this module exists to fix (one level down, inside a single
  * oversized unit), so this centers the kept window on the query match instead of the start.
  */
-function truncateAroundMatch(text: string, maxChars: number, queryTokens: Set<string>) {
+function truncateAroundMatch(
+  text: string,
+  maxChars: number,
+  queryTokens: Set<string>,
+  tokenWeights: Map<string, number>,
+) {
   if (text.length <= maxChars || maxChars <= 0) {
     return truncateToBudget(text, maxChars);
   }
 
-  const matchOffset = findEarliestMatchOffset(text, queryTokens);
+  const matchOffset = findBestMatchOffset(text, queryTokens, tokenWeights);
   if (matchOffset === null) {
     return truncateToBudget(text, maxChars);
   }
@@ -181,9 +198,12 @@ function splitBulletUnits(segmentText: string): ExcerptUnit[] {
  * produce thousands of tokens and units; re-tokenizing per token pair made a single segment take
  * tens of seconds.
  */
-function rankMatchingUnits(units: ExcerptUnit[], queryTokens: Set<string>): ExcerptUnit[] {
+function rankMatchingUnits(
+  units: ExcerptUnit[],
+  queryTokens: Set<string>,
+): { ranked: ExcerptUnit[]; tokenWeights: Map<string, number> } {
   if (queryTokens.size === 0) {
-    return [];
+    return { ranked: [], tokenWeights: new Map() };
   }
 
   const unitTokenSets = units.map((unit) => expandKnowledgeMemoryTokens(unit.text));
@@ -197,13 +217,20 @@ function rankMatchingUnits(units: ExcerptUnit[], queryTokens: Set<string>): Exce
     }
   }
 
-  return units
+  // Exposed alongside the ranked units so callers that later need to center a truncation window
+  // within a single oversized unit's text (findBestMatchOffset) can weigh those matches the same
+  // way this scoring pass already does, instead of just taking whichever occurs first.
+  const tokenWeights = new Map(
+    [...matchingUnitCounts.entries()].map(([token, count]) => [token, 1 / count]),
+  );
+
+  const ranked = units
     .map((unit, index) => {
       let score = 0;
       for (const token of unitTokenSets[index]!) {
-        const matchingUnitCount = matchingUnitCounts.get(token);
-        if (matchingUnitCount) {
-          score += 1 / matchingUnitCount;
+        const weight = tokenWeights.get(token);
+        if (weight) {
+          score += weight;
         }
       }
       return { unit, score };
@@ -211,6 +238,8 @@ function rankMatchingUnits(units: ExcerptUnit[], queryTokens: Set<string>): Exce
     .filter((scored) => scored.score > 0)
     .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.unit.offset - b.unit.offset))
     .map((scored) => scored.unit);
+
+  return { ranked, tokenWeights };
 }
 
 /**
@@ -236,6 +265,8 @@ function packUnitsWithinBudget(
   budget: number,
   separator: string,
   forcedFirstUnit: ExcerptUnit | undefined,
+  queryTokens: Set<string>,
+  tokenWeights: Map<string, number>,
 ) {
   const chosen = new Map<number, ExcerptUnit>();
   let used = 0;
@@ -253,13 +284,32 @@ function packUnitsWithinBudget(
     return true;
   };
 
+  // A ranked unit that doesn't fit whole still gets truncated into whatever budget remains,
+  // rather than dropped outright — the same "truncate around the match instead of losing it"
+  // principle the oversized-topMatch path already applies one level up, just for a later ranked
+  // unit instead of the single strongest one. A partial rule beats no rule at all.
+  const minTruncatedChars = 12;
+  const tryAddRankedUnit = (unit: ExcerptUnit) => {
+    if (tryAdd(unit)) {
+      return true;
+    }
+    const remaining = budget - used - (chosen.size > 0 ? separator.length : 0);
+    if (remaining < minTruncatedChars) {
+      return false;
+    }
+    return tryAdd({
+      text: truncateAroundMatch(unit.text, remaining, queryTokens, tokenWeights),
+      offset: unit.offset,
+    });
+  };
+
   // Place every ranked match first, before spending any budget on the heading-driven opener or
   // neighbour context: a match is the reason the segment was selected, so every one of them
   // outranks "nice to have" context for a shared, limited budget. Reserving room for only the
   // top-ranked match here isn't enough — with more than one ranked match, the opener could still
   // fit alongside the first but crowd out a later, independently-matching unit that all of them
   // together would otherwise have fit without it.
-  const placed = rankedUnits.filter((unit) => tryAdd(unit));
+  const placed = rankedUnits.filter((unit) => tryAddRankedUnit(unit));
 
   if (forcedFirstUnit) {
     tryAdd(forcedFirstUnit);
@@ -355,7 +405,7 @@ export function buildSegmentExcerpt(input: {
       ? splitBulletUnits(segment.segmentText)
       : splitParagraphUnits(segment.segmentText);
 
-  const ranked = rankMatchingUnits(units, queryTokens);
+  const { ranked, tokenWeights } = rankMatchingUnits(units, queryTokens);
   if (ranked.length === 0) {
     return truncateToBudget(segment.compactPromptText, maxChars);
   }
@@ -376,7 +426,7 @@ export function buildSegmentExcerpt(input: {
     // The single best match doesn't fit on its own. Truncate it around the query match rather
     // than falling through to pack whichever weaker, shorter units happen to fit — otherwise the
     // strongest match gets silently dropped in favour of less relevant ones.
-    return `${headingPrefix}${truncateAroundMatch(topMatch.text, bodyBudget, queryTokens)}`;
+    return `${headingPrefix}${truncateAroundMatch(topMatch.text, bodyBudget, queryTokens, tokenWeights)}`;
   }
 
   const unitsByOffset = new Map(units.map((unit) => [unit.offset, unit]));
@@ -391,6 +441,8 @@ export function buildSegmentExcerpt(input: {
     bodyBudget,
     separator,
     forcedFirstUnit,
+    queryTokens,
+    tokenWeights,
   );
   const body = withNeighbourContext({
     body: chosen.map((unit) => unit.text).join(separator),

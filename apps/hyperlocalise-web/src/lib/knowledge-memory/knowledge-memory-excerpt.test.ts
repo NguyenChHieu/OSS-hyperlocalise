@@ -406,6 +406,57 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("betamarker");
   });
 
+  it("centers on the highest-weighted match within an oversized unit, not the earliest one", () => {
+    // Regression for a Codex finding: within a single already-oversized unit, the truncation
+    // window always centered on whichever query token occurred earliest in the text. A generic
+    // term (commonword, diluted by also appearing in a second bullet) occurring early lost out to
+    // a rare, specific one (tailmarker) occurring later in the same unit — even though the rare
+    // term is the actual reason the query matched.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: [
+        "- The commonword flow must render every single step in order across every locale and " +
+          "screen for every commonword session, with a great deal of additional padding text " +
+          "included here purely to push this bullet well past a tight character budget, and the " +
+          "actual tailmarker rule that matters sits right here at the very end of this bullet.",
+        "- The commonword should always show the order total above the shipping address.",
+      ].join("\n"),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("commonword", "tailmarker"),
+      maxChars: 100,
+    });
+
+    expect(excerpt).toContain("tailmarker");
+  });
+
+  it("truncates a later ranked unit into the remaining budget instead of dropping it", () => {
+    // Regression for a Codex finding: packUnitsWithinBudget filtered out any ranked unit that
+    // didn't fit whole in the remaining budget, even when there was still meaningful room left. A
+    // second, independently-matching rule was silently dropped entirely instead of keeping a
+    // truncated fragment of it.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: [
+        "- Never translate the alphamarker identifier.",
+        "- betamarker rule applies broadly across every single translation workflow and screen " +
+          "state regardless of locale or context, with a great deal of additional identifying " +
+          "padding text appended here purely to exceed the remaining budget for this test.",
+      ].join("\n"),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("alphamarker", "betamarker"),
+      maxChars: 113,
+    });
+
+    expect(excerpt).toContain("alphamarker");
+    expect(excerpt).toContain("betamarker");
+  });
+
   it("locates a match containing an apostrophe instead of falling back to a prefix cut", () => {
     // Regression for a Codex finding: the shared tokenizer strips apostrophes before scoring, so
     // a query for "don't" arrives as the token "dont" — but the match-locating search still ran

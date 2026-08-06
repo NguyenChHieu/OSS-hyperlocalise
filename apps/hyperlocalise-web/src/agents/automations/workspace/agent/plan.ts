@@ -64,7 +64,16 @@ const NOTIFICATION_TOOLS: WorkspaceOrchestratorToolName[] = ["notify_slack", "no
 
 // Not part of WORKFLOW_TOOLS: memory tools are general availability, not ordered workflow steps,
 // so they skip orderWorkflowTools' template-skill-executor reordering entirely.
-const MEMORY_TOOLS: WorkspaceOrchestratorToolName[] = ["recall_memory", "save_memory"];
+//
+// ponytail: save_memory is deliberately excluded here, not just unreachable via
+// hasWorkspaceAutomationKnowledgeUpdatesAllowed. agent.ts's prepareStep forces every planned tool
+// via toolChoice: { type: "tool", toolName } — there is no "model may skip this" step type. Put
+// save_memory in this list and it gets called on every single run regardless of whether there is
+// anything worth remembering, contradicting the "use it only when instructions say so" design and
+// risking fabricated writes to the org's shared Memory.md. Re-add once agent.ts supports a
+// genuinely optional (toolChoice: "auto") step; the tool itself (save_memory.ts) is already built
+// and tested for that day.
+const MEMORY_TOOLS: WorkspaceOrchestratorToolName[] = ["recall_memory"];
 
 function workflowToolEnabled(
   tool: WorkspaceOrchestratorToolName,
@@ -171,7 +180,10 @@ export function buildWorkspaceOrchestratorPlan(
   );
   const memoryTools = MEMORY_TOOLS.filter((tool) => memoryToolEnabled(tool, automation.toolConfig));
 
+  // recall_memory runs first: every planned tool executes strictly in this order (agent.ts's
+  // prepareStep forces each one in turn), so recalled guidance must land before the workflow
+  // tools it's meant to inform, not after they've already acted.
   return {
-    tools: [...workflowTools, ...notificationTools, ...memoryTools],
+    tools: [...memoryTools, ...workflowTools, ...notificationTools],
   };
 }

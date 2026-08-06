@@ -163,4 +163,44 @@ describe("buildWorkspaceOrchestratorPlan", () => {
 
     expect(plan.tools).toEqual(["use_ahrefs", "notify_slack"]);
   });
+
+  it("runs recall_memory before workflow and notification tools", () => {
+    // Every planned tool is forced in this exact order (agent.ts's prepareStep), so recalled
+    // guidance must be available before the tools it's meant to inform run, not after.
+    const plan = buildWorkspaceOrchestratorPlan(
+      automation({
+        projectId: "project-1",
+        toolConfig: {
+          github: {
+            enabled: true,
+            mode: "sync",
+            pushSource: true,
+            pullTranslations: false,
+            validation: false,
+          },
+          slack: { enabled: true, channelId: "C123" },
+          knowledge: { enabled: true, allowUpdates: false },
+        },
+      }),
+    );
+
+    expect(plan.tools).toEqual(["recall_memory", "run_github_workflows", "notify_slack"]);
+  });
+
+  it("never plans save_memory, even when allowUpdates is on", () => {
+    // agent.ts forces every planned tool with no "model may skip this" step type. Planning
+    // save_memory would call it on every single run regardless of whether there's anything to
+    // remember. Deferred until an optional tool-call mechanism exists — see the ponytail note in
+    // plan.ts.
+    const plan = buildWorkspaceOrchestratorPlan(
+      automation({
+        toolConfig: {
+          knowledge: { enabled: true, allowUpdates: true },
+        },
+      }),
+    );
+
+    expect(plan.tools).toEqual(["recall_memory"]);
+    expect(plan.tools).not.toContain("save_memory");
+  });
 });

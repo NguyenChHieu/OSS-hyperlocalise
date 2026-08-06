@@ -46,10 +46,6 @@ prompt injection to explicit tool calls the agent decides to make.
 
 ## What changes
 
-- `toolConfig.knowledge` gets a second field, `allowUpdates` (meaningless without `enabled`),
-  surfaced in the UI as two toggles: **Use organization memory** / **Allow memory updates**.
-  The tool permission plus the automation's own user-written instructions is the whole approval
-  boundary — no automatic risk classification, no approval inbox, by design for MVP.
 - **Recall becomes a tool call.** Previously, `toolConfig.knowledge.enabled` caused
   `selectKnowledgeMemoryContext` output to be silently pasted into the composed instructions
   before every run (step 4 above). That's replaced by a `recall_memory` tool
@@ -57,17 +53,26 @@ prompt injection to explicit tool calls the agent decides to make.
   `selectKnowledgeMemoryContext` call but driven by a model-supplied question instead of an
   automatic one. `compose-workspace-instructions.ts` adds a one-line nudge when the tool is
   available, so automations don't silently lose the always-present context they used to get.
-- **Save is new**, append-only. `save_memory.ts` appends to `Memory.md` through the same
-  `commitKnowledgeMemoryForOrganization` compare-and-swap a human edit goes through, so an
-  agent-authored append is a normal, restorable revision — same optimistic concurrency, same
-  50,000-character cap (enforced in the tool itself, since it calls the commit function
-  directly rather than through the HTTP route where that cap normally lives). It cannot edit,
-  replace, or delete existing content. There's no human actor for these commits —
-  `updatedByUserId` is `null` (the column and the shared `commitVersionedDocument` type were
-  widened to allow this); real provenance (automation name, run id) goes in the revision
-  `summary` instead.
+  It runs first in the plan, before workflow tools, so recalled guidance is available before the
+  decisions it's meant to inform.
+- **Save is built but not wired in yet — deferred, not shipped.** `save_memory.ts` exists,
+  tested, and would append to `Memory.md` through the same `commitKnowledgeMemoryForOrganization`
+  compare-and-swap a human edit goes through — same optimistic concurrency, same 50,000-character
+  cap, append-only, no human actor (`updatedByUserId: null`, provenance in the revision
+  `summary`). It is **not** planned by `buildWorkspaceOrchestratorPlan`. Reason: `agent.ts`'s
+  `prepareStep` forces every planned tool via `toolChoice: { type: "tool", toolName }` — there is
+  no "model may skip this" step type anywhere in this orchestrator. Planning `save_memory` would
+  call it on every single run regardless of whether the automation's instructions say to remember
+  anything, contradicting the explicit "no autonomous writes without a real decision" requirement
+  and risking fabricated content landing in the org's shared Memory.md on a schedule. Re-enable by
+  adding it back to `MEMORY_TOOLS` in `plan.ts` once `agent.ts` supports a genuinely optional
+  (`toolChoice: "auto"`) step.
+- `toolConfig.knowledge.allowUpdates` still exists in the schema and form state (harmless to keep
+  as unused-for-now plumbing) but has no UI control while `save_memory` is unplanned — showing a
+  toggle that does nothing would be its own bug.
 
 ## Still out of scope
 
 Per-automation memory, Upstash, automatic write triggers without an explicit tool call,
 contradiction/dedup handling, and any approval workflow beyond the tool-permission gate itself.
+Agent-initiated memory writes (`save_memory`) specifically — see above.

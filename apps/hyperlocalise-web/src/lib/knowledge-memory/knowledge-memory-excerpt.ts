@@ -43,7 +43,10 @@ function findEarliestMatchOffset(text: string, queryTokens: Set<string>): number
   // the excerpt on the wrong occurrence.
   let earliest: number | null = null;
   for (const token of queryTokens) {
-    const pattern = new RegExp(`(?<![\\p{L}\\p{N}-])${escapeRegExp(token)}(?![\\p{L}\\p{N}-])`, "iu");
+    const pattern = new RegExp(
+      `(?<![\\p{L}\\p{N}-])${escapeRegExp(token)}(?![\\p{L}\\p{N}-])`,
+      "iu",
+    );
     const match = pattern.exec(text);
     if (match && (earliest === null || match.index < earliest)) {
       earliest = match.index;

@@ -229,6 +229,34 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("tailmarker");
   });
 
+  it("scores many units against many query tokens without quadratic blowup", () => {
+    // Regression for a Codex finding: unit text used to be re-tokenized once per query token
+    // (inside computeTokenWeights) and again per unit (inside scoreUnit), making this
+    // O(query tokens x units x unit length). The preview API allows sourceText up to 100,000
+    // characters, so a large translation request can easily produce thousands of query tokens
+    // against a memory with hundreds of bullets; that made a single segment take tens of seconds.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: Array.from(
+        { length: 1000 },
+        (_, index) => `- Padding bullet number ${index} about generic checkout wording.`,
+      ).join("\n"),
+    });
+    const manyQueryTokens = tokens(
+      ...Array.from({ length: 8000 }, (_, index) => `querytoken${index}`),
+    );
+
+    const start = performance.now();
+    buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: manyQueryTokens,
+      maxChars: 500,
+    });
+    const elapsedMs = performance.now() - start;
+
+    expect(elapsedMs).toBeLessThan(3000);
+  });
+
   it("locates a match for CJK query tokens without relying on ASCII word boundaries", () => {
     const padding =
       "これは一般的な説明文であり詳細な背景情報を含みますがここでは重要ではありません".repeat(6);

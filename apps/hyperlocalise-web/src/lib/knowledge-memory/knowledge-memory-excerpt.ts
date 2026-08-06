@@ -155,48 +155,47 @@ function splitBulletUnits(segmentText: string): ExcerptUnit[] {
 }
 
 /**
- * Per-token weight of 1 / (number of units that token matches). A token that shows up in most
- * bullets (a generic word like "checkout") contributes little to any single unit's score; a token
- * that shows up in exactly one bullet (a protected identifier) contributes a full point there.
- * Without this, equal integer scores fall back to document order in rankMatchingUnits, so an early
- * bullet that only matches the generic term can outrank — and, if oversized, fully hide — a later
- * bullet that's the actual reason the query matched anything at all.
+ * Ranks units by a score weighted 1 / (number of units that token matches): a token that shows up
+ * in most bullets (a generic word like "checkout") contributes little to any single unit's score;
+ * a token that shows up in exactly one bullet (a protected identifier) contributes a full point
+ * there. Without this, equal integer scores fall back to document order, so an early bullet that
+ * only matches the generic term can outrank — and, if oversized, fully hide — a later bullet
+ * that's the actual reason the query matched anything at all.
+ *
+ * Tokenizes each unit exactly once and reuses those cached sets for both the matching-unit counts
+ * and the per-unit scores below, rather than re-tokenizing per query token — the previous version
+ * did that inside a queryTokens loop, making this O(query tokens × units × unit length). The
+ * preview API allows sourceText up to 100,000 characters and memories up to 50,000, which can
+ * produce thousands of tokens and units; re-tokenizing per token pair made a single segment take
+ * tens of seconds.
  */
-function computeTokenWeights(units: ExcerptUnit[], queryTokens: Set<string>): Map<string, number> {
-  const weights = new Map<string, number>();
-  for (const token of queryTokens) {
-    const matchingUnitCount = units.filter((unit) =>
-      expandKnowledgeMemoryTokens(unit.text).has(token),
-    ).length;
-    weights.set(token, matchingUnitCount > 0 ? 1 / matchingUnitCount : 0);
-  }
-  return weights;
-}
-
-function scoreUnit(
-  unit: ExcerptUnit,
-  queryTokens: Set<string>,
-  tokenWeights: Map<string, number>,
-): number {
-  const unitTokens = expandKnowledgeMemoryTokens(unit.text);
-  let score = 0;
-  for (const token of queryTokens) {
-    if (unitTokens.has(token)) {
-      score += tokenWeights.get(token) ?? 0;
-    }
-  }
-  return score;
-}
-
 function rankMatchingUnits(units: ExcerptUnit[], queryTokens: Set<string>): ExcerptUnit[] {
   if (queryTokens.size === 0) {
     return [];
   }
 
-  const tokenWeights = computeTokenWeights(units, queryTokens);
+  const unitTokenSets = units.map((unit) => expandKnowledgeMemoryTokens(unit.text));
+
+  const matchingUnitCounts = new Map<string, number>();
+  for (const tokens of unitTokenSets) {
+    for (const token of tokens) {
+      if (queryTokens.has(token)) {
+        matchingUnitCounts.set(token, (matchingUnitCounts.get(token) ?? 0) + 1);
+      }
+    }
+  }
 
   return units
-    .map((unit) => ({ unit, score: scoreUnit(unit, queryTokens, tokenWeights) }))
+    .map((unit, index) => {
+      let score = 0;
+      for (const token of unitTokenSets[index]!) {
+        const matchingUnitCount = matchingUnitCounts.get(token);
+        if (matchingUnitCount) {
+          score += 1 / matchingUnitCount;
+        }
+      }
+      return { unit, score };
+    })
     .filter((scored) => scored.score > 0)
     .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.unit.offset - b.unit.offset))
     .map((scored) => scored.unit);

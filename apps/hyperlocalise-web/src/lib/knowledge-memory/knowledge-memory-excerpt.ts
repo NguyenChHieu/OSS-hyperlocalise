@@ -116,29 +116,27 @@ function chunkByWords(text: string, wordsPerChunk: number): string[] {
   return chunks;
 }
 
-// \p{Lu}\p{Nd} instead of A-Z0-9: an ASCII-only class doesn't recognize an accented capital
-// (É, Ñ, Ö, ...) as a sentence start, so a sub-400-char paragraph with several rules — one per
-// sentence, each beginning with an accented letter — gets treated as a single oversized unit
-// instead of being split and ranked separately.
-//
-// That alone still misses uncased scripts (Chinese, Japanese, Korean, Thai, ...): those have no
-// uppercase/lowercase distinction, so requiring \p{Lu} rejects every one of their sentence starts.
-// The (?!...)\p{L} branch accepts any letter that ISN'T part of a cased alphabet (not \p{Lu},
-// \p{Ll}, or \p{Lt}) as a valid start too.
+// The lookahead accepts any letter (\p{L}) as a sentence start, not just uppercase — earlier
+// versions required \p{Lu} specifically, which rejected every sentence that legitimately starts
+// lowercase, and protected identifiers/rule text in these documents often do ("betamarker must
+// never be translated."). Requiring \s+ after an ASCII terminator (see below) still prevents
+// splitting mid-decimal or right after an abbreviation's period with no following space; accepting
+// lowercase after that space can occasionally over-split ("e.g. apples" → two units), but that's
+// just extra fragmentation, not content loss — packUnitsWithinBudget's neighbour-pulling already
+// reassembles adjacent related units when it matters, and nothing here permanently drops text.
 //
 // The terminator side is split into two alternatives rather than one shared \s+: CJK sentences
 // conventionally run with no space at all after 。！？ ("第一条。第二条。"), so requiring \s+
-// there — even after adding the fullwidth punctuation itself — still failed to split them. ASCII
-// .!? keeps requiring \s+ (a bare "3.5" or "e.g." shouldn't split); 。！？ allow a zero-width
-// boundary immediately after, matching how those scripts are actually written.
+// there — even with the fullwidth punctuation itself recognized — still failed to split them.
+// ASCII .!? keeps requiring \s+; 。！？ allow a zero-width boundary immediately after, matching
+// how those scripts are actually written.
 //
 // Both terminator branches also allow an optional closing quote ("'”’) between the terminator and
 // the whitespace: a quoted rule like `"Keep X." "Keep Y."` puts the closing quote, not the
 // terminator itself, immediately before the space, so the plain terminator-only lookbehind never
 // matched there. The lookahead correspondingly accepts typographic opening quotes (“‘) alongside
 // the straight ones, so a sentence that starts with one still counts as a valid boundary.
-const sentenceBoundary =
-  /(?:(?<=[.!?]["”’]?)\s+|(?<=[。！？]["”’]?)\s*)(?=[\p{Lu}\p{Nd}"“‘(]|(?:(?![\p{Ll}\p{Lu}\p{Lt}])\p{L}))/u;
+const sentenceBoundary = /(?:(?<=[.!?]["”’]?)\s+|(?<=[。！？]["”’]?)\s*)(?=[\p{L}\p{Nd}"“‘(])/u;
 
 function splitIntoSentences(normalized: string): string[] {
   const sentences = normalized

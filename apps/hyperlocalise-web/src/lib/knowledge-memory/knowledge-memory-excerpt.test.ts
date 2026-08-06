@@ -496,6 +496,28 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("betamarker");
   });
 
+  it("splits sentences that start with a lowercase identifier", () => {
+    // Regression for a Codex finding: the lookahead explicitly rejected \p{Ll} (lowercase), so a
+    // rule sentence starting with a lowercase protected identifier (common for these, e.g.
+    // "betamarker must never be translated.") never counted as a new sentence start — under a
+    // tight budget, the two rules collapsed into one oversized unit and truncation centered on
+    // only the earlier one.
+    const paragraph = [
+      "Keep alphamarker unchanged across every single translation and locale without exception.",
+      "betamarker must never be translated under any circumstances whatsoever here.",
+      "Final note.",
+    ].join(" ");
+
+    const excerpt = buildSegmentExcerpt({
+      segment: segment({ segmentText: paragraph }),
+      queryTokens: tokens("alphamarker", "betamarker"),
+      maxChars: 83,
+    });
+
+    expect(excerpt).toContain("alphamarker");
+    expect(excerpt).toContain("betamarker");
+  });
+
   it("reserves body space instead of letting a long heading consume the whole budget", () => {
     const deeplyNestedSegment = segment({
       headingPath: [

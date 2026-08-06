@@ -461,10 +461,11 @@ describe("buildSegmentExcerpt", () => {
   });
 
   it("keeps the whole matched token intact even when the heading eats most of the budget", () => {
-    // Regression for a Codex finding: the fixed 20-char body reserve wasn't actually enough to
-    // preserve a long protected identifier once truncateAroundMatch's own leading/trailing "..."
-    // markers (up to 6 characters) were subtracted from it — "routingtoken" (12 characters) still
-    // got cut mid-word ("...the routingto...") even with the reserve in place.
+    // Regression for a Codex finding: a body reserve of tokenLength + 10 isn't actually enough —
+    // truncateAroundMatch reserves floor(budget/4) characters of lead-in before the match on top of
+    // up to 6 characters for both "..." markers, so the reserve needs solving from that geometry
+    // (budget >= (tokenLength + 6) * 4 / 3), not a flat per-character guess. A 24-character
+    // protected identifier still lost its last few letters under the tokenLength + 10 formula.
     const deeplyNestedSegment = segment({
       headingPath: [
         "Memory.md",
@@ -472,17 +473,18 @@ describe("buildSegmentExcerpt", () => {
         "An equally verbose subsection name",
         "de-DE",
       ],
-      segmentText: "Never translate the routingtoken internal identifier under any circumstances.",
+      segmentText:
+        "Never translate the protectedidentifiertoken internal marker under any circumstances.",
     });
 
     const excerpt = buildSegmentExcerpt({
       segment: deeplyNestedSegment,
-      queryTokens: tokens("routingtoken"),
+      queryTokens: tokens("protectedidentifiertoken"),
       maxChars: 80,
     });
 
     expect(excerpt.length).toBeLessThanOrEqual(80);
-    expect(excerpt).toContain("routingtoken");
+    expect(excerpt).toContain("protectedidentifiertoken");
   });
 
   it("keeps the opening rule for a heading-driven match instead of only an incidental body match", () => {

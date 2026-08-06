@@ -431,10 +431,16 @@ export function buildSegmentExcerpt(input: {
   // exceeding maxChars outright. A flat 20-char floor isn't actually enough on its own: up to 6 of
   // those go to truncateAroundMatch's own leading/trailing "..." markers, so a protected identifier
   // longer than ~14 characters (e.g. "routingtoken") could still get cut off mid-word. Size the
-  // floor from the longest token actually being matched in this segment instead of a constant.
+  // floor from the longest token actually being matched in this segment instead of a constant,
+  // solved from truncateAroundMatch's own centering geometry rather than a guessed buffer:
+  // leadChars reserves floor(budget/4) before the match, and up to 6 chars go to both ellipsis
+  // markers, leaving budget - floor(budget/4) - 6 for the token and whatever follows it. Requiring
+  // that be >= tokenLength (using budget - budget/4 = (3/4)budget as a safe lower bound on the
+  // floor'd term) solves to budget >= (tokenLength + 6) * 4 / 3.
   const longestMatchedTokenLength = Math.max(0, ...[...tokenWeights.keys()].map((t) => t.length));
+  const minCharsForCenteredToken = Math.ceil(((longestMatchedTokenLength + 6) * 4) / 3);
   const minBodyReserve = Math.min(
-    Math.max(20, longestMatchedTokenLength + 10),
+    Math.max(20, minCharsForCenteredToken),
     Math.max(0, maxChars - 1),
   );
   const headingPrefix = truncateToBudget(rawHeadingPrefix, Math.max(0, maxChars - minBodyReserve));

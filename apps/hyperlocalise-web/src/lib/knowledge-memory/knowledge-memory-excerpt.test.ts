@@ -257,6 +257,57 @@ describe("buildSegmentExcerpt", () => {
     expect(elapsedMs).toBeLessThan(3000);
   });
 
+  it("centers an oversized unit around many query tokens without quadratic blowup", () => {
+    // Regression for a Codex finding: findBestMatchOffset scanned the oversized unit's text once
+    // per query token (constructing and running a fresh regex each time), making it O(query tokens
+    // x text length) on top of the fix that made rankMatchingUnits itself linear. A single
+    // oversized unit under a tight budget with thousands of query tokens took multiple seconds.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: `- ${"padding word ".repeat(2000)}tailmarker`,
+    });
+    const manyQueryTokens = tokens(
+      ...Array.from({ length: 3000 }, (_, index) => `querytoken${index}`),
+      "tailmarker",
+    );
+
+    const start = performance.now();
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: manyQueryTokens,
+      maxChars: 100,
+    });
+    const elapsedMs = performance.now() - start;
+
+    expect(excerpt).toContain("tailmarker");
+    expect(elapsedMs).toBeLessThan(2000);
+  });
+
+  it("keeps a short ranked match alongside a truncated oversized top match", () => {
+    // Regression for a Codex finding: the oversized-topMatch branch used to return immediately,
+    // bypassing packing entirely and dropping every other ranked unit — even a short one that
+    // would fit alongside a truncated fragment of the top match. An oversized "alphamarker" bullet
+    // followed by a short "betamarker" rule emitted only the alpha excerpt.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: [
+        "- alphamarker rule applies broadly across every single translation workflow and screen " +
+          "state regardless of locale or context, with a great deal of additional identifying " +
+          "padding text appended here purely to exceed the budget for this test scenario.",
+        "- Never translate the betamarker identifier.",
+      ].join("\n"),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("alphamarker", "betamarker"),
+      maxChars: 113,
+    });
+
+    expect(excerpt).toContain("alphamarker");
+    expect(excerpt).toContain("betamarker");
+  });
+
   it("locates a match for CJK query tokens without relying on ASCII word boundaries", () => {
     const padding =
       "これは一般的な説明文であり詳細な背景情報を含みますがここでは重要ではありません".repeat(6);

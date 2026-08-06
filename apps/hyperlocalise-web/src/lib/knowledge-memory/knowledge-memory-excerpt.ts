@@ -24,10 +24,6 @@ type ExcerptUnit = {
 const fallbackChunkWordCount = 25;
 const oversizedSentenceChars = 400;
 
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function truncateToBudget(text: string, maxChars: number) {
   if (text.length <= maxChars) {
     return text;
@@ -35,17 +31,13 @@ function truncateToBudget(text: string, maxChars: number) {
   return `${text.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`;
 }
 
-function apostropheTolerantPattern(token: string): string {
-  // The shared tokenizer strips apostrophes before scoring (tokenize() in
-  // knowledge-memory-lexical-retriever.ts), so a query token for "don't" arrives here as "dont" —
-  // but this searches the *original* text, which still has the apostrophe. An optional apostrophe
-  // between every character finds "don't" (and still matches plain "dont") without a separate pass
-  // to map normalized offsets back onto the original string.
-  return token
-    .split("")
-    .map((char) => escapeRegExp(char))
-    .join("['’]?");
-}
+// Matches a run of letters/numbers/hyphens, optionally continuing through an internal apostrophe
+// ("don't", "y'all") — the same word shape tokenize() in knowledge-memory-lexical-retriever.ts
+// produces, just without discarding the apostrophe or the position. Matching whole runs (instead
+// of searching for each token as a substring) also means "cart" can never match inside
+// "cartography": matchAll only ever yields "cartography" as one run, never a "cart"-sized slice
+// of it.
+const wordPattern = /[\p{L}\p{N}-]+(?:['’][\p{L}\p{N}-]+)*/gu;
 
 /**
  * Finds the offset of the highest-weighted query-token match, not just the first one. Weight
@@ -55,6 +47,11 @@ function apostropheTolerantPattern(token: string): string {
  * early and late in one oversized unit, always centered on the earlier — usually more generic —
  * occurrence and lost the specific one the query actually cared about. Ties (equal weight) break
  * on earliest offset for determinism.
+ *
+ * One pass over the text via matchAll, not one regex scan per query token: the preview API allows
+ * sourceText up to 100,000 characters, which can produce thousands of query tokens against a
+ * single oversized (tens-of-thousands-of-characters) unit — scanning the whole text once per token
+ * made that O(query tokens × text length) and measurably slow (seconds) at that scale.
  */
 function findBestMatchOffset(
   text: string,
@@ -62,17 +59,13 @@ function findBestMatchOffset(
   tokenWeights: Map<string, number>,
 ): number | null {
   let best: { offset: number; weight: number } | null = null;
-  for (const token of queryTokens) {
-    const pattern = new RegExp(
-      `(?<![\\p{L}\\p{N}-])${apostropheTolerantPattern(token)}(?![\\p{L}\\p{N}-])`,
-      "iu",
-    );
-    const match = pattern.exec(text);
-    if (!match) {
+  for (const match of text.matchAll(wordPattern)) {
+    const token = match[0].toLowerCase().replace(/['’]/g, "");
+    if (!queryTokens.has(token)) {
       continue;
     }
     const weight = tokenWeights.get(token) ?? 1;
-    if (!best || weight > best.weight || (weight === best.weight && match.index < best.offset)) {
+    if (!best || weight > best.weight) {
       best = { offset: match.index, weight };
     }
   }
@@ -284,21 +277,29 @@ function packUnitsWithinBudget(
     return true;
   };
 
-  // A ranked unit that doesn't fit whole still gets truncated into whatever budget remains,
-  // rather than dropped outright — the same "truncate around the match instead of losing it"
-  // principle the oversized-topMatch path already applies one level up, just for a later ranked
-  // unit instead of the single strongest one. A partial rule beats no rule at all.
+  // Give every ranked match an equal share of the budget up front, rather than truncating into
+  // whatever happens to remain at the point each one is processed — a unit that doesn't fit whole
+  // still gets truncated instead of dropped outright (a partial rule beats no rule), but a fixed
+  // share means the first oversized match processed can't consume the entire budget and starve
+  // every match after it. Units already within their share are left untouched.
   const minTruncatedChars = 12;
+  const separatorOverhead =
+    rankedUnits.length > 1 ? separator.length * (rankedUnits.length - 1) : 0;
+  const fairShare = Math.max(
+    0,
+    Math.floor((budget - separatorOverhead) / Math.max(1, rankedUnits.length)),
+  );
   const tryAddRankedUnit = (unit: ExcerptUnit) => {
-    if (tryAdd(unit)) {
-      return true;
-    }
     const remaining = budget - used - (chosen.size > 0 ? separator.length : 0);
-    if (remaining < minTruncatedChars) {
+    const cap = Math.min(fairShare, remaining);
+    if (unit.text.length <= cap) {
+      return tryAdd(unit);
+    }
+    if (cap < minTruncatedChars) {
       return false;
     }
     return tryAdd({
-      text: truncateAroundMatch(unit.text, remaining, queryTokens, tokenWeights),
+      text: truncateAroundMatch(unit.text, cap, queryTokens, tokenWeights),
       offset: unit.offset,
     });
   };
@@ -421,14 +422,11 @@ export function buildSegmentExcerpt(input: {
   const separator = segment.kind === "bullet_group" ? "; " : " ";
   const bodyBudget = Math.max(0, maxChars - headingPrefix.length);
 
-  const topMatch = ranked[0]!;
-  if (topMatch.text.length > bodyBudget) {
-    // The single best match doesn't fit on its own. Truncate it around the query match rather
-    // than falling through to pack whichever weaker, shorter units happen to fit — otherwise the
-    // strongest match gets silently dropped in favour of less relevant ones.
-    return `${headingPrefix}${truncateAroundMatch(topMatch.text, bodyBudget, queryTokens, tokenWeights)}`;
-  }
-
+  // No special-case for an oversized top match: packUnitsWithinBudget's tryAddRankedUnit already
+  // truncates any ranked unit that doesn't fit whole into whatever budget remains, the first one
+  // included (remaining budget starts at the full bodyBudget when nothing's chosen yet). Special-
+  // casing it here to bypass packing meant every other ranked unit was dropped outright, even a
+  // short one that would fit alongside a truncated fragment of the top match.
   const unitsByOffset = new Map(units.map((unit) => [unit.offset, unit]));
   const firstUnit = unitsByOffset.get(0);
   const forcedFirstUnit =

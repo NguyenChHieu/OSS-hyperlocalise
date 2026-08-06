@@ -295,6 +295,30 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("特別コード二");
   });
 
+  it("splits CJK sentences with no whitespace between them", () => {
+    // Regression for a Codex finding: the sentence-boundary fix still required \s+ after the
+    // terminator. CJK sentences conventionally run with no space at all after 。！？
+    // ("第一条。第二条。"), which is how most real Chinese/Japanese text is written — so even with
+    // the fullwidth terminator recognized, a paragraph written this way still collapsed into one
+    // oversized unit.
+    const filler =
+      "これは一般的な説明文であり詳細な背景情報を含みますがここでは重要ではありません。".repeat(3);
+    const paragraph = [
+      "特別コード一 は翻訳しないでください。",
+      filler,
+      "特別コード二 は翻訳しないでください。",
+    ].join("");
+
+    const excerpt = buildSegmentExcerpt({
+      segment: segment({ segmentText: paragraph }),
+      queryTokens: tokens("特別コード一", "特別コード二"),
+      maxChars: 103,
+    });
+
+    expect(excerpt).toContain("特別コード一");
+    expect(excerpt).toContain("特別コード二");
+  });
+
   it("reserves body space instead of letting a long heading consume the whole budget", () => {
     const deeplyNestedSegment = segment({
       headingPath: [

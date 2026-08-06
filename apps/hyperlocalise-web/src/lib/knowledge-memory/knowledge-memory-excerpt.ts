@@ -114,11 +114,15 @@ function chunkByWords(text: string, wordsPerChunk: number): string[] {
 // That alone still misses uncased scripts (Chinese, Japanese, Korean, Thai, ...): those have no
 // uppercase/lowercase distinction, so requiring \p{Lu} rejects every one of their sentence starts.
 // The (?!...)\p{L} branch accepts any letter that ISN'T part of a cased alphabet (not \p{Lu},
-// \p{Ll}, or \p{Lt}) as a valid start too. The terminator side also needs the fullwidth CJK
-// punctuation (。！？) alongside ASCII .!?, or none of those sentences end in something this
-// recognizes as a boundary in the first place.
+// \p{Ll}, or \p{Lt}) as a valid start too.
+//
+// The terminator side is split into two alternatives rather than one shared \s+: CJK sentences
+// conventionally run with no space at all after 。！？ ("第一条。第二条。"), so requiring \s+
+// there — even after adding the fullwidth punctuation itself — still failed to split them. ASCII
+// .!? keeps requiring \s+ (a bare "3.5" or "e.g." shouldn't split); 。！？ allow a zero-width
+// boundary immediately after, matching how those scripts are actually written.
 const sentenceBoundary =
-  /(?<=[.!?。！？])\s+(?=[\p{Lu}\p{Nd}"'(]|(?:(?![\p{Ll}\p{Lu}\p{Lt}])\p{L}))/u;
+  /(?:(?<=[.!?])\s+|(?<=[。！？])\s*)(?=[\p{Lu}\p{Nd}"'(]|(?:(?![\p{Ll}\p{Lu}\p{Lt}])\p{L}))/u;
 
 function splitIntoSentences(normalized: string): string[] {
   const sentences = normalized

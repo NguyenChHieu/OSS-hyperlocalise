@@ -271,6 +271,30 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("特別コード");
   });
 
+  it("splits sentences in uncased scripts terminated by full-width punctuation", () => {
+    // Regression for a Codex finding: the sentence-boundary regex required an ASCII terminator
+    // (.!?) and an uppercase letter or digit after it. CJK sentences use full-width terminators
+    // (。！？) and have no case distinction at all, so this paragraph collapsed into one oversized
+    // unit, and truncateAroundMatch — centered on the earliest match — couldn't reach the second,
+    // distant rule even though splitting would let packing keep both and drop only the filler.
+    const filler =
+      "これは一般的な説明文であり詳細な背景情報を含みますがここでは重要ではありません。".repeat(3);
+    const paragraph = [
+      "特別コード一 は翻訳しないでください。",
+      filler,
+      "特別コード二 は翻訳しないでください。",
+    ].join(" ");
+
+    const excerpt = buildSegmentExcerpt({
+      segment: segment({ segmentText: paragraph }),
+      queryTokens: tokens("特別コード一", "特別コード二"),
+      maxChars: 103,
+    });
+
+    expect(excerpt).toContain("特別コード一");
+    expect(excerpt).toContain("特別コード二");
+  });
+
   it("reserves body space instead of letting a long heading consume the whole budget", () => {
     const deeplyNestedSegment = segment({
       headingPath: [
@@ -332,6 +356,30 @@ describe("buildSegmentExcerpt", () => {
     });
 
     expect(excerpt).toContain("tailmarker");
+  });
+
+  it("reserves room for every ranked match, not just the top one, before the forced opener", () => {
+    // Regression for a Codex finding: the earlier fix only reserved space for rankedUnits[0]
+    // before adding the opener. With two independent ranked matches, the opener could still fit
+    // alongside the first one and crowd out the second, even though both matches together (without
+    // the opener) would have fit on their own.
+    const routingSegment = segment({
+      headingPath: ["Memory.md", "Checkout"],
+      segmentText: [
+        "This covers general formatting practices here.",
+        "Never translate the alphamarker identifier.",
+        "Never translate the betamarker identifier.",
+      ].join(" "),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: routingSegment,
+      queryTokens: tokens("checkout", "alphamarker", "betamarker"),
+      maxChars: 124,
+    });
+
+    expect(excerpt).toContain("alphamarker");
+    expect(excerpt).toContain("betamarker");
   });
 
   it("locates a match containing an apostrophe instead of falling back to a prefix cut", () => {

@@ -110,7 +110,15 @@ function chunkByWords(text: string, wordsPerChunk: number): string[] {
 // (É, Ñ, Ö, ...) as a sentence start, so a sub-400-char paragraph with several rules — one per
 // sentence, each beginning with an accented letter — gets treated as a single oversized unit
 // instead of being split and ranked separately.
-const sentenceBoundary = /(?<=[.!?])\s+(?=[\p{Lu}\p{Nd}"'(])/u;
+//
+// That alone still misses uncased scripts (Chinese, Japanese, Korean, Thai, ...): those have no
+// uppercase/lowercase distinction, so requiring \p{Lu} rejects every one of their sentence starts.
+// The (?!...)\p{L} branch accepts any letter that ISN'T part of a cased alphabet (not \p{Lu},
+// \p{Ll}, or \p{Lt}) as a valid start too. The terminator side also needs the fullwidth CJK
+// punctuation (。！？) alongside ASCII .!?, or none of those sentences end in something this
+// recognizes as a boundary in the first place.
+const sentenceBoundary =
+  /(?<=[.!?。！？])\s+(?=[\p{Lu}\p{Nd}"'(]|(?:(?![\p{Ll}\p{Lu}\p{Lt}])\p{L}))/u;
 
 function splitIntoSentences(normalized: string): string[] {
   const sentences = normalized
@@ -241,26 +249,17 @@ function packUnitsWithinBudget(
     return true;
   };
 
-  // Reserve room for the top-ranked match before spending budget on the heading-driven opener:
-  // adding forcedFirstUnit unconditionally can fill most of a tight bodyBudget on its own, so the
-  // actual reason the segment was selected — its strongest match — fails tryAdd right after. Skip
-  // the opener when the two together wouldn't both fit; the match matters more than the opener.
-  const topRanked = rankedUnits[0];
-  const canAffordOpenerAndTopMatch =
-    !forcedFirstUnit ||
-    !topRanked ||
-    topRanked.offset === forcedFirstUnit.offset ||
-    forcedFirstUnit.text.length + separator.length + topRanked.text.length <= budget;
+  // Place every ranked match first, before spending any budget on the heading-driven opener or
+  // neighbour context: a match is the reason the segment was selected, so every one of them
+  // outranks "nice to have" context for a shared, limited budget. Reserving room for only the
+  // top-ranked match here isn't enough — with more than one ranked match, the opener could still
+  // fit alongside the first but crowd out a later, independently-matching unit that all of them
+  // together would otherwise have fit without it.
+  const placed = rankedUnits.filter((unit) => tryAdd(unit));
 
-  if (forcedFirstUnit && canAffordOpenerAndTopMatch) {
+  if (forcedFirstUnit) {
     tryAdd(forcedFirstUnit);
   }
-
-  // Place every ranked match first, before spending any budget on optional neighbour context: an
-  // earlier match's filler neighbour could otherwise crowd out a later, independently-matching
-  // unit that would have fit on its own. Guaranteeing every real match a slot before any "nice to
-  // have" context keeps two matches that individually fit from losing one to the other's neighbour.
-  const placed = rankedUnits.filter((unit) => tryAdd(unit));
 
   for (const unit of placed) {
     // Pull in the immediate neighbours so a rule split across adjacent sentences/bullets — e.g.

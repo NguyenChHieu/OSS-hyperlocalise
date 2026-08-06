@@ -289,9 +289,15 @@ function packUnitsWithinBudget(
     0,
     Math.floor((budget - separatorOverhead) / Math.max(1, rankedUnits.length)),
   );
-  const tryAddRankedUnit = (unit: ExcerptUnit) => {
+  const tryAddRankedUnit = (unit: ExcerptUnit, isFirst: boolean) => {
     const remaining = budget - used - (chosen.size > 0 ? separator.length : 0);
-    const cap = Math.min(fairShare, remaining);
+    // Guarantee the top-ranked match a real shot at the full remaining budget when fairShare has
+    // been divided down below usefulness: enough ranked units matching the same common token under
+    // a tight budget (e.g. six "checkout" bullets in 80 characters) can make fairShare land under
+    // minTruncatedChars for every single one, rejecting them all and returning nothing but the
+    // heading — even though a truncated top match alone would easily have fit.
+    const cap =
+      isFirst && fairShare < minTruncatedChars ? remaining : Math.min(fairShare, remaining);
     if (unit.text.length <= cap) {
       return tryAdd(unit);
     }
@@ -310,7 +316,7 @@ function packUnitsWithinBudget(
   // top-ranked match here isn't enough — with more than one ranked match, the opener could still
   // fit alongside the first but crowd out a later, independently-matching unit that all of them
   // together would otherwise have fit without it.
-  const placed = rankedUnits.filter((unit) => tryAddRankedUnit(unit));
+  const placed = rankedUnits.filter((unit, index) => tryAddRankedUnit(unit, index === 0));
 
   if (forcedFirstUnit) {
     tryAdd(forcedFirstUnit);

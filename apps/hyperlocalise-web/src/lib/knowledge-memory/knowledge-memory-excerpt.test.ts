@@ -308,6 +308,29 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("betamarker");
   });
 
+  it("still keeps the top match when too many ranked units drive the fair share below usefulness", () => {
+    // Regression for a Codex finding: with enough ranked units all matching the same common
+    // token, splitting the budget evenly can drive every unit's share under the 12-char truncation
+    // floor, rejecting all of them and returning nothing but the heading — even though a truncated
+    // top match alone would easily have fit within the full budget.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: Array.from(
+        { length: 6 },
+        (_, index) => `- Checkout bullet number ${index + 1} about generic wording here today.`,
+      ).join("\n"),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("checkout"),
+      maxChars: 103,
+    });
+
+    expect(excerpt).toContain("Checkout");
+    expect(excerpt.length).toBeGreaterThan("Memory.md > Section -> ".length);
+  });
+
   it("locates a match for CJK query tokens without relying on ASCII word boundaries", () => {
     const padding =
       "これは一般的な説明文であり詳細な背景情報を含みますがここでは重要ではありません".repeat(6);

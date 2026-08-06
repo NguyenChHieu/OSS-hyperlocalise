@@ -359,6 +359,34 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt.length).toBeLessThanOrEqual(maxChars);
   });
 
+  it("splits sentences that start with an accented capital instead of merging them", () => {
+    // Regression for a Codex finding: the sentence-boundary regex only recognized ASCII
+    // A-Z/0-9 after the terminator, so a sentence starting with an accented capital (É, Ç, ...)
+    // never counted as a new sentence. A paragraph under the 400-char oversized-unit cutoff, with
+    // an unrelated filler sentence between two rule sentences, then collapsed into one giant unit.
+    // The single-window truncateAroundMatch centers on the earliest match and can't reach a second
+    // rule far past its window, even though splitting would let packing keep both rule sentences
+    // and drop only the irrelevant filler between them.
+    const padding =
+      "Écrivez toujours des notes générales sans importance ici pour combler cet espace. ".repeat(
+        3,
+      );
+    const paragraph = [
+      "Évitez toujours le mot firstrule dans le texte.",
+      padding.trim(),
+      "Étudiez toujours la règle secondrule avant de valider.",
+    ].join(" ");
+
+    const excerpt = buildSegmentExcerpt({
+      segment: segment({ segmentText: paragraph }),
+      queryTokens: tokens("firstrule", "secondrule"),
+      maxChars: 150,
+    });
+
+    expect(excerpt).toContain("firstrule");
+    expect(excerpt).toContain("secondrule");
+  });
+
   it("is deterministic across repeated calls with the same input", () => {
     const longParagraph = [
       "The firstrule token applies at the start of this paragraph for every locale.",

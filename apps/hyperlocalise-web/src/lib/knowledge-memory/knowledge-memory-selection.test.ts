@@ -1054,4 +1054,48 @@ describe("selectKnowledgeMemoryContext", () => {
     expect(selected.metrics.matchedHeadingPaths).toEqual(["Memory.md > Brand voice"]);
     expect(selected.compactText).toContain("engineering-native");
   });
+
+  it("keeps a custom retriever's selected segment intact instead of centering on a coincidental keyword", () => {
+    // Regression for a Codex finding: literal query tokens were always passed into
+    // buildSegmentExcerpt, even for a custom (non-lexical) retriever whose match reason has
+    // nothing to do with token overlap. If the segment the retriever picked happens to also
+    // contain, later on, some unrelated word that matches a query token, excerpting used to
+    // center on that coincidental match and drop the actual guidance at the top of the segment.
+    const padding =
+      "This is unrelated padding text repeated to push the segment length well past a tight " +
+      "budget window used for this test. ";
+    const content = [
+      "# Memory.md",
+      "",
+      "## Custom policy",
+      "",
+      "Always keep the compliance banner pinned at the very top of every page for legal reasons. " +
+        padding.repeat(3) +
+        "A later note mentions color only in passing and is not the actual policy.",
+      "",
+      "## Reference",
+      "",
+      "Unrelated reference details. ".repeat(80),
+    ].join("\n");
+
+    const selected = selectKnowledgeMemoryContext(
+      {
+        content,
+        targetLocale: "en-AU",
+        sourceText: "Customize your color settings",
+        maxChars: 100,
+      },
+      {
+        retrieveSegments: ({ segments }) => {
+          const policySegment = segments.find(
+            (segment) => segment.headingPath.join(" > ") === "Memory.md > Custom policy",
+          );
+          return policySegment ? [{ segment: policySegment, score: 100 }] : [];
+        },
+      },
+    );
+
+    expect(content.length).toBeGreaterThan(KNOWLEDGE_MEMORY_SMALL_CONTENT_MAX_LENGTH);
+    expect(selected.compactText).toContain("compliance banner");
+  });
 });

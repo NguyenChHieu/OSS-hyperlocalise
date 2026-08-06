@@ -94,7 +94,11 @@ function chunkByWords(text: string, wordsPerChunk: number): string[] {
   return chunks;
 }
 
-const sentenceBoundary = /(?<=[.!?])\s+(?=[A-Z0-9"'(])/;
+// \p{Lu}\p{Nd} instead of A-Z0-9: an ASCII-only class doesn't recognize an accented capital
+// (É, Ñ, Ö, ...) as a sentence start, so a sub-400-char paragraph with several rules — one per
+// sentence, each beginning with an accented letter — gets treated as a single oversized unit
+// instead of being split and ranked separately.
+const sentenceBoundary = /(?<=[.!?])\s+(?=[\p{Lu}\p{Nd}"'(])/u;
 
 function splitIntoSentences(normalized: string): string[] {
   const sentences = normalized

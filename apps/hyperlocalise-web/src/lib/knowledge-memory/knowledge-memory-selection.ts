@@ -424,6 +424,7 @@ export function selectKnowledgeMemoryContext(
     return buildRawFallbackContext(content, maxChars);
   }
 
+  const isDefaultRetriever = !options.retrieveSegments;
   const retrieveSegments = options.retrieveSegments ?? retrieveKnowledgeMemorySegmentsLexically;
   const rankedSegments = retrieveSegments({
     segments,
@@ -439,7 +440,13 @@ export function selectKnowledgeMemoryContext(
       selectedSegments,
       fallbackMode: "selective",
       maxChars,
-      queryTokens: buildKnowledgeMemoryQueryTokens(input),
+      // Only the default lexical retriever's match reason is "these literal tokens", so only it
+      // gets literal-token excerpting. A custom retriever may select a segment for a reason that
+      // has nothing to do with token overlap (semantic similarity, a fixed heading, etc.); handing
+      // it the raw query tokens anyway can make buildSegmentExcerpt center on some unrelated word
+      // that happens to appear later in that segment, dropping the guidance the retriever actually
+      // selected. Omitting queryTokens here falls back to the segment's own compactPromptText.
+      queryTokens: isDefaultRetriever ? buildKnowledgeMemoryQueryTokens(input) : undefined,
       maxSegmentChars: maxCharsPerSelectedSegment({
         maxChars,
         selectedSegmentCount: selectedSegments.length,

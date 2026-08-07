@@ -703,6 +703,39 @@ describe("selectKnowledgeMemoryContext", () => {
     expect(selected.compactText).toContain("tailmarker");
   });
 
+  it("lets a single selected segment use the caller's real budget instead of a fixed 900-char cap", () => {
+    // Regression for a Codex finding: with a single selected segment (no multi-locale balancing),
+    // maxCharsPerSelectedSegment returns undefined, so buildSegmentExcerpt used to always fall back
+    // to a fixed 900-char default no matter how much larger the caller's real maxChars was —
+    // silently discarding matched sentences the caller had budget for.
+    const matchingSentences = Array.from(
+      { length: 20 },
+      (_, index) => `Rule number ${index} explains that tailmarker must never be translated here.`,
+    ).join(" ");
+    const content = [
+      "# Memory.md",
+      "",
+      "## Checkout guidance",
+      "",
+      matchingSentences,
+      "",
+      "## Reference",
+      "",
+      "Unrelated reference details. ".repeat(80),
+    ].join("\n");
+
+    const selected = selectKnowledgeMemoryContext({
+      content,
+      targetLocale: "en-AU",
+      sourceText: "Translate the tailmarker string",
+      maxChars: KNOWLEDGE_MEMORY_SELECTED_CONTEXT_MAX_LENGTH,
+    });
+
+    expect(selected.metrics.fallbackMode).toBe("selective");
+    expect(selected.metrics.selectedMemoryChars).toBeGreaterThan(1_200);
+    expect(selected.compactText).toContain("Rule number 19");
+  });
+
   it("keeps the end of a heading-driven fallback preview in segment metadata under a tight cap", () => {
     // Regression for a Codex finding: the fix above (bound the per-segment excerpt to maxChars)
     // also capped the no-query-token-match fallback the same way. That fallback is a plain prefix

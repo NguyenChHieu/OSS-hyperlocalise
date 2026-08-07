@@ -27,7 +27,13 @@ import type { WorkspaceOrchestratorSession } from "../context";
  * query-aware excerpting (selectKnowledgeMemoryContext) that already exists for translation jobs.
  *
  * Also re-checks the workspace-knowledge feature flag at call time, not just toolConfig — see
- * save_memory.ts's docstring for why a stored toolConfig alone isn't a reliable gate.
+ * save_memory.ts's docstring for why a stored toolConfig alone isn't a reliable gate. recall_memory
+ * is the first forced tool whenever Memory is planned at all, so this returning a nonfatal "not
+ * found" instead of throwing when the flag is off matters even more here: a thrown error on the
+ * very first step (whether from this or a transient flag-lookup failure) shouldn't be able to
+ * threaten the workflow/notification tools planned after it — feature availability is an expected
+ * condition callers should branch on, not an invariant failure (AGENTS.md's Result-pattern
+ * guidance), so this is treated the same way as "Memory is empty".
  */
 export function createRecallMemoryTool(session: WorkspaceOrchestratorSession) {
   return defineAgentTool({
@@ -45,7 +51,8 @@ export function createRecallMemoryTool(session: WorkspaceOrchestratorSession) {
         organizationId: session.organizationId,
       });
       if (!knowledgeFeatureEnabled) {
-        throw new Error("memory_feature_disabled");
+        session.stepResults.recall_memory = { found: false };
+        return { found: false, content: null };
       }
 
       const memory = await getKnowledgeMemoryForOrganization(session.organizationId);

@@ -68,7 +68,10 @@ export function buildSaveMemorySummary(automationName: string, runId: string): s
  * knowledge-memory route already rejects every request when the flag is off, but automation
  * create/update doesn't validate it against stored toolConfig, so a flag disabled after an
  * automation's Memory tools were configured (or a config written some other way) would otherwise
- * let a scheduled or manual run keep mutating Memory.md regardless.
+ * let a scheduled or manual run keep mutating Memory.md regardless. Returns a nonfatal skipped
+ * outcome instead of throwing when the flag is off — feature availability is an expected
+ * condition callers should branch on, not an invariant failure (AGENTS.md's Result-pattern
+ * guidance), same as the stale-revision and size-limit outcomes below.
  */
 export function createSaveMemoryTool(session: WorkspaceOrchestratorSession) {
   return defineAgentTool({
@@ -86,7 +89,9 @@ export function createSaveMemoryTool(session: WorkspaceOrchestratorSession) {
         organizationId: session.organizationId,
       });
       if (!knowledgeFeatureEnabled) {
-        throw new Error("memory_feature_disabled");
+        const payload = { appended: false as const, reason: "feature_disabled" as const };
+        session.stepResults.save_memory = payload;
+        return payload;
       }
 
       if (entry === null) {

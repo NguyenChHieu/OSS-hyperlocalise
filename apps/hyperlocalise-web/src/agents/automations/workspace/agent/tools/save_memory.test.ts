@@ -123,20 +123,29 @@ describe("createSaveMemoryTool", () => {
     resolveWorkspaceKnowledgeFlagMock.mockResolvedValue(true);
   });
 
-  it("is unavailable when the workspace-knowledge feature flag is off, even with allowUpdates config", async () => {
-    // Regression for a Codex finding: automation create/update doesn't validate toolConfig against
-    // the workspace-knowledge feature flag, so a flag disabled after an automation's Memory tools
-    // were configured (or a config written some other way) would otherwise let a scheduled or
-    // manual run keep mutating Memory.md regardless of the flag — the same gate the HTTP
-    // knowledge-memory route already enforces on every request.
+  it("records a skipped outcome, not a throw, when the workspace-knowledge feature flag is off", async () => {
+    // Regression for two Codex findings: (1) automation create/update doesn't validate toolConfig
+    // against the workspace-knowledge feature flag, so a flag disabled after an automation's
+    // Memory tools were configured (or a config written some other way) would otherwise let a
+    // scheduled or manual run keep mutating Memory.md regardless of the flag — the same gate the
+    // HTTP knowledge-memory route already enforces on every request; (2) this is the first forced
+    // tool whenever save_memory is planned, so throwing here (rather than recording a nonfatal
+    // outcome, the same way stale-revision and size-limit already do) risked the rest of the
+    // planned run — including notifications — never getting a chance to reflect what happened.
     resolveWorkspaceKnowledgeFlagMock.mockResolvedValue(false);
 
-    const tool = createSaveMemoryTool(
-      session({ knowledge: { enabled: true, allowUpdates: true } }),
+    const testSession = session({ knowledge: { enabled: true, allowUpdates: true } });
+    const tool = createSaveMemoryTool(testSession);
+    const result = await tool.execute!(
+      { entry: "Remember X." },
+      { toolCallId: "call-1", messages: [], context: {} },
     );
-    await expect(
-      tool.execute!({ entry: "Remember X." }, { toolCallId: "call-1", messages: [], context: {} }),
-    ).rejects.toThrow("memory_feature_disabled");
+
+    expect(result).toEqual({ appended: false, reason: "feature_disabled" });
+    expect(testSession.stepResults.save_memory).toEqual({
+      appended: false,
+      reason: "feature_disabled",
+    });
     expect(resolveWorkspaceKnowledgeFlagMock).toHaveBeenCalledWith({ organizationId: "org-1" });
     expect(getKnowledgeMemoryForOrganizationMock).not.toHaveBeenCalled();
   });

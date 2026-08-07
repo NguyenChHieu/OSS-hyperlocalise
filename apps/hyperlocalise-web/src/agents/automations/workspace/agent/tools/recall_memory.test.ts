@@ -114,20 +114,23 @@ describe("createRecallMemoryTool", () => {
     expect(getKnowledgeMemoryForOrganizationMock).not.toHaveBeenCalled();
   });
 
-  it("is unavailable when the workspace-knowledge feature flag is off, even with allowUpdates config", async () => {
-    // Regression for a Codex finding: automation create/update doesn't validate toolConfig against
-    // the workspace-knowledge feature flag, so a flag disabled after an automation's Memory tools
-    // were configured (or a config written some other way) would otherwise let a scheduled or
-    // manual run keep reading Memory.md regardless of the flag — the same gate the HTTP
-    // knowledge-memory route already enforces on every request.
+  it("records found: false, not a throw, when the workspace-knowledge feature flag is off", async () => {
+    // Regression for two Codex findings: (1) automation create/update doesn't validate toolConfig
+    // against the workspace-knowledge feature flag, so a flag disabled after an automation's
+    // Memory tools were configured (or a config written some other way) would otherwise let a
+    // scheduled or manual run keep reading Memory.md regardless of the flag — the same gate the
+    // HTTP knowledge-memory route already enforces on every request; (2) recall_memory is the
+    // first forced tool whenever Memory is planned at all, so throwing here (rather than a
+    // nonfatal "not found", the same treatment as an empty Memory.md gets) risked the rest of the
+    // planned run — including notifications — never getting a chance to run.
     resolveWorkspaceKnowledgeFlagMock.mockResolvedValue(false);
 
-    const tool = createRecallMemoryTool(
-      session({ knowledge: { enabled: true, allowUpdates: false } }),
-    );
-    await expect(tool.execute!({ query: "who reviews PRs?" }, toolCallContext)).rejects.toThrow(
-      "memory_feature_disabled",
-    );
+    const testSession = session({ knowledge: { enabled: true, allowUpdates: false } });
+    const tool = createRecallMemoryTool(testSession);
+    const result = await tool.execute!({ query: "who reviews PRs?" }, toolCallContext);
+
+    expect(result).toEqual({ found: false, content: null });
+    expect(testSession.stepResults.recall_memory).toEqual({ found: false });
     expect(resolveWorkspaceKnowledgeFlagMock).toHaveBeenCalledWith({ organizationId: "org-1" });
     expect(getKnowledgeMemoryForOrganizationMock).not.toHaveBeenCalled();
   });

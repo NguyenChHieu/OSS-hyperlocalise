@@ -25,7 +25,11 @@ vi.mock("@/lib/workflow/queues", () => ({
   createTranslationJobEventQueue: () => ({ enqueue: workflowEnqueueMock }),
 }));
 
-vi.mock("@/lib/flags/workspace-flags", () => ({
+// resolveWorkspaceKnowledgeFlag itself stays real (it's the code under test, via
+// resolveKnowledgeMemoryEnabled's delegation to it) — only workspaceKnowledgeFlag.run is stubbed,
+// so the real org lookup still runs against the fixture's DB row.
+vi.mock("@/lib/flags/workspace-flags", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/flags/workspace-flags")>()),
   workspaceKnowledgeFlag: { run: workspaceKnowledgeFlagRunMock },
 }));
 

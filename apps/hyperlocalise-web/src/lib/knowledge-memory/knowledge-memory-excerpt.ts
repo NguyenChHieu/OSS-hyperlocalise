@@ -129,8 +129,14 @@ function truncateAroundMatch(
   const leadChars = Math.floor(maxChars / 4);
   const start = Math.max(0, matchOffset - leadChars);
   const hasPrefix = start > 0;
-  const hasSuffix = start + maxChars < text.length;
   const prefixMarker = hasPrefix ? "..." : "";
+  // Whether a suffix marker is needed depends on where the slice actually ends, which already
+  // has the prefix marker's cost subtracted — checking against start + maxChars (the window
+  // before that cost is applied) reports "no suffix" whenever the source ends within the prefix
+  // marker's length of that boundary, silently dropping those trailing characters with no
+  // ellipsis to show they were cut (e.g. "MUST" -> "MUS").
+  const bodyCharsBeforeSuffixReserve = Math.max(0, maxChars - prefixMarker.length);
+  const hasSuffix = start + bodyCharsBeforeSuffixReserve < text.length;
   const suffixMarker = hasSuffix ? "..." : "";
   const bodyChars = Math.max(0, maxChars - prefixMarker.length - suffixMarker.length);
 

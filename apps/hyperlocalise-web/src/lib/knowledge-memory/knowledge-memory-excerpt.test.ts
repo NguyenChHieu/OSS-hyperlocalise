@@ -646,6 +646,28 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("rock'n'roll");
   });
 
+  it("marks a truncated tail with an ellipsis instead of silently cutting off the last word", () => {
+    // Regression for a Codex finding: hasSuffix compared the text length against start + maxChars
+    // — the window *before* the prefix marker's 3-char cost is subtracted — instead of against
+    // where the slice actually ends. When the source ends within those 3 characters of that
+    // boundary, this reported "no suffix" and bodyChars then sliced short of the real text end
+    // with no ellipsis to show anything was cut, silently corrupting the final word (e.g. a
+    // trailing "MUST" emitted as "MUS").
+    const paragraph =
+      "Padding word one two three four five six seven the querytoken marker appears right " +
+      "here in this sentence and then continues on with more filler words to reach the end " +
+      "where it MUST.";
+
+    const excerpt = buildSegmentExcerpt({
+      segment: segment({ segmentText: paragraph }),
+      queryTokens: tokens("querytoken"),
+      maxChars: 197,
+    });
+
+    expect(excerpt.endsWith("MUS")).toBe(false);
+    expect(excerpt.endsWith("MUST") || excerpt.endsWith("...")).toBe(true);
+  });
+
   it("allocates enough share to retain a long matched token when a later ranked unit needs far less", () => {
     // Regression for a Codex finding: an equal per-unit share can be shorter than a matched token
     // even when the combined budget could retain every match in full, because the split didn't

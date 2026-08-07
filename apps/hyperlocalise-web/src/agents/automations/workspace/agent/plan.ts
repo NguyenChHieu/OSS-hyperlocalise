@@ -68,7 +68,9 @@ const WORKFLOW_TOOLS: WorkspaceOrchestratorToolName[] = [
   "use_ahrefs",
 ];
 
-const NOTIFICATION_TOOLS: WorkspaceOrchestratorToolName[] = ["notify_slack", "notify_email"];
+// Exported so agent.ts can find where the notification suffix starts in a planned tool list:
+// notification tools must stay the final side effects of a run (see planNonNotificationToolCount).
+export const NOTIFICATION_TOOLS: WorkspaceOrchestratorToolName[] = ["notify_slack", "notify_email"];
 
 // Not part of WORKFLOW_TOOLS: memory tools are general availability, not ordered workflow steps,
 // so they skip orderWorkflowTools' template-skill-executor reordering entirely.
@@ -209,4 +211,15 @@ export function planHasActionableTool(plan: WorkspaceOrchestratorPlan): boolean 
   return (
     plan.tools.some((tool) => !MEMORY_TOOLS.includes(tool)) || (plan.optionalTools?.length ?? 0) > 0
   );
+}
+
+/**
+ * How many entries at the start of plan.tools come before the notification suffix. Notification
+ * tools are always appended last by buildWorkspaceOrchestratorPlan, so this is the step index
+ * agent.ts should insert optionalTools at: after recall/workflow tools but before Slack/email,
+ * so an optional save_memory call can still land before the run's outcome is announced.
+ */
+export function planNonNotificationToolCount(plan: WorkspaceOrchestratorPlan): number {
+  const notificationCount = plan.tools.filter((tool) => NOTIFICATION_TOOLS.includes(tool)).length;
+  return plan.tools.length - notificationCount;
 }

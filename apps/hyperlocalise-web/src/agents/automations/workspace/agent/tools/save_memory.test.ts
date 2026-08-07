@@ -28,10 +28,13 @@ import type {
   WorkspaceAutomationRecord,
   WorkspaceAutomationRunRecord,
 } from "@/lib/agents/workspace-automations";
-import { KNOWLEDGE_MEMORY_CONTENT_MAX_LENGTH } from "@/lib/knowledge-memory/knowledge-memory.shared";
+import {
+  KNOWLEDGE_MEMORY_CONTENT_MAX_LENGTH,
+  KNOWLEDGE_MEMORY_SUMMARY_MAX_LENGTH,
+} from "@/lib/knowledge-memory/knowledge-memory.shared";
 
 import type { WorkspaceOrchestratorSession } from "../context";
-import { createSaveMemoryTool } from "./save_memory";
+import { buildSaveMemorySummary, createSaveMemoryTool } from "./save_memory";
 
 function automation(
   toolConfig: WorkspaceAutomationRecord["toolConfig"],
@@ -88,6 +91,24 @@ function session(
     terminalError: null,
   };
 }
+
+describe("buildSaveMemorySummary", () => {
+  const runId = "11111111-1111-4111-8111-111111111111";
+
+  it("keeps a short name intact", () => {
+    const summary = buildSaveMemorySummary("Nightly sync", runId);
+    expect(summary).toBe(`Auto-appended by automation "Nightly sync" (run ${runId})`);
+    expect(summary.length).toBeLessThanOrEqual(KNOWLEDGE_MEMORY_SUMMARY_MAX_LENGTH);
+  });
+
+  it("truncates a name that would push the summary past the DB limit", () => {
+    const longName = "A".repeat(120);
+    const summary = buildSaveMemorySummary(longName, runId);
+    expect(summary.length).toBeLessThanOrEqual(KNOWLEDGE_MEMORY_SUMMARY_MAX_LENGTH);
+    expect(summary).toContain("…");
+    expect(summary).toContain(runId);
+  });
+});
 
 describe("createSaveMemoryTool", () => {
   beforeEach(() => {
@@ -226,6 +247,41 @@ describe("createSaveMemoryTool", () => {
         { toolCallId: "call-1", messages: [], context: {} },
       ),
     ).rejects.toThrow("memory_stale_revision");
+  });
+
+  it("truncates a long automation name so the commit summary never exceeds the DB limit", async () => {
+    // Regression for a Codex finding: an 88-120 char automation name (accepted by the API) made
+    // the fixed prefix + name + run UUID exceed the 160-char
+    // knowledge_memories_summary_length_check, so every save_memory call for that automation
+    // failed at the database instead of appending the entry.
+    getKnowledgeMemoryForOrganizationMock.mockResolvedValue({
+      revisionId: "rev-1",
+      version: 1,
+      content: "",
+      summary: null,
+      updatedAt: null,
+      updatedByUserId: null,
+    });
+    commitKnowledgeMemoryForOrganizationMock.mockResolvedValue({
+      ok: true,
+      value: {
+        knowledgeMemory: { revisionId: "rev-2", version: 2, content: "irrelevant", summary: "s" },
+        changed: true,
+      },
+    });
+
+    const longName = "A".repeat(120);
+    const testSession = session({ knowledge: { enabled: true, allowUpdates: true } });
+    testSession.automation.name = longName;
+    const tool = createSaveMemoryTool(testSession);
+    await tool.execute!(
+      { entry: "First fact." },
+      { toolCallId: "call-1", messages: [], context: {} },
+    );
+
+    const commitCall = commitKnowledgeMemoryForOrganizationMock.mock.calls[0]![0];
+    expect(commitCall.summary.length).toBeLessThanOrEqual(KNOWLEDGE_MEMORY_SUMMARY_MAX_LENGTH);
+    expect(commitCall.summary).toContain("run-1");
   });
 
   it("never persists the appended text into stepResults", async () => {

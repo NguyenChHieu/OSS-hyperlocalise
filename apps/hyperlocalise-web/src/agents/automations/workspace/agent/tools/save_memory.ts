@@ -18,10 +18,34 @@ import {
   commitKnowledgeMemoryForOrganization,
   getKnowledgeMemoryForOrganization,
 } from "@/lib/knowledge-memory/knowledge-memory";
-import { KNOWLEDGE_MEMORY_CONTENT_MAX_LENGTH } from "@/lib/knowledge-memory/knowledge-memory.shared";
+import {
+  KNOWLEDGE_MEMORY_CONTENT_MAX_LENGTH,
+  KNOWLEDGE_MEMORY_SUMMARY_MAX_LENGTH,
+} from "@/lib/knowledge-memory/knowledge-memory.shared";
 import { isErr } from "@/lib/primitives/result/results";
 
 import type { WorkspaceOrchestratorSession } from "../context";
+
+/**
+ * Builds the revision summary, truncating the automation name so the result never exceeds the
+ * database's knowledge_memories_summary_length_check (160 chars). Automation names accepted by
+ * the API can run well past what the fixed prefix/suffix leaves room for, and this is the only
+ * write path for these revisions, so an over-length summary would fail at the database on every
+ * save_memory call for that automation instead of appending the entry.
+ */
+export function buildSaveMemorySummary(automationName: string, runId: string): string {
+  const prefix = `Auto-appended by automation "`;
+  const suffix = `" (run ${runId})`;
+  const maxNameLength = Math.max(
+    0,
+    KNOWLEDGE_MEMORY_SUMMARY_MAX_LENGTH - prefix.length - suffix.length,
+  );
+  const name =
+    automationName.length > maxNameLength
+      ? `${automationName.slice(0, Math.max(0, maxNameLength - 1))}…`
+      : automationName;
+  return `${prefix}${name}${suffix}`;
+}
 
 /**
  * Appends to the organization's shared Memory.md. Append-only by design (MVP): the agent cannot
@@ -56,7 +80,7 @@ export function createSaveMemoryTool(session: WorkspaceOrchestratorSession) {
         content: appended,
         // No human actor for an agent-authored append; real provenance lives here instead of
         // updatedByUserId, which is nullable for exactly this case.
-        summary: `Auto-appended by automation "${session.automation.name}" (run ${session.run.id})`,
+        summary: buildSaveMemorySummary(session.automation.name, session.run.id),
         updatedByUserId: null,
         expectedRevisionId: current.revisionId,
       });

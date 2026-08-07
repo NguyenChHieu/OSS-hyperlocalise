@@ -215,6 +215,50 @@ describe("workspace orchestrator agent", () => {
     });
   });
 
+  it("runs an optional tool before the notification suffix, not after it", () => {
+    // Regression for a Codex finding: optional tools used to be scheduled after every forced tool
+    // including notify_slack/notify_email, so recipients were notified before save_memory ran and
+    // the notification could never reflect whether the append actually succeeded. Optional tools
+    // must land after workflow tools but before the notification suffix instead.
+    const session = createWorkspaceOrchestratorSession({
+      organizationId: "org-1",
+      automation: automation(),
+      run: run(),
+      plan: {
+        tools: ["recall_memory", "run_github_workflows", "notify_slack"],
+        optionalTools: ["save_memory"],
+      },
+      repository: null,
+      composedInstructions: "Run the automation.",
+    });
+
+    createWorkspaceOrchestratorAgent(session);
+
+    const settings = toolLoopAgentMock.mock.calls.at(-1)?.[0] as {
+      prepareStep: (input: { stepNumber: number }) => unknown;
+    };
+
+    expect(settings.prepareStep({ stepNumber: 0 })).toEqual({
+      activeTools: ["recall_memory"],
+      toolChoice: { type: "tool", toolName: "recall_memory" },
+    });
+    expect(settings.prepareStep({ stepNumber: 1 })).toEqual({
+      activeTools: ["run_github_workflows"],
+      toolChoice: { type: "tool", toolName: "run_github_workflows" },
+    });
+    expect(settings.prepareStep({ stepNumber: 2 })).toEqual({
+      activeTools: ["save_memory"],
+      toolChoice: "auto",
+    });
+    expect(settings.prepareStep({ stepNumber: 3 })).toEqual({
+      activeTools: ["notify_slack"],
+      toolChoice: { type: "tool", toolName: "notify_slack" },
+    });
+    expect(settings.prepareStep({ stepNumber: 4 })).toEqual({
+      toolChoice: "none",
+    });
+  });
+
   it("never caps the step count below what forced plus optional tools need", () => {
     const sixTools = [
       "recall_memory",

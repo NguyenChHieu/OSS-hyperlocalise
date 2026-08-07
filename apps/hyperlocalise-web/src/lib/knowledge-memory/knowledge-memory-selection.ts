@@ -441,7 +441,9 @@ export function selectKnowledgeMemoryContext(
   // retrieveKnowledgeMemorySegmentsLexically recompute the same tokenize + spelling-variant
   // expansion internally right before this function needs the identical tokens again for excerpt
   // selection's queryTokens.
-  const defaultQueryTokens = isDefaultRetriever ? buildKnowledgeMemoryQueryTokens(input) : undefined;
+  const defaultQueryTokens = isDefaultRetriever
+    ? buildKnowledgeMemoryQueryTokens(input)
+    : undefined;
   const rankedSegments = options.retrieveSegments
     ? options.retrieveSegments({ segments, query: input })
     : retrieveKnowledgeMemorySegmentsLexicallyWithTokens(segments, input, defaultQueryTokens!);

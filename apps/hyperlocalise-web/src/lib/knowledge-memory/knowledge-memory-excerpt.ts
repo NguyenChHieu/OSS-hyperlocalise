@@ -403,14 +403,14 @@ function packUnitsWithinBudget(
   // here, rather than reserving the flat floor unconditionally, keeps tryAddRankedUnit's `remaining`
   // from dropping a ranked unit's cap below minTruncatedChars purely because of this reservation when
   // the budget was already too tight to fit both.
-  const totalRankedNeed = suffixNeedSum[0]! + separator.length * Math.max(0, rankedUnits.length - 1);
+  const totalRankedNeed =
+    suffixNeedSum[0]! + separator.length * Math.max(0, rankedUnits.length - 1);
   const forcedFirstReserve = forcedFirstUnit
     ? Math.min(minTruncatedChars + separator.length, Math.max(0, budget - totalRankedNeed))
     : 0;
 
   const tryAddRankedUnit = (unit: ExcerptUnit, index: number) => {
-    const remaining =
-      budget - used - forcedFirstReserve - (chosen.size > 0 ? separator.length : 0);
+    const remaining = budget - used - forcedFirstReserve - (chosen.size > 0 ? separator.length : 0);
     const restCount = rankedUnits.length - 1 - index;
     const reserveForRest = suffixNeedSum[index + 1]! + separator.length * restCount;
     // Never let the current unit's share collapse below its own real need just because the units

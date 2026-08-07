@@ -281,4 +281,9 @@ export function retrieveKnowledgeMemorySegmentsLexicallyWithTokens(
 export const retrieveKnowledgeMemorySegmentsLexically: KnowledgeMemoryRetriever = ({
   segments,
   query,
-}) => retrieveKnowledgeMemorySegmentsLexicallyWithTokens(segments, query, buildKnowledgeMemoryQueryTokens(query));
+}) =>
+  retrieveKnowledgeMemorySegmentsLexicallyWithTokens(
+    segments,
+    query,
+    buildKnowledgeMemoryQueryTokens(query),
+  );

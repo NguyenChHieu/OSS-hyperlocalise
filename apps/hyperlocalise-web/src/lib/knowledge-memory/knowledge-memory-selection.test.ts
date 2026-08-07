@@ -575,6 +575,44 @@ describe("selectKnowledgeMemoryContext", () => {
     expect(selected.compactText).not.toBe("Avoid US spelling.");
   });
 
+  it("keeps a language-level heading's opening rule when a regional target selects it", () => {
+    // Regression for a Codex finding: retrieveKnowledgeMemorySegmentsLexically derives the base
+    // language ("fr") from a regional targetLocale ("fr-FR") to award a language-level heading a
+    // locale-marker score, but buildKnowledgeMemoryQueryTokens only tokenized the literal query
+    // parts, never adding that derived language back in. So headingMatchesQuery (excerpt.ts)
+    // couldn't recognize the "fr" heading as a query match, and an incidental match elsewhere in
+    // the section's body (here, "checkout") got excerpted instead of the section's actual opening
+    // rule, which has no token overlap with the query and isn't adjacent to the incidental match.
+    const content = [
+      "# Memory.md",
+      "",
+      "## Locale notes",
+      "",
+      "### fr",
+      "",
+      "Always keep the brand name capitalized exactly as written in every context. " +
+        "This is unrelated filler text about generic formatting standards used broadly. " +
+        "This section also discusses checkout flows for testing purposes here today.",
+      "",
+      // Padding past KNOWLEDGE_MEMORY_SMALL_CONTENT_MAX_LENGTH so selective retrieval and
+      // per-segment excerpting actually run, instead of the whole-memory-verbatim fallback a
+      // short document would take (which would trivially include the opening rule regardless).
+      ...Array.from(
+        { length: 60 },
+        (_, index) => `## Noise section ${index + 1}\n\nSupport operations archive ${index + 1}.`,
+      ),
+    ].join("\n");
+
+    const selected = selectKnowledgeMemoryContext({
+      content,
+      targetLocale: "fr-FR",
+      sourceText: "checkout",
+    });
+
+    expect(selected.metrics.fallbackMode).toBe("selective");
+    expect(selected.compactText).toContain("Always keep the brand name capitalized");
+  });
+
   it("reduces selected prompt text compared with the whole memory on a long fixture", () => {
     const content = longRepresentativeMemory();
     const selected = selectKnowledgeMemoryContext({

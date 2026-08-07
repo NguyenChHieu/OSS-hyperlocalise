@@ -208,10 +208,29 @@ function scoreSegment(
   return score;
 }
 
+/**
+ * Also used directly by excerpt selection (knowledge-memory-selection.ts, when the default
+ * retriever is active) to build queryTokens for rankMatchingUnits/headingMatchesQuery — not just
+ * for retrieval scoring here. Regular tokenizing alone doesn't split a hyphenated locale like
+ * "fr-FR" into its base language: the "-" survives inside a single "fr-fr" token (tokenize's char
+ * class treats it like a letter), so a language-level heading such as "### fr" never matched
+ * queryTokens even though scoreSegment below already awards that same segment a locale-marker
+ * bonus for exactly this relationship (via inputLocalesFromParts/localeSearchCandidates). Adding
+ * those same locale candidates here keeps both consumers seeing the language token the retriever
+ * already reasons about, instead of the excerpter silently missing it and centering on some
+ * unrelated incidental match elsewhere in the segment's body under a tight budget.
+ */
 export function buildKnowledgeMemoryQueryTokens(
   query: SelectKnowledgeMemoryContextInput,
 ): Set<string> {
-  return expandKnowledgeMemoryTokens(buildQueryParts(query).join(" "));
+  const queryParts = buildQueryParts(query);
+  const tokens = expandKnowledgeMemoryTokens(queryParts.join(" "));
+  for (const locale of inputLocalesFromParts(queryParts)) {
+    for (const candidate of localeSearchCandidates(locale)) {
+      tokens.add(candidate);
+    }
+  }
+  return tokens;
 }
 
 export const retrieveKnowledgeMemorySegmentsLexically: KnowledgeMemoryRetriever = ({

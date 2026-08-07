@@ -202,7 +202,11 @@ describe("createSaveMemoryTool", () => {
     expect(commitCall.content).not.toContain("Nightly sync");
   });
 
-  it("rejects an append that would exceed the character limit without committing", async () => {
+  it("records a size-limit outcome without committing, instead of throwing", async () => {
+    // Regression for a Codex finding: same reasoning as the stale-revision case below — Memory.md
+    // nearing its cap is an expected domain limit, not a bug, and the forced notification step
+    // right after this one should be able to report the skipped update instead of getting no
+    // signal because this threw.
     getKnowledgeMemoryForOrganizationMock.mockResolvedValue({
       revisionId: "rev-1",
       version: 1,
@@ -212,15 +216,18 @@ describe("createSaveMemoryTool", () => {
       updatedByUserId: "user-1",
     });
 
-    const tool = createSaveMemoryTool(
-      session({ knowledge: { enabled: true, allowUpdates: true } }),
+    const testSession = session({ knowledge: { enabled: true, allowUpdates: true } });
+    const tool = createSaveMemoryTool(testSession);
+    const result = await tool.execute!(
+      { entry: "This entry pushes the document past the limit." },
+      { toolCallId: "call-1", messages: [], context: {} },
     );
-    await expect(
-      tool.execute!(
-        { entry: "This entry pushes the document past the limit." },
-        { toolCallId: "call-1", messages: [], context: {} },
-      ),
-    ).rejects.toThrow("memory_size_limit_exceeded");
+
+    expect(result).toEqual({ appended: false, reason: "size_limit_exceeded" });
+    expect(testSession.stepResults.save_memory).toEqual({
+      appended: false,
+      reason: "size_limit_exceeded",
+    });
     expect(commitKnowledgeMemoryForOrganizationMock).not.toHaveBeenCalled();
   });
 

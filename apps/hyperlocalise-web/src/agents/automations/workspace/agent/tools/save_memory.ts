@@ -86,7 +86,13 @@ export function createSaveMemoryTool(session: WorkspaceOrchestratorSession) {
       const appended = current.content ? `${current.content}\n\n${trimmedEntry}` : trimmedEntry;
 
       if (appended.length > KNOWLEDGE_MEMORY_CONTENT_MAX_LENGTH) {
-        throw new Error("memory_size_limit_exceeded");
+        // A recorded outcome, not a thrown error — same reasoning as the stale-revision case
+        // below: Memory.md nearing its cap is an expected domain limit, not a bug, and the run's
+        // notification step (forced right after this one) should be able to say the update was
+        // skipped instead of getting no signal at all.
+        const payload = { appended: false as const, reason: "size_limit_exceeded" as const };
+        session.stepResults.save_memory = payload;
+        return payload;
       }
 
       const result = await commitKnowledgeMemoryForOrganization({

@@ -55,18 +55,21 @@ prompt injection to explicit tool calls the agent decides to make.
   available, so automations don't silently lose the always-present context they used to get.
   It runs first in the plan, before workflow tools, so recalled guidance is available before the
   decisions it's meant to inform.
-- **Save is a genuinely optional tool call, never forced.** `save_memory.ts` appends to
-  `Memory.md` through the same `commitKnowledgeMemoryForOrganization` compare-and-swap a human
-  edit goes through — same optimistic concurrency, same 50,000-character cap, append-only, no
-  human actor (`updatedByUserId: null`, provenance in the revision `summary`). `agent.ts`'s
-  `prepareStep` forces every tool in `plan.tools` via `toolChoice: { type: "tool", toolName }` —
-  there is still no "model may skip this" step type for that list. Rather than changing that,
-  `WorkspaceOrchestratorPlan` gained a separate `optionalTools` list: when
-  `toolConfig.knowledge.allowUpdates` is on, `save_memory` goes there instead of `plan.tools`, and
-  `agent.ts` gives each entry in `optionalTools` its own step, one at a time, after every forced
-  tool has run, with `toolChoice: "auto"` — the model decides whether the automation's
-  instructions actually warrant remembering something, instead of being required to call it every
-  run.
+- **Save is a forced tool call whose skip mechanism lives in its own input, not in the loop.**
+  `save_memory.ts` appends to `Memory.md` through the same `commitKnowledgeMemoryForOrganization`
+  compare-and-swap a human edit goes through — same optimistic concurrency, same 50,000-character
+  cap, append-only, no human actor (`updatedByUserId: null`, provenance in the revision
+  `summary`). `WorkspaceOrchestratorPlan` has only `tools`, no separate optional list: when
+  `toolConfig.knowledge.allowUpdates` is on, `plan.ts` inserts `save_memory` into `plan.tools`
+  itself, positioned after workflow tools and before notifications, and `agent.ts`'s `prepareStep`
+  forces it via `toolChoice: { type: "tool", toolName: "save_memory" }` like every other planned
+  tool. An earlier version of this gave it its own step with `toolChoice: "auto"` instead — that
+  broke because the underlying `ToolLoopAgent`'s step loop only continues past a step that
+  produced a tool call, so the model legitimately skipping it could end the run before a later
+  forced tool (a Slack/email notification) ever ran. Forcing it doesn't mean it fabricates
+  content, though: its `entry` input accepts `null` as an explicit "nothing to remember this run"
+  decision, which short-circuits before touching the database — that's the mechanism that keeps
+  the original "don't write invented content on every run" requirement satisfied.
 - `toolConfig.knowledge.allowUpdates` now has a UI control: an "Allow memory updates" toggle in
   the Memories tool row, shown whenever Memories is enabled.
 

@@ -565,6 +565,32 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("protectedidentifiertoken");
   });
 
+  it("keeps an apostrophe-containing matched token intact even when the heading eats most of the budget", () => {
+    // Regression for a Codex finding: findBestMatchOffset strips internal apostrophes before
+    // comparing a raw match against tokenWeights ("rock'n'roll" -> "rocknroll"), so tokenWeights'
+    // keys are shorter than the actual span in the source text that must survive truncation.
+    // Sizing the body reserve from the stripped key length under-reserved for this case, letting
+    // the centering window's own trim cut off the token's tail (e.g. "rock'n'rol...").
+    const deeplyNestedSegment = segment({
+      headingPath: [
+        "Memory.md",
+        "A very long section heading that eats most of the budget",
+        "An equally verbose subsection name",
+        "de-DE",
+      ],
+      segmentText: "Never translate the rock'n'roll internal marker under any circumstances.",
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: deeplyNestedSegment,
+      queryTokens: tokens("rock'n'roll"),
+      maxChars: 80,
+    });
+
+    expect(excerpt.length).toBeLessThanOrEqual(80);
+    expect(excerpt).toContain("rock'n'roll");
+  });
+
   it("keeps the opening rule for a heading-driven match instead of only an incidental body match", () => {
     // Regression for a Codex finding: the segment is selected because "routingtoken" is in its
     // heading, not because that word appears in its body. Its body's only literal query overlap

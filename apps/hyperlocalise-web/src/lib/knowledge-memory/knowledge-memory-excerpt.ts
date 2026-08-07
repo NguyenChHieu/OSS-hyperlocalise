@@ -73,6 +73,31 @@ function findBestMatchOffset(
 }
 
 /**
+ * Longest raw matched span across the ranked units, in source characters — not the longest
+ * tokenWeights key. findBestMatchOffset strips internal apostrophes before comparing a match
+ * against tokenWeights ("rock'n'roll" -> "rocknroll"), so the map's keys are shorter than the
+ * text truncateAroundMatch must actually keep intact around the match. Reserving the body budget
+ * from the stripped key length under-reserves for any matched token containing an apostrophe,
+ * letting the centering window's own trim cut into the middle of the real span (e.g. "rocknroll"
+ * queried against "rock'n'roll" emitting "rock'n'rol...").
+ */
+function longestMatchedSpanLength(units: ExcerptUnit[], tokenWeights: Map<string, number>): number {
+  let longest = 0;
+  for (const unit of units) {
+    for (const match of unit.text.matchAll(wordPattern)) {
+      if (match[0].length <= longest) {
+        continue;
+      }
+      const token = match[0].toLowerCase().replace(/['’]/g, "");
+      if (tokenWeights.has(token)) {
+        longest = match[0].length;
+      }
+    }
+  }
+  return longest;
+}
+
+/**
  * Truncates text that's still too long even after unit splitting/packing. A plain prefix cut
  * would reintroduce the exact bug this module exists to fix (one level down, inside a single
  * oversized unit), so this centers the kept window on the query match instead of the start.
@@ -447,8 +472,10 @@ export function buildSegmentExcerpt(input: {
   // leadChars reserves floor(budget/4) before the match, and up to 6 chars go to both ellipsis
   // markers, leaving budget - floor(budget/4) - 6 for the token and whatever follows it. Requiring
   // that be >= tokenLength (using budget - budget/4 = (3/4)budget as a safe lower bound on the
-  // floor'd term) solves to budget >= (tokenLength + 6) * 4 / 3.
-  const longestMatchedTokenLength = Math.max(0, ...[...tokenWeights.keys()].map((t) => t.length));
+  // floor'd term) solves to budget >= (tokenLength + 6) * 4 / 3. Uses the longest raw matched
+  // span (see longestMatchedSpanLength), not the longest tokenWeights key: a matched token
+  // containing an apostrophe is longer in the source text than its stripped map key.
+  const longestMatchedTokenLength = longestMatchedSpanLength(ranked, tokenWeights);
   const minCharsForCenteredToken = Math.ceil(((longestMatchedTokenLength + 6) * 4) / 3);
   const minBodyReserve = Math.min(
     Math.max(20, minCharsForCenteredToken),

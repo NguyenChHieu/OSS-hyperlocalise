@@ -46,7 +46,7 @@ const TOOL_BUILDERS: Record<
 export function buildWorkspaceOrchestratorTools(session: WorkspaceOrchestratorSession): ToolSet {
   const tools: ToolSet = {};
 
-  for (const toolName of [...session.plan.tools, ...(session.plan.optionalTools ?? [])]) {
+  for (const toolName of session.plan.tools) {
     tools[toolName] = TOOL_BUILDERS[toolName](session);
   }
 

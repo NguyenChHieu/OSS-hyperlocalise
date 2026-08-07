@@ -44,14 +44,6 @@ export type WorkspaceOrchestratorToolName = (typeof WORKSPACE_ORCHESTRATOR_TOOL_
 
 export type WorkspaceOrchestratorPlan = {
   tools: WorkspaceOrchestratorToolName[];
-  /**
-   * Tools offered but never forced: agent.ts's prepareStep gives each one its own step with
-   * toolChoice: "auto" after every forced tool in `tools` has run, so the model decides whether
-   * to call it based on the automation's own instructions, instead of being required to. Only
-   * save_memory uses this today — writing to the org's shared Memory.md should happen because the
-   * instructions actually asked for it, not on every run just because the tool was planned.
-   */
-  optionalTools?: WorkspaceOrchestratorToolName[];
 };
 
 export type WorkspaceOrchestratorTriggerContext = {
@@ -68,19 +60,21 @@ const WORKFLOW_TOOLS: WorkspaceOrchestratorToolName[] = [
   "use_ahrefs",
 ];
 
-// Exported so agent.ts can find where the notification suffix starts in a planned tool list:
-// notification tools must stay the final side effects of a run (see planNonNotificationToolCount).
-export const NOTIFICATION_TOOLS: WorkspaceOrchestratorToolName[] = ["notify_slack", "notify_email"];
+const NOTIFICATION_TOOLS: WorkspaceOrchestratorToolName[] = ["notify_slack", "notify_email"];
 
 // Not part of WORKFLOW_TOOLS: memory tools are general availability, not ordered workflow steps,
 // so they skip orderWorkflowTools' template-skill-executor reordering entirely.
+//
+// recall_memory is read-only, so planHasActionableTool below excludes it. save_memory is
+// deliberately NOT in this list even though it's a memory tool: forcing every planned tool via
+// toolChoice ({type:"tool",...}) is the only way agent.ts's ToolLoopAgent reliably reaches the
+// tools planned after it — the underlying loop only continues past a step that produced zero tool
+// calls, so a toolChoice: "auto" step risked the model ending the run before a later forced
+// notification tool ever ran (a real Codex finding against an earlier version of this file). It's
+// still not "invented content on every run" per the *original* finding against forcing it: its
+// schema accepts entry: null as an explicit "nothing to remember" decision.
 const MEMORY_TOOLS: WorkspaceOrchestratorToolName[] = ["recall_memory"];
-
-// save_memory is never forced: it goes in optionalTools (WorkspaceOrchestratorPlan), not here.
-// agent.ts's prepareStep gives it its own step with toolChoice: "auto" after every forced tool has
-// run, so the model calls it only when the automation's instructions actually ask to remember
-// something — forcing it via MEMORY_TOOLS would call it on every single run regardless.
-const OPTIONAL_MEMORY_TOOLS: WorkspaceOrchestratorToolName[] = ["save_memory"];
+const SAVE_MEMORY_TOOLS: WorkspaceOrchestratorToolName[] = ["save_memory"];
 
 function workflowToolEnabled(
   tool: WorkspaceOrchestratorToolName,
@@ -186,40 +180,26 @@ export function buildWorkspaceOrchestratorPlan(
     notificationToolEnabled(tool, automation.toolConfig),
   );
   const memoryTools = MEMORY_TOOLS.filter((tool) => memoryToolEnabled(tool, automation.toolConfig));
-  const optionalTools = OPTIONAL_MEMORY_TOOLS.filter((tool) =>
+  const saveMemoryTools = SAVE_MEMORY_TOOLS.filter((tool) =>
     memoryToolEnabled(tool, automation.toolConfig),
   );
 
-  // recall_memory runs first: every planned tool executes strictly in this order (agent.ts's
-  // prepareStep forces each one in turn), so recalled guidance must land before the workflow
-  // tools it's meant to inform, not after they've already acted.
+  // recall_memory runs first and save_memory runs last before notifications: every planned tool
+  // executes strictly in this order (agent.ts's prepareStep forces each one in turn), so recalled
+  // guidance lands before the workflow tools it's meant to inform, and a memory write reflects
+  // what those tools actually did before the run's notification summarizes the outcome.
   return {
-    tools: [...memoryTools, ...workflowTools, ...notificationTools],
-    optionalTools: optionalTools.length > 0 ? optionalTools : undefined,
+    tools: [...memoryTools, ...workflowTools, ...saveMemoryTools, ...notificationTools],
   };
 }
 
 /**
- * Whether the plan includes at least one workflow or notification tool, or an optional tool that
- * can take real action if the model chooses to use it — not just forced memory reads.
- * recall_memory being the only *forced* tool means the run would read Memory and, unless
- * optionalTools offers something with real side effects, take no other action; callers use this
+ * Whether the plan includes at least one tool beyond a read-only memory recall — callers use this
  * instead of a raw plan.tools.length check to decide whether a run is meaningful enough to
- * dispatch, not just whether *any* tool at all is planned.
+ * dispatch. recall_memory being the only planned tool means the run would read Memory and take no
+ * other action; save_memory, workflow, and notification tools all count since each can produce a
+ * real effect.
  */
 export function planHasActionableTool(plan: WorkspaceOrchestratorPlan): boolean {
-  return (
-    plan.tools.some((tool) => !MEMORY_TOOLS.includes(tool)) || (plan.optionalTools?.length ?? 0) > 0
-  );
-}
-
-/**
- * How many entries at the start of plan.tools come before the notification suffix. Notification
- * tools are always appended last by buildWorkspaceOrchestratorPlan, so this is the step index
- * agent.ts should insert optionalTools at: after recall/workflow tools but before Slack/email,
- * so an optional save_memory call can still land before the run's outcome is announced.
- */
-export function planNonNotificationToolCount(plan: WorkspaceOrchestratorPlan): number {
-  const notificationCount = plan.tools.filter((tool) => NOTIFICATION_TOOLS.includes(tool)).length;
-  return plan.tools.length - notificationCount;
+  return plan.tools.some((tool) => !MEMORY_TOOLS.includes(tool));
 }

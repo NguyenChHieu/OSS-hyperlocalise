@@ -21,65 +21,41 @@ import { hyperlocaliseAgentMaxOutputTokens } from "@/lib/agent-runtime/loops/hyp
 
 import { buildWorkspaceOrchestratorTools } from "./build-workspace-orchestrator-tools";
 import type { WorkspaceOrchestratorSession } from "./context";
-import { planNonNotificationToolCount } from "./plan";
 
 export function createWorkspaceOrchestratorAgent(session: WorkspaceOrchestratorSession) {
   const tools = buildWorkspaceOrchestratorTools(session);
   const plannedToolCount = session.plan.tools.length;
-  const optionalTools = session.plan.optionalTools ?? [];
-  // Optional tools (save_memory) are inserted before the notification suffix, not after every
-  // forced tool: notify_slack/notify_email must stay the run's final side effects, so a run
-  // summary can reflect whether the optional save actually happened instead of being sent first.
-  const preNotificationCount = planNonNotificationToolCount(session.plan);
   // WORKSPACE_ORCHESTRATOR_STEP_LIMIT is a floor, not a ceiling: prepareStep below forces the
-  // exact next planned tool at each step, then offers each optional tool its own step (or
-  // toolChoice: "none" past both lists), so there's no way for the loop to run past
-  // plannedToolCount + optionalTools.length + 1 steps regardless of how high this is set. Capping
-  // it with Math.min instead used to silently drop any planned tool beyond the limit — e.g. Memory
-  // enabled on an automation already planning 6 tools pushed the 7th (often the Slack/email
-  // notification) past the cap, so it never ran even though the automation reported success.
-  const stepLimit = Math.max(
-    WORKSPACE_ORCHESTRATOR_STEP_LIMIT,
-    plannedToolCount + optionalTools.length + 1,
-  );
+  // exact next planned tool at each step (or toolChoice: "none" past the end of the plan), so
+  // there's no way for the loop to run past plannedToolCount + 1 steps regardless of how high this
+  // is set. Capping it with Math.min instead used to silently drop any planned tool beyond the
+  // limit — e.g. Memory enabled on an automation already planning 6 tools pushed the 7th (often
+  // the Slack/email notification) past the cap, so it never ran even though the automation
+  // reported success.
+  //
+  // Every planned tool is forced via toolChoice: { type: "tool", toolName }, never "auto": the
+  // underlying ToolLoopAgent's step loop only continues past a step that produced at least one
+  // tool call, so an "auto" step the model could legitimately skip (e.g. a genuinely optional
+  // save_memory call) risked ending the run before any tool planned after it — like a Slack/email
+  // notification — ever ran. save_memory being forced doesn't mean it fabricates content: its own
+  // input schema accepts an explicit "nothing to remember" decision instead.
+  const stepLimit = Math.max(WORKSPACE_ORCHESTRATOR_STEP_LIMIT, plannedToolCount + 1);
 
   return new ToolLoopAgent({
     model: getHyperlocaliseAgentModel(),
     instructions: session.composedInstructions,
     tools,
-    activeTools: [...session.plan.tools, ...optionalTools],
+    activeTools: session.plan.tools,
     runtimeContext: session,
     maxOutputTokens: hyperlocaliseAgentMaxOutputTokens,
     timeout: WORKSPACE_ORCHESTRATOR_TIMEOUT,
     stopWhen: isStepCount(stepLimit),
     prepareStep: ({ stepNumber }) => {
-      if (stepNumber < preNotificationCount) {
-        const toolName = session.plan.tools[stepNumber]!;
+      const toolName = session.plan.tools[stepNumber];
+      if (toolName) {
         return {
           activeTools: [toolName],
           toolChoice: { type: "tool", toolName },
-        };
-      }
-
-      // One step per optional tool, after every non-notification forced tool has run but before
-      // the notification suffix: offered but never forced — toolChoice: "auto" lets the model
-      // decide whether to call it based on the automation's own instructions, instead of being
-      // required to call it every run.
-      const optionalToolName = optionalTools[stepNumber - preNotificationCount];
-      if (optionalToolName) {
-        return {
-          activeTools: [optionalToolName],
-          toolChoice: "auto",
-        };
-      }
-
-      // stepNumber has already passed preNotificationCount forced tools and optionalTools.length
-      // optional-tool steps, so what's left maps onto the notification suffix at the same offset.
-      const notificationToolName = session.plan.tools[stepNumber - optionalTools.length];
-      if (notificationToolName) {
-        return {
-          activeTools: [notificationToolName],
-          toolChoice: { type: "tool", toolName: notificationToolName },
         };
       }
 

@@ -54,17 +54,31 @@ export function buildSaveMemorySummary(automationName: string, runId: string): s
  * is meaningless without the first, enforced by hasWorkspaceAutomationKnowledgeUpdatesAllowed.
  * This goes through the same commit path (and the same optimistic concurrency) as a human editing
  * Memory.md by hand, so every append is a normal, restorable revision.
+ *
+ * Planned as a forced tool (agent.ts's prepareStep always sets toolChoice to this exact tool when
+ * it's this step's turn), not an optional one: the underlying ToolLoopAgent's step loop only
+ * continues past a step that produced at least one tool call, so a "the model may skip this" step
+ * risked ending the run before a later forced tool — e.g. a Slack/email notification — ever ran.
+ * Being forced doesn't mean it fabricates content on every run, though: `entry` accepts `null` as
+ * an explicit "the automation's instructions didn't ask me to remember anything this run" answer,
+ * which short-circuits before touching the database.
  */
 export function createSaveMemoryTool(session: WorkspaceOrchestratorSession) {
   return defineAgentTool({
     description:
-      "Append a new entry to the organization's shared Memory.md. Append-only: this cannot edit, replace, or delete existing content. Use only when the automation's own instructions say to remember something.",
+      "Decide whether to append a new entry to the organization's shared Memory.md, then call this exactly once. Pass entry: null if the automation's own instructions don't call for remembering anything this run — never invent something to remember just to have a value. Append-only: this cannot edit, replace, or delete existing content.",
     inputSchema: z.object({
-      entry: z.string().trim().min(1),
+      entry: z.string().trim().min(1).nullable(),
     }),
     execute: async ({ entry }) => {
       if (!hasWorkspaceAutomationKnowledgeUpdatesAllowed(session.automation.toolConfig)) {
         throw new Error("memory_updates_not_allowed");
+      }
+
+      if (entry === null) {
+        const payload = { appended: false as const };
+        session.stepResults.save_memory = payload;
+        return payload;
       }
 
       const current = await getKnowledgeMemoryForOrganization(session.organizationId);
@@ -86,13 +100,18 @@ export function createSaveMemoryTool(session: WorkspaceOrchestratorSession) {
       });
 
       if (isErr(result)) {
-        throw new Error("memory_stale_revision");
+        // A recorded outcome, not a thrown error: two automations appending concurrently is an
+        // expected race, not a bug, and the run's notification step (forced right after this one)
+        // should be able to say the memory update was skipped instead of getting no signal at all.
+        const payload = { appended: false as const, reason: "stale_revision" as const };
+        session.stepResults.save_memory = payload;
+        return payload;
       }
 
       // Never persist the appended text itself into stepResults/output_summary — matches the
       // repo's no-content-in-logs rule (AGENTS.md) and the handoff's explicit ask.
       const payload = {
-        appended: true,
+        appended: true as const,
         revisionId: result.value.knowledgeMemory.revisionId,
       };
       session.stepResults.save_memory = payload;

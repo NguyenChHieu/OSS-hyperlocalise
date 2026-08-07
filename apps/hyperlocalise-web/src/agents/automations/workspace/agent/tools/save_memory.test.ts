@@ -224,7 +224,12 @@ describe("createSaveMemoryTool", () => {
     expect(commitKnowledgeMemoryForOrganizationMock).not.toHaveBeenCalled();
   });
 
-  it("surfaces a clear error on a stale revision instead of silently overwriting", async () => {
+  it("records a stale revision as a skipped outcome instead of throwing", async () => {
+    // Regression for a Codex finding: save_memory is a forced tool now (see createSaveMemoryTool's
+    // docstring), so its next step (often a notification) is forced regardless of what happens
+    // here — but the model can only tell the run's outcome apart from a plain crash if this
+    // returns a result the model can see, instead of throwing and leaving the notification step
+    // with no signal that the update was skipped.
     getKnowledgeMemoryForOrganizationMock.mockResolvedValue({
       revisionId: "rev-1",
       version: 1,
@@ -238,15 +243,35 @@ describe("createSaveMemoryTool", () => {
       error: { code: "precondition_failed", current: { revisionId: "rev-2" } },
     });
 
-    const tool = createSaveMemoryTool(
-      session({ knowledge: { enabled: true, allowUpdates: true } }),
+    const testSession = session({ knowledge: { enabled: true, allowUpdates: true } });
+    const tool = createSaveMemoryTool(testSession);
+    const result = await tool.execute!(
+      { entry: "Another fact." },
+      { toolCallId: "call-1", messages: [], context: {} },
     );
-    await expect(
-      tool.execute!(
-        { entry: "Another fact." },
-        { toolCallId: "call-1", messages: [], context: {} },
-      ),
-    ).rejects.toThrow("memory_stale_revision");
+
+    expect(result).toEqual({ appended: false, reason: "stale_revision" });
+    expect(testSession.stepResults.save_memory).toEqual({
+      appended: false,
+      reason: "stale_revision",
+    });
+  });
+
+  it("treats a null entry as an explicit decision not to remember anything", async () => {
+    // save_memory is forced every run (see createSaveMemoryTool's docstring), so the model needs
+    // a way to comply without inventing content: entry: null short-circuits before touching
+    // Memory.md at all.
+    const testSession = session({ knowledge: { enabled: true, allowUpdates: true } });
+    const tool = createSaveMemoryTool(testSession);
+    const result = await tool.execute!(
+      { entry: null },
+      { toolCallId: "call-1", messages: [], context: {} },
+    );
+
+    expect(result).toEqual({ appended: false });
+    expect(testSession.stepResults.save_memory).toEqual({ appended: false });
+    expect(getKnowledgeMemoryForOrganizationMock).not.toHaveBeenCalled();
+    expect(commitKnowledgeMemoryForOrganizationMock).not.toHaveBeenCalled();
   });
 
   it("truncates a long automation name so the commit summary never exceeds the DB limit", async () => {

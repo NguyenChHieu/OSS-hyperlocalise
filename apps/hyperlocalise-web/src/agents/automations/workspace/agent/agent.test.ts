@@ -173,60 +173,20 @@ describe("workspace orchestrator agent", () => {
     });
   });
 
-  it("offers an optional tool with toolChoice auto after every forced tool has run", () => {
-    // save_memory (and any future optionalTools entry) is never forced: it gets its own step with
-    // toolChoice: "auto" once every forced tool in plan.tools has had its turn, so the model
-    // decides whether to call it instead of being required to on every run.
+  it("forces save_memory like any other planned tool, positioned before notifications", () => {
+    // Regression for a Codex finding: an earlier version of this file gave save_memory its own
+    // step with toolChoice: "auto" so the model could skip it. But the underlying ToolLoopAgent's
+    // step loop only continues past a step that produced at least one tool call, so if the model
+    // legitimately chose not to call it, the run ended right there — the forced notify_slack step
+    // planned after it never ran, even though it was supposed to be unconditional. save_memory is
+    // forced like every other planned tool now; it stays reachable-but-not-fabricating via its own
+    // input schema (entry: null), not via an "auto" loop step.
     const session = createWorkspaceOrchestratorSession({
       organizationId: "org-1",
       automation: automation(),
       run: run(),
       plan: {
-        tools: ["recall_memory"],
-        optionalTools: ["save_memory"],
-      },
-      repository: null,
-      composedInstructions: "Run the automation.",
-    });
-
-    createWorkspaceOrchestratorAgent(session);
-
-    expect(isStepCountMock).toHaveBeenCalledWith(WORKSPACE_ORCHESTRATOR_STEP_LIMIT);
-    expect(toolLoopAgentMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        activeTools: ["recall_memory", "save_memory"],
-      }),
-    );
-
-    const settings = toolLoopAgentMock.mock.calls.at(-1)?.[0] as {
-      prepareStep: (input: { stepNumber: number }) => unknown;
-    };
-
-    expect(settings.prepareStep({ stepNumber: 0 })).toEqual({
-      activeTools: ["recall_memory"],
-      toolChoice: { type: "tool", toolName: "recall_memory" },
-    });
-    expect(settings.prepareStep({ stepNumber: 1 })).toEqual({
-      activeTools: ["save_memory"],
-      toolChoice: "auto",
-    });
-    expect(settings.prepareStep({ stepNumber: 2 })).toEqual({
-      toolChoice: "none",
-    });
-  });
-
-  it("runs an optional tool before the notification suffix, not after it", () => {
-    // Regression for a Codex finding: optional tools used to be scheduled after every forced tool
-    // including notify_slack/notify_email, so recipients were notified before save_memory ran and
-    // the notification could never reflect whether the append actually succeeded. Optional tools
-    // must land after workflow tools but before the notification suffix instead.
-    const session = createWorkspaceOrchestratorSession({
-      organizationId: "org-1",
-      automation: automation(),
-      run: run(),
-      plan: {
-        tools: ["recall_memory", "run_github_workflows", "notify_slack"],
-        optionalTools: ["save_memory"],
+        tools: ["recall_memory", "run_github_workflows", "save_memory", "notify_slack"],
       },
       repository: null,
       composedInstructions: "Run the automation.",
@@ -248,7 +208,7 @@ describe("workspace orchestrator agent", () => {
     });
     expect(settings.prepareStep({ stepNumber: 2 })).toEqual({
       activeTools: ["save_memory"],
-      toolChoice: "auto",
+      toolChoice: { type: "tool", toolName: "save_memory" },
     });
     expect(settings.prepareStep({ stepNumber: 3 })).toEqual({
       activeTools: ["notify_slack"],
@@ -257,29 +217,5 @@ describe("workspace orchestrator agent", () => {
     expect(settings.prepareStep({ stepNumber: 4 })).toEqual({
       toolChoice: "none",
     });
-  });
-
-  it("never caps the step count below what forced plus optional tools need", () => {
-    const sixTools = [
-      "recall_memory",
-      "use_github_repository",
-      "run_github_workflows",
-      "create_native_tms_job",
-      "assign_translate_with_agent",
-      "use_semrush",
-    ] as const;
-
-    const session = createWorkspaceOrchestratorSession({
-      organizationId: "org-1",
-      automation: automation(),
-      run: run(),
-      plan: { tools: [...sixTools], optionalTools: ["save_memory"] },
-      repository: null,
-      composedInstructions: "Run the automation.",
-    });
-
-    createWorkspaceOrchestratorAgent(session);
-
-    expect(isStepCountMock).toHaveBeenCalledWith(sixTools.length + 1 + 1);
   });
 });

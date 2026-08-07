@@ -187,24 +187,37 @@ describe("buildWorkspaceOrchestratorPlan", () => {
     expect(plan.tools).toEqual(["recall_memory", "run_github_workflows", "notify_slack"]);
   });
 
-  it("offers save_memory as optional, never forced, when allowUpdates is on", () => {
-    // agent.ts forces every tool in plan.tools with no "model may skip this" step type, so
-    // save_memory never goes there — it's offered via optionalTools instead, where agent.ts gives
-    // it its own step with toolChoice: "auto" so the model decides whether to call it.
+  it("includes save_memory, forced, positioned after workflow tools and before notifications, when allowUpdates is on", () => {
+    // save_memory is a forced tool like every other planned tool (see plan.ts's MEMORY_TOOLS
+    // comment for why): agent.ts's ToolLoopAgent only continues past a step that produced a tool
+    // call, so an "optional, model may skip" step positioned before other forced tools risked the
+    // run ending before those later tools — e.g. a Slack/email notification — ever ran.
     const plan = buildWorkspaceOrchestratorPlan(
       automation({
+        projectId: "project-1",
         toolConfig: {
+          github: {
+            enabled: true,
+            mode: "sync",
+            pushSource: true,
+            pullTranslations: false,
+            validation: false,
+          },
+          slack: { enabled: true, channelId: "C123" },
           knowledge: { enabled: true, allowUpdates: true },
         },
       }),
     );
 
-    expect(plan.tools).toEqual(["recall_memory"]);
-    expect(plan.tools).not.toContain("save_memory");
-    expect(plan.optionalTools).toEqual(["save_memory"]);
+    expect(plan.tools).toEqual([
+      "recall_memory",
+      "run_github_workflows",
+      "save_memory",
+      "notify_slack",
+    ]);
   });
 
-  it("doesn't offer save_memory when allowUpdates is off", () => {
+  it("doesn't plan save_memory when allowUpdates is off", () => {
     const plan = buildWorkspaceOrchestratorPlan(
       automation({
         toolConfig: {
@@ -213,7 +226,7 @@ describe("buildWorkspaceOrchestratorPlan", () => {
       }),
     );
 
-    expect(plan.optionalTools).toBeUndefined();
+    expect(plan.tools).not.toContain("save_memory");
   });
 });
 
@@ -251,16 +264,14 @@ describe("planHasActionableTool", () => {
     expect(planHasActionableTool(buildWorkspaceOrchestratorPlan(automation()))).toBe(false);
   });
 
-  it("is true when save_memory is offered as optional, even with no other forced tool", () => {
-    // save_memory can take real action (writing to Memory.md) if the model chooses to call it,
-    // unlike a pure recall_memory-only plan — so a plan offering it isn't a guaranteed no-op the
-    // way an all-memory-tools-forced plan is.
+  it("is true when save_memory is the only planned tool beyond recall_memory", () => {
+    // save_memory can take real action (writing to Memory.md), unlike a pure recall_memory-only
+    // plan, so a plan with just these two tools isn't a guaranteed no-op.
     const plan = buildWorkspaceOrchestratorPlan(
       automation({ toolConfig: { knowledge: { enabled: true, allowUpdates: true } } }),
     );
 
-    expect(plan.tools).toEqual(["recall_memory"]);
-    expect(plan.optionalTools).toEqual(["save_memory"]);
+    expect(plan.tools).toEqual(["recall_memory", "save_memory"]);
     expect(planHasActionableTool(plan)).toBe(true);
   });
 });

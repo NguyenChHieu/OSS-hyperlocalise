@@ -285,6 +285,33 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("tailmarker");
   });
 
+  it("does not double-count spelling variants when ranking tight excerpts", () => {
+    // Regression for a Codex finding: expandKnowledgeMemoryTokens adds spelling variants, so a
+    // single "color" occurrence also yielded "colour" and scored as two independent matches.
+    // Under a tight budget, that generic variant-expanded unit could crowd out a later protected
+    // identifier rule even though the query contained the identifier explicitly.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      headingPath: [
+        "Memory.md",
+        "A long locale policy heading that leaves a small body budget",
+        "en-AU",
+      ],
+      segmentText: [
+        "- Use color consistently across checkout screens with extra padding words here today.",
+        "- Never translate protectedtoken under any circumstances.",
+      ].join("\n"),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("color", "protectedtoken"),
+      maxChars: 112,
+    });
+
+    expect(excerpt).toContain("protectedtoken");
+  });
+
   it("scores many units against many query tokens without quadratic blowup", () => {
     // Regression for a Codex finding: unit text used to be re-tokenized once per query token
     // (inside computeTokenWeights) and again per unit (inside scoreUnit), making this

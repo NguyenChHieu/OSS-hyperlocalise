@@ -81,6 +81,15 @@ for (const [token, variants] of Object.entries(tokenVariantMap)) {
   }
 }
 
+const canonicalTokenMap = new Map<string, string>();
+
+for (const [token, variants] of Object.entries(tokenVariantMap)) {
+  const canonical = [token, ...variants].sort()[0]!;
+  for (const variant of [token, ...variants]) {
+    canonicalTokenMap.set(variant, canonical);
+  }
+}
+
 function tokenize(value: string): string[] {
   return value
     .toLowerCase()
@@ -113,6 +122,10 @@ function uniqueValues(values: Array<string | null | undefined>) {
  */
 export function expandKnowledgeMemoryTokens(value: string): Set<string> {
   return expandTokens(tokenize(value));
+}
+
+export function canonicalizeKnowledgeMemoryToken(token: string): string {
+  return canonicalTokenMap.get(token) ?? token;
 }
 
 function buildQueryParts(input: SelectKnowledgeMemoryContextInput) {

@@ -10,7 +10,10 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { expandKnowledgeMemoryTokens } from "./knowledge-memory-lexical-retriever";
+import {
+  canonicalizeKnowledgeMemoryToken,
+  expandKnowledgeMemoryTokens,
+} from "./knowledge-memory-lexical-retriever";
 import type { KnowledgeMemorySegment } from "./knowledge-memory-selection.types";
 
 type ExcerptUnit = {
@@ -243,12 +246,18 @@ function rankMatchingUnits(
     return { ranked: [], tokenWeights: new Map() };
   }
 
+  const queryTokenFamilies = new Set(
+    [...queryTokens].map((token) => canonicalizeKnowledgeMemoryToken(token)),
+  );
   const unitTokenSets = units.map((unit) => expandKnowledgeMemoryTokens(unit.text));
+  const unitTokenFamilies = unitTokenSets.map(
+    (tokens) => new Set([...tokens].map((token) => canonicalizeKnowledgeMemoryToken(token))),
+  );
 
   const matchingUnitCounts = new Map<string, number>();
-  for (const tokens of unitTokenSets) {
+  for (const tokens of unitTokenFamilies) {
     for (const token of tokens) {
-      if (queryTokens.has(token)) {
+      if (queryTokenFamilies.has(token)) {
         matchingUnitCounts.set(token, (matchingUnitCounts.get(token) ?? 0) + 1);
       }
     }
@@ -257,23 +266,40 @@ function rankMatchingUnits(
   // Exposed alongside the ranked units so callers that later need to center a truncation window
   // within a single oversized unit's text (findBestMatchOffset) can weigh those matches the same
   // way this scoring pass already does, instead of just taking whichever occurs first.
-  const tokenWeights = new Map(
+  const canonicalTokenWeights = new Map(
     [...matchingUnitCounts.entries()].map(([token, count]) => [token, 1 / count]),
   );
+  const tokenWeights = new Map<string, number>();
+  for (const tokens of unitTokenSets) {
+    for (const token of tokens) {
+      const weight = canonicalTokenWeights.get(canonicalizeKnowledgeMemoryToken(token));
+      if (weight) {
+        tokenWeights.set(token, weight);
+      }
+    }
+  }
 
   const ranked = units
     .map((unit, index) => {
       let score = 0;
-      for (const token of unitTokenSets[index]!) {
-        const weight = tokenWeights.get(token);
+      for (const token of unitTokenFamilies[index]!) {
+        const weight = canonicalTokenWeights.get(token);
         if (weight) {
           score += weight;
         }
       }
-      return { unit, score };
+      return { unit, score, spanLength: longestMatchedSpanLength([unit], tokenWeights) };
     })
     .filter((scored) => scored.score > 0)
-    .sort((a, b) => (b.score !== a.score ? b.score - a.score : a.unit.offset - b.unit.offset))
+    .sort((a, b) => {
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      if (b.spanLength !== a.spanLength) {
+        return b.spanLength - a.spanLength;
+      }
+      return a.unit.offset - b.unit.offset;
+    })
     .map((scored) => scored.unit);
 
   return { ranked, tokenWeights };

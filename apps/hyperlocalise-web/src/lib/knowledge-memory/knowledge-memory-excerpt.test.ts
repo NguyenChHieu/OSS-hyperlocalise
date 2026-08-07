@@ -644,6 +644,35 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("protectedidentifiertoken");
   });
 
+  it("doesn't let the heading's own ellipsis marker eat into an already-tight body reserve", () => {
+    // Regression for a Codex finding: truncateToBudget always appends a full "..." (3 chars) when
+    // truncating, even for a 1-2 char budget — so when minBodyReserve's own math leaves the heading
+    // only 1 char of room (maxChars - minBodyReserve landing at exactly 1, which happens whenever
+    // the matched token needs more space than the budget can spare), truncateToBudget(heading, 1)
+    // returned "..." (3 chars) instead of 1, silently shrinking bodyBudget 2 chars below the exact
+    // minimum minBodyReserve had just computed as necessary to keep the token intact.
+    const deeplyNestedSegment = segment({
+      headingPath: [
+        "Memory.md",
+        "A very long section heading that eats most of the budget",
+        "An equally verbose subsection name",
+        "de-DE",
+      ],
+      segmentText:
+        "Never translate the protectedidentifiertoken internal marker under any circumstances.",
+    });
+
+    // 41 = minCharsToKeepSpanIntact(24) + 1, chosen so maxChars - minBodyReserve lands at exactly 1.
+    const excerpt = buildSegmentExcerpt({
+      segment: deeplyNestedSegment,
+      queryTokens: tokens("protectedidentifiertoken"),
+      maxChars: 41,
+    });
+
+    expect(excerpt.length).toBeLessThanOrEqual(41);
+    expect(excerpt).toContain("protectedidentifiertoken");
+  });
+
   it("keeps an apostrophe-containing matched token intact even when the heading eats most of the budget", () => {
     // Regression for a Codex finding: findBestMatchOffset strips internal apostrophes before
     // comparing a raw match against tokenWeights ("rock'n'roll" -> "rocknroll"), so tokenWeights'
@@ -778,6 +807,32 @@ describe("buildSegmentExcerpt", () => {
 
     expect(excerpt).toContain("alphamarker");
     expect(excerpt).toContain("betamarker");
+  });
+
+  it("gives the forced opener a real reserved share instead of zero when ranked text is long", () => {
+    // Regression for a Codex finding: the forced opener's only room came from a leftover check
+    // run after ranked packing, with no reservation of its own. When the single ranked match's
+    // own text is long enough to fill whatever budget tryAddRankedUnit hands it (truncated via
+    // truncateAroundMatch, which always uses its full cap), that leftover was zero — the opener
+    // never appeared no matter how large maxChars got, even far above what the ranked match
+    // actually needs to stay intact.
+    const routingSegment = segment({
+      headingPath: ["Memory.md", "routingtoken"],
+      segmentText: [
+        "Never translate the internal identifier under any circumstances.",
+        "This section applies broadly across checkout flows for every locale.",
+        "This section mentions routingtoken explicitly here for reference.",
+      ].join(" "),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: routingSegment,
+      queryTokens: tokens("routingtoken"),
+      maxChars: 70,
+    });
+
+    expect(excerpt).toContain("routingtoken");
+    expect(excerpt).toContain("Never tra");
   });
 
   it("centers on the highest-weighted match within an oversized unit, not the earliest one", () => {

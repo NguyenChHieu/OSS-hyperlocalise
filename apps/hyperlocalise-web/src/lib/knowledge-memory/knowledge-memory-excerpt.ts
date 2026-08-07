@@ -27,11 +27,21 @@ type ExcerptUnit = {
 const fallbackChunkWordCount = 25;
 const oversizedSentenceChars = 400;
 
-function truncateToBudget(text: string, maxChars: number) {
+// Exported for reuse: knowledge-memory-selection.ts's fallback-text truncation used to
+// reimplement this same slice+ellipsis logic independently (missing the small-budget fix below).
+export function truncateToBudget(text: string, maxChars: number) {
   if (text.length <= maxChars) {
     return text;
   }
-  return `${text.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`;
+  // A budget under 3 chars can't fit the "..." marker without exceeding maxChars itself (e.g.
+  // slice(0,0)+"..." is 3 chars, already over a maxChars of 1 or 2) — plain-slice instead of
+  // guaranteeing an over-budget ellipsis in that narrow band. Budgets this small only actually
+  // arise from a caller's own reserve math (see buildSegmentExcerpt's headingPrefix), where going
+  // even 1-2 chars over silently eats into a budget another reserve formula already sized exactly.
+  if (maxChars < 3) {
+    return text.slice(0, Math.max(0, maxChars));
+  }
+  return `${text.slice(0, maxChars - 3).trimEnd()}...`;
 }
 
 // Matches a run of letters/numbers/hyphens, optionally continuing through an internal apostrophe
@@ -198,8 +208,13 @@ function splitParagraphUnits(segmentText: string): ExcerptUnit[] {
   const units: ExcerptUnit[] = [];
   let offset = 0;
   for (const sentence of splitIntoSentences(normalized)) {
+    // Recognizes CJK terminators (。！？) as "properly terminated" too, not just ASCII .!? —
+    // sentenceBoundary above was taught to split on them, so every CJK sentence it produces ends
+    // in one of these and would otherwise always look "unterminated" here and go through
+    // chunkByWords needlessly (usually a no-op for space-sparse CJK text, but not when Latin
+    // tokens are embedded in it).
     const needsFallbackChunking =
-      sentence.length > oversizedSentenceChars || !/[.!?]$/.test(sentence);
+      sentence.length > oversizedSentenceChars || !/[.!?。！？]$/.test(sentence);
     const pieces = needsFallbackChunking
       ? chunkByWords(sentence, fallbackChunkWordCount)
       : [sentence];
@@ -375,8 +390,27 @@ function packUnitsWithinBudget(
     suffixNeedSum[index] = suffixNeedSum[index + 1]! + unitNeeds[index]!;
   }
 
+  // forcedFirstUnit is placed after every ranked match (see the comment below on why), but that
+  // used to mean it competed for whatever was left with no reservation of its own — unlike every
+  // ranked unit, which always gets at least its own need. Reserving a small minTruncatedChars-sized
+  // floor for it here, folded into ranked units' own reservation math the same way a trailing
+  // ranked unit's need would be, guarantees it a real (if modest) shot instead of an all-or-nothing
+  // leftover check once ranked packing has already spent everything.
+  //
+  // Capped at the surplus left over once every ranked unit's own need is covered (never more than
+  // the flat floor above that surplus). A ranked match is still the reason the segment was
+  // selected and must never lose its own guaranteed share to make room for this reservation — capping
+  // here, rather than reserving the flat floor unconditionally, keeps tryAddRankedUnit's `remaining`
+  // from dropping a ranked unit's cap below minTruncatedChars purely because of this reservation when
+  // the budget was already too tight to fit both.
+  const totalRankedNeed = suffixNeedSum[0]! + separator.length * Math.max(0, rankedUnits.length - 1);
+  const forcedFirstReserve = forcedFirstUnit
+    ? Math.min(minTruncatedChars + separator.length, Math.max(0, budget - totalRankedNeed))
+    : 0;
+
   const tryAddRankedUnit = (unit: ExcerptUnit, index: number) => {
-    const remaining = budget - used - (chosen.size > 0 ? separator.length : 0);
+    const remaining =
+      budget - used - forcedFirstReserve - (chosen.size > 0 ? separator.length : 0);
     const restCount = rankedUnits.length - 1 - index;
     const reserveForRest = suffixNeedSum[index + 1]! + separator.length * restCount;
     // Never let the current unit's share collapse below its own real need just because the units
@@ -410,7 +444,21 @@ function packUnitsWithinBudget(
   const placed = rankedUnits.filter((unit, index) => tryAddRankedUnit(unit, index));
 
   if (forcedFirstUnit) {
-    tryAdd(forcedFirstUnit);
+    // Uses whatever's actually left, not just the forcedFirstReserve floor — that floor only
+    // exists to stop ranked-unit packing above from spending it away, not to cap what this unit
+    // gets once its turn comes; ranked units may well have left more than the floor unused, and
+    // this should use all of it. Falls back to a plain-prefix truncation (not centered, since this
+    // unit was never chosen for a query match to center on) instead of all-or-nothing, same as
+    // every ranked unit gets.
+    const remaining = budget - used - (chosen.size > 0 ? separator.length : 0);
+    if (forcedFirstUnit.text.length <= remaining) {
+      tryAdd(forcedFirstUnit);
+    } else if (remaining >= minTruncatedChars) {
+      tryAdd({
+        text: truncateToBudget(forcedFirstUnit.text, remaining),
+        offset: forcedFirstUnit.offset,
+      });
+    }
   }
 
   for (const unit of placed) {

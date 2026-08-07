@@ -413,6 +413,35 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt.length).toBeGreaterThan("Memory.md > Section -> ".length);
   });
 
+  it("keeps a second discriminative match even when a long shared-token tail follows it", () => {
+    // Regression for a Codex finding: reserving every remaining ranked unit's own need in full —
+    // regardless of whether the budget could ever satisfy all of them — could zero out a
+    // legitimately-ranked match's share whenever many low-value common-token units happened to
+    // follow it, even though its own need was tiny and easily affordable by itself. Querying for
+    // two discriminative markers plus a common word many filler bullets share used to keep the
+    // first marker and several late fillers while dropping the second marker entirely.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: [
+        "- alphamarker rule one.",
+        "- betamarker rule two.",
+        ...Array.from(
+          { length: 20 },
+          (_, index) => `- Filler bullet ${index} about generic checkout wording here today.`,
+        ),
+      ].join("\n"),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("alphamarker", "betamarker", "checkout"),
+      maxChars: 150,
+    });
+
+    expect(excerpt).toContain("alphamarker");
+    expect(excerpt).toContain("betamarker");
+  });
+
   it("redistributes a short unit's unused share to a later unit that needs more room", () => {
     // Regression for a Codex finding: the fair share was computed once up front and never
     // reclaimed by later units when an earlier one used less than its share. A tiny first rule

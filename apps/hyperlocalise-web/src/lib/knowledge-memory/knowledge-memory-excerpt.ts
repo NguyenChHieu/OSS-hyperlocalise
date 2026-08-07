@@ -353,17 +353,19 @@ function packUnitsWithinBudget(
   }
 
   const tryAddRankedUnit = (unit: ExcerptUnit, index: number) => {
-    const isFirst = index === 0;
     const remaining = budget - used - (chosen.size > 0 ? separator.length : 0);
     const restCount = rankedUnits.length - 1 - index;
     const reserveForRest = suffixNeedSum[index + 1]! + separator.length * restCount;
-    const share = Math.max(0, remaining - reserveForRest);
-    // Guarantee the top-ranked match a real shot at the full remaining budget when its share has
-    // collapsed below usefulness: enough ranked units matching the same common token under a tight
-    // budget (e.g. six "checkout" bullets in 80 characters) can make every unit's share land under
-    // minTruncatedChars, rejecting them all and returning nothing but the heading — even though a
-    // truncated top match alone would easily have fit.
-    const cap = isFirst && share < minTruncatedChars ? remaining : Math.min(share, remaining);
+    // Never let the current unit's share collapse below its own real need just because the units
+    // still to come would, combined, claim more than the budget can actually hold — with two
+    // discriminative matches followed by many low-value units sharing a common token, reserving
+    // every one of that tail's needs in full could zero out the second discriminative match's
+    // share even though its own need is small and easily affordable; those tail units simply won't
+    // all fit regardless; guaranteeing every ranked unit a shot at its own need, not just the
+    // first, is what actually keeps a real shot available (a fixed one-time exception for index 0
+    // isn't enough — the same starvation can land on any unit before a long shared-token tail).
+    const share = Math.max(unitNeeds[index]!, remaining - reserveForRest);
+    const cap = Math.min(share, remaining);
     if (unit.text.length <= cap) {
       return tryAdd(unit);
     }

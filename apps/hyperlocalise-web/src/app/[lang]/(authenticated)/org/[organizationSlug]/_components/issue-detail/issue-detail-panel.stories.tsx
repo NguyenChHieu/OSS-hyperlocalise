@@ -11,9 +11,10 @@
  * Version 2.0 or later.
  */
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
-import { expect } from "storybook/test";
+import { expect, userEvent } from "storybook/test";
 
 import {
+  issueDetailColumnsErrorMswHandlers,
   issueDetailLoadingMswHandlers,
   issueDetailNotSubscribedMswHandlers,
   issueDetailUnavailableMswHandlers,
@@ -28,8 +29,12 @@ import { IssueDetailPanel } from "./issue-detail-panel";
 
 const issue = issueSheetIssuesFixture[0];
 
+const desktopViewport = {
+  defaultViewport: "desktop",
+} as const;
+
 const meta = {
-  title: "App/Issues/Detail",
+  title: "App/Issues/Detail Panel",
   component: IssueDetailPanel,
   decorators: [
     (Story) => (
@@ -40,6 +45,12 @@ const meta = {
   ],
   parameters: {
     layout: "fullscreen",
+    nextjs: {
+      appDirectory: true,
+      navigation: {
+        pathname: `/org/${issueSheetOrganizationSlug}/projects/${issueSheetProjectId}/issue-sheet/${issue.id}`,
+      },
+    },
   },
   args: {
     organizationSlug: issueSheetOrganizationSlug,
@@ -56,6 +67,7 @@ export const Default: Story = {
     msw: {
       handlers: issueSheetMswHandlers,
     },
+    viewport: desktopViewport,
   },
   play: async ({ canvas }) => {
     await expect(
@@ -74,6 +86,39 @@ export const Default: Story = {
     await expect(
       unsubscribe.compareDocumentPosition(commentsEmptyState) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
+    await expect(
+      await canvas.findByRole("button", { name: "Collapse properties" }),
+    ).toBeInTheDocument();
+  },
+};
+
+export const MinimizedSidebar: Story = {
+  args: {
+    defaultSidebarOpen: false,
+  },
+  parameters: {
+    msw: {
+      handlers: issueSheetMswHandlers,
+    },
+    viewport: desktopViewport,
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByDisplayValue("Source string needs context"),
+    ).toBeInTheDocument();
+    await expect(
+      await canvas.findByRole("button", { name: "Expand properties" }),
+    ).toBeInTheDocument();
+    await expect(canvas.getByRole("combobox", { name: "Status" })).toBeInTheDocument();
+    await expect(canvas.getByRole("combobox", { name: "Type" })).toBeInTheDocument();
+    await expect(canvas.getByRole("combobox", { name: "Priority" })).toBeInTheDocument();
+    await expect(canvas.queryByText("Reporter")).not.toBeInTheDocument();
+
+    await userEvent.click(canvas.getByRole("button", { name: "Expand properties" }));
+    await expect(
+      await canvas.findByRole("button", { name: "Collapse properties" }),
+    ).toBeInTheDocument();
+    await expect(await canvas.findByText("Reporter")).toBeInTheDocument();
   },
 };
 
@@ -82,6 +127,7 @@ export const NotSubscribed: Story = {
     msw: {
       handlers: issueDetailNotSubscribedMswHandlers,
     },
+    viewport: desktopViewport,
   },
   play: async ({ canvas }) => {
     await expect(
@@ -91,6 +137,83 @@ export const NotSubscribed: Story = {
     await expect(canvas.getByTitle("Mina Chen")).toBeInTheDocument();
     await expect(canvas.getByTitle("Otto Klein")).toBeInTheDocument();
     await expect(canvas.queryByRole("button", { name: "Notifications" })).not.toBeInTheDocument();
+  },
+};
+
+export const WithCustomFields: Story = {
+  parameters: {
+    msw: {
+      handlers: issueSheetMswHandlers,
+    },
+    viewport: desktopViewport,
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByDisplayValue("Source string needs context"),
+    ).toBeInTheDocument();
+
+    await expect(await canvas.findByText("Context")).toBeInTheDocument();
+    await expect(canvas.getByText("Acceptance criteria")).toBeInTheDocument();
+    await expect(
+      canvas.getByText("Confirm CTA meaning with product before translation."),
+    ).toBeInTheDocument();
+
+    await expect(await canvas.findByText("Sprint")).toBeInTheDocument();
+    await expect(canvas.getByText("Sprint 24")).toBeInTheDocument();
+    await expect(canvas.getByText("Component")).toBeInTheDocument();
+    await expect(canvas.getByDisplayValue("Checkout")).toBeInTheDocument();
+    await expect(canvas.getByText("Reviewer")).toBeInTheDocument();
+    await expect(canvas.getByText("Mina Chen")).toBeInTheDocument();
+  },
+};
+
+export const WithFilledEnrichment: Story = {
+  args: {
+    issueId: issueSheetIssuesFixture[2].id,
+  },
+  parameters: {
+    msw: {
+      handlers: issueSheetMswHandlers,
+    },
+    nextjs: {
+      appDirectory: true,
+      navigation: {
+        pathname: `/org/${issueSheetOrganizationSlug}/projects/${issueSheetProjectId}/issue-sheet/${issueSheetIssuesFixture[2].id}`,
+      },
+    },
+    viewport: desktopViewport,
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByDisplayValue("QA failure on hero headline"),
+    ).toBeInTheDocument();
+    await expect(
+      await canvas.findByText("Suggested shorter headline: Willkommen zurück"),
+    ).toBeInTheDocument();
+    await expect(
+      canvas.getByText("German headline fits the hero without wrapping on mobile."),
+    ).toBeInTheDocument();
+    await expect(canvas.getByDisplayValue("Marketing")).toBeInTheDocument();
+    await expect(canvas.getByText("Sprint 24")).toBeInTheDocument();
+  },
+};
+
+export const ColumnsLoadError: Story = {
+  parameters: {
+    msw: {
+      handlers: issueDetailColumnsErrorMswHandlers,
+    },
+    viewport: desktopViewport,
+  },
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByDisplayValue("Source string needs context"),
+    ).toBeInTheDocument();
+    await expect(await canvas.findByText("Custom fields could not be loaded.")).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+    await expect(canvas.queryByText("Sprint")).not.toBeInTheDocument();
+    await expect(canvas.queryByText("Context")).not.toBeInTheDocument();
+    await expect(canvas.queryByText("Acceptance criteria")).not.toBeInTheDocument();
   },
 };
 

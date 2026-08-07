@@ -12,7 +12,7 @@
  */
 import "dotenv/config";
 
-import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { createAuthTestFixture } from "@/api/test-auth.fixture";
 import type {
@@ -27,6 +27,16 @@ import type { WorkspaceOrchestratorSession } from "../context";
 import { createRecallMemoryTool } from "./recall_memory";
 import { createSaveMemoryTool } from "./save_memory";
 
+const resolveWorkspaceKnowledgeFlagMock = vi.hoisted(() => vi.fn(async () => true));
+
+vi.mock("@/lib/flags/workspace-flags", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/flags/workspace-flags")>();
+  return {
+    ...actual,
+    resolveWorkspaceKnowledgeFlag: resolveWorkspaceKnowledgeFlagMock,
+  };
+});
+
 // Deliberately does NOT mock @/lib/knowledge-memory/knowledge-memory: this is the one test in the
 // suite that proves save_memory and recall_memory actually read and write real Postgres rows,
 // not just that they call the right functions with the right arguments (see save_memory.test.ts /
@@ -37,6 +47,10 @@ const fixture = createAuthTestFixture();
 
 beforeAll(async () => {
   await db.$client.query("select 1");
+});
+
+beforeEach(() => {
+  resolveWorkspaceKnowledgeFlagMock.mockResolvedValue(true);
 });
 
 afterEach(async () => {

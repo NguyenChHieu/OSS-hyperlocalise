@@ -449,7 +449,6 @@ export function selectKnowledgeMemoryContext(
     : retrieveKnowledgeMemorySegmentsLexicallyWithTokens(segments, input, defaultQueryTokens!);
 
   if (rankedSegments.length > 0) {
-    const requestedLocaleCount = requestedTargetLocaleCount(input);
     const selectedSegments = selectRankedSegmentsForTargets(rankedSegments, input);
 
     return buildSelectedContext({
@@ -464,10 +463,18 @@ export function selectKnowledgeMemoryContext(
       // that happens to appear later in that segment, dropping the guidance the retriever actually
       // selected. Omitting queryTokens here falls back to the segment's own compactPromptText.
       queryTokens: defaultQueryTokens,
+      // shouldBalance: true unconditionally, not just for multi-locale requests — this call site
+      // can select multiple independently-matched segments under a single target locale too (a
+      // single query matching more than one Memory.md section). maxCharsPerSelectedSegment already
+      // returns undefined for a single selected segment on its own, so this only starts dividing
+      // the budget once there's actually more than one preview competing for it. Without this, an
+      // early segment with many matched units could fill the entire outer maxChars on its own,
+      // and appendWithinBudget's sequential loop would then reject every segment selected after it
+      // instead of each one getting a bounded share.
       maxSegmentChars: maxCharsPerSelectedSegment({
         maxChars,
         selectedSegmentCount: selectedSegments.length,
-        shouldBalance: requestedLocaleCount > 1,
+        shouldBalance: true,
       }),
     });
   }

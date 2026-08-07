@@ -736,6 +736,41 @@ describe("selectKnowledgeMemoryContext", () => {
     expect(selected.compactText).toContain("Rule number 19");
   });
 
+  it("balances excerpts across multiple selected segments under a single target locale", () => {
+    // Regression for a Codex finding against the fix above: giving a segment the caller's full
+    // maxChars when maxSegmentChars is undefined isn't safe once more than one segment is
+    // selected — maxCharsPerSelectedSegment used to only balance for multi-locale requests, so a
+    // single-locale query matching two independent sections still left the first one uncapped. Its
+    // preview then filled the entire outer budget, and appendWithinBudget's sequential loop
+    // rejected the second segment outright instead of each one getting a bounded share.
+    const manyMatchingSentences = Array.from(
+      { length: 60 },
+      (_, index) => `Rule number ${index} explains that tailmarker must never be translated here.`,
+    ).join(" ");
+    const content = [
+      "# Memory.md",
+      "",
+      "## Checkout guidance",
+      "",
+      manyMatchingSentences,
+      "",
+      "## Payment guidance",
+      "",
+      "Never translate the paymentmarker identifier for any locale.",
+    ].join("\n");
+
+    const selected = selectKnowledgeMemoryContext({
+      content,
+      targetLocale: "en-AU",
+      sourceText: "Translate the tailmarker and paymentmarker strings",
+      maxChars: KNOWLEDGE_MEMORY_SELECTED_CONTEXT_MAX_LENGTH,
+    });
+
+    expect(selected.metrics.fallbackMode).toBe("selective");
+    expect(selected.metrics.selectedMemoryCount).toBe(2);
+    expect(selected.compactText).toContain("paymentmarker");
+  });
+
   it("keeps the end of a heading-driven fallback preview in segment metadata under a tight cap", () => {
     // Regression for a Codex finding: the fix above (bound the per-segment excerpt to maxChars)
     // also capped the no-query-token-match fallback the same way. That fallback is a plain prefix

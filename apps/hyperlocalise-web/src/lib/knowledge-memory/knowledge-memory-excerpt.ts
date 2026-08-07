@@ -10,7 +10,10 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { expandKnowledgeMemoryTokens } from "./knowledge-memory-lexical-retriever";
+import {
+  canonicalizeSpellingVariant,
+  expandKnowledgeMemoryTokens,
+} from "./knowledge-memory-lexical-retriever";
 import type { KnowledgeMemorySegment } from "./knowledge-memory-selection.types";
 
 type ExcerptUnit = {
@@ -264,11 +267,25 @@ function rankMatchingUnits(
   const ranked = units
     .map((unit, index) => {
       let score = 0;
+      // A unit's expanded token set can hold both a word and its synthesized spelling variant
+      // (expandTokens adds "colour" alongside a literal "color") even though only one of them
+      // actually occurs in the text. Counting both as independent evidence inflates a unit with a
+      // single generic word above a unit with one genuinely rare token — e.g. a "color" bullet
+      // scoring 2 while a "protectedtoken" bullet scores 1 — which can rank a generic match ahead
+      // of the actual reason the query matched anything, and starve it of packing budget under a
+      // tight cap. Each variant family only ever contributes once per unit.
+      const countedFamilies = new Set<string>();
       for (const token of unitTokenSets[index]!) {
         const weight = tokenWeights.get(token);
-        if (weight) {
-          score += weight;
+        if (!weight) {
+          continue;
         }
+        const family = canonicalizeSpellingVariant(token);
+        if (countedFamilies.has(family)) {
+          continue;
+        }
+        countedFamilies.add(family);
+        score += weight;
       }
       return { unit, score };
     })

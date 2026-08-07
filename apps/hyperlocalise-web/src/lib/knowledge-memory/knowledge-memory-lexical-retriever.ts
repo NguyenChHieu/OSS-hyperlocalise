@@ -91,6 +91,21 @@ function tokenize(value: string): string[] {
     .filter((token) => token.length > 1 && !stopWords.has(token));
 }
 
+/**
+ * Stable representative for a token's spelling-variant family (e.g. color/colour both resolve to
+ * "color"), used to avoid double-counting a single literal word as independent evidence when
+ * expandTokens has added its variant to the same unit's token set alongside it. Sorting the
+ * family and taking the first entry needs no extra state and is stable regardless of which
+ * variant happens to be the literal one.
+ */
+export function canonicalizeSpellingVariant(token: string): string {
+  const family = tokenVariantMap[token];
+  if (!family || family.length === 0) {
+    return token;
+  }
+  return [token, ...family].sort()[0]!;
+}
+
 function expandTokens(tokens: string[]) {
   const expanded = new Set<string>();
   for (const token of tokens) {

@@ -285,6 +285,30 @@ describe("buildSegmentExcerpt", () => {
     expect(excerpt).toContain("tailmarker");
   });
 
+  it("doesn't let a spelling-variant pair double-count a single literal word", () => {
+    // Regression for a Codex finding: a unit's expanded token set can contain both a literal word
+    // and its synthesized spelling variant ("colour" added alongside a literal "color") even
+    // though only one of them actually occurs in the text. Summing both as independent evidence
+    // let a bullet with one generic word (scoring 2) outrank a bullet with one genuinely rare,
+    // protected identifier (scoring 1) for the same amount of real evidence — even though the
+    // protected identifier's bullet comes first in the document — dropping it under a tight budget.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: [
+        "- Never modify protectedtoken during processing under any circumstances whatsoever here today for compliance purposes across every locale and screen.",
+        "- Keep color consistent across every screen and locale for every single session recorded today.",
+      ].join("\n"),
+    });
+
+    const excerpt = buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("color", "protectedtoken"),
+      maxChars: 60,
+    });
+
+    expect(excerpt).toContain("protectedtoken");
+  });
+
   it("scores many units against many query tokens without quadratic blowup", () => {
     // Regression for a Codex finding: unit text used to be re-tokenized once per query token
     // (inside computeTokenWeights) and again per unit (inside scoreUnit), making this

@@ -12,10 +12,10 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { SlackIcon } from "@hugeicons/core-free-icons";
-import { HugeiconsIcon } from "@hugeicons/react";
+
 import { ClockIcon, MailIcon } from "lucide-react";
 import { siGithub } from "simple-icons";
+import Image from "next/image";
 
 import {
   getWorkspaceAutomationTemplateFlow,
@@ -25,7 +25,7 @@ import {
 import { cn } from "@/lib/primitives/cn";
 import { SimpleBrandIcon } from "../../integrations/_components/simple-brand-icon";
 
-type IconBucket = "schedule" | "github" | "slack" | "email";
+type IconBucket = "schedule" | "github" | "slack" | "email" | "contentful";
 
 function iconBucketForNode(node: WorkspaceAutomationTemplateFlowNode): IconBucket {
   switch (node.id) {
@@ -39,6 +39,9 @@ function iconBucketForNode(node: WorkspaceAutomationTemplateFlowNode): IconBucke
       return "slack";
     case "email":
       return "email";
+    case "contentful-webhook":
+    case "contentful":
+      return "contentful";
     case "scheduled":
     case "manual":
     default:
@@ -51,9 +54,21 @@ function FlowIcon({ bucket }: { bucket: IconBucket }) {
     case "github":
       return <SimpleBrandIcon icon={siGithub} colored className="size-4" />;
     case "slack":
-      return <HugeiconsIcon icon={SlackIcon} strokeWidth={1.8} className="size-4" />;
+      return (
+        <Image src="/images/slack-logo.svg" alt="Slack" width={16} height={16} className="size-4" />
+      );
     case "email":
       return <MailIcon className="size-4" />;
+    case "contentful":
+      return (
+        <Image
+          src="/images/contentful-logo.svg"
+          alt="Contentful"
+          width={16}
+          height={16}
+          className="size-4"
+        />
+      );
     case "schedule":
       return <ClockIcon className="size-4" strokeWidth={1.8} />;
   }

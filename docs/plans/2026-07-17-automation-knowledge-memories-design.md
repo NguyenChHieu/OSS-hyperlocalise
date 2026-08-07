@@ -55,24 +55,22 @@ prompt injection to explicit tool calls the agent decides to make.
   available, so automations don't silently lose the always-present context they used to get.
   It runs first in the plan, before workflow tools, so recalled guidance is available before the
   decisions it's meant to inform.
-- **Save is built but not wired in yet — deferred, not shipped.** `save_memory.ts` exists,
-  tested, and would append to `Memory.md` through the same `commitKnowledgeMemoryForOrganization`
-  compare-and-swap a human edit goes through — same optimistic concurrency, same 50,000-character
-  cap, append-only, no human actor (`updatedByUserId: null`, provenance in the revision
-  `summary`). It is **not** planned by `buildWorkspaceOrchestratorPlan`. Reason: `agent.ts`'s
-  `prepareStep` forces every planned tool via `toolChoice: { type: "tool", toolName }` — there is
-  no "model may skip this" step type anywhere in this orchestrator. Planning `save_memory` would
-  call it on every single run regardless of whether the automation's instructions say to remember
-  anything, contradicting the explicit "no autonomous writes without a real decision" requirement
-  and risking fabricated content landing in the org's shared Memory.md on a schedule. Re-enable by
-  adding it back to `MEMORY_TOOLS` in `plan.ts` once `agent.ts` supports a genuinely optional
-  (`toolChoice: "auto"`) step.
-- `toolConfig.knowledge.allowUpdates` still exists in the schema and form state (harmless to keep
-  as unused-for-now plumbing) but has no UI control while `save_memory` is unplanned — showing a
-  toggle that does nothing would be its own bug.
+- **Save is a genuinely optional tool call, never forced.** `save_memory.ts` appends to
+  `Memory.md` through the same `commitKnowledgeMemoryForOrganization` compare-and-swap a human
+  edit goes through — same optimistic concurrency, same 50,000-character cap, append-only, no
+  human actor (`updatedByUserId: null`, provenance in the revision `summary`). `agent.ts`'s
+  `prepareStep` forces every tool in `plan.tools` via `toolChoice: { type: "tool", toolName }` —
+  there is still no "model may skip this" step type for that list. Rather than changing that,
+  `WorkspaceOrchestratorPlan` gained a separate `optionalTools` list: when
+  `toolConfig.knowledge.allowUpdates` is on, `save_memory` goes there instead of `plan.tools`, and
+  `agent.ts` gives each entry in `optionalTools` its own step, one at a time, after every forced
+  tool has run, with `toolChoice: "auto"` — the model decides whether the automation's
+  instructions actually warrant remembering something, instead of being required to call it every
+  run.
+- `toolConfig.knowledge.allowUpdates` now has a UI control: an "Allow memory updates" toggle in
+  the Memories tool row, shown whenever Memories is enabled.
 
 ## Still out of scope
 
 Per-automation memory, Upstash, automatic write triggers without an explicit tool call,
 contradiction/dedup handling, and any approval workflow beyond the tool-permission gate itself.
-Agent-initiated memory writes (`save_memory`) specifically — see above.

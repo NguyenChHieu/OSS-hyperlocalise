@@ -144,6 +144,7 @@ export const CreateWithMemories: Story = {
   play: async ({ canvas }) => {
     await expect(canvas.getByText("Use organization memory")).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "Manage" })).toBeInTheDocument();
+    await expect(canvas.getByText("Allow memory updates")).toBeInTheDocument();
     await expect(canvas.getByText("3 tools")).toBeInTheDocument();
   },
 };

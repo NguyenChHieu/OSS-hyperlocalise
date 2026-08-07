@@ -187,11 +187,10 @@ describe("buildWorkspaceOrchestratorPlan", () => {
     expect(plan.tools).toEqual(["recall_memory", "run_github_workflows", "notify_slack"]);
   });
 
-  it("never plans save_memory, even when allowUpdates is on", () => {
-    // agent.ts forces every planned tool with no "model may skip this" step type. Planning
-    // save_memory would call it on every single run regardless of whether there's anything to
-    // remember. Deferred until an optional tool-call mechanism exists — see the ponytail note in
-    // plan.ts.
+  it("offers save_memory as optional, never forced, when allowUpdates is on", () => {
+    // agent.ts forces every tool in plan.tools with no "model may skip this" step type, so
+    // save_memory never goes there — it's offered via optionalTools instead, where agent.ts gives
+    // it its own step with toolChoice: "auto" so the model decides whether to call it.
     const plan = buildWorkspaceOrchestratorPlan(
       automation({
         toolConfig: {
@@ -202,6 +201,19 @@ describe("buildWorkspaceOrchestratorPlan", () => {
 
     expect(plan.tools).toEqual(["recall_memory"]);
     expect(plan.tools).not.toContain("save_memory");
+    expect(plan.optionalTools).toEqual(["save_memory"]);
+  });
+
+  it("doesn't offer save_memory when allowUpdates is off", () => {
+    const plan = buildWorkspaceOrchestratorPlan(
+      automation({
+        toolConfig: {
+          knowledge: { enabled: true, allowUpdates: false },
+        },
+      }),
+    );
+
+    expect(plan.optionalTools).toBeUndefined();
   });
 });
 
@@ -237,5 +249,18 @@ describe("planHasActionableTool", () => {
 
   it("is false for an empty plan", () => {
     expect(planHasActionableTool(buildWorkspaceOrchestratorPlan(automation()))).toBe(false);
+  });
+
+  it("is true when save_memory is offered as optional, even with no other forced tool", () => {
+    // save_memory can take real action (writing to Memory.md) if the model chooses to call it,
+    // unlike a pure recall_memory-only plan — so a plan offering it isn't a guaranteed no-op the
+    // way an all-memory-tools-forced plan is.
+    const plan = buildWorkspaceOrchestratorPlan(
+      automation({ toolConfig: { knowledge: { enabled: true, allowUpdates: true } } }),
+    );
+
+    expect(plan.tools).toEqual(["recall_memory"]);
+    expect(plan.optionalTools).toEqual(["save_memory"]);
+    expect(planHasActionableTool(plan)).toBe(true);
   });
 });

@@ -172,4 +172,70 @@ describe("workspace orchestrator agent", () => {
       toolChoice: { type: "tool", toolName: "notify_slack" },
     });
   });
+
+  it("offers an optional tool with toolChoice auto after every forced tool has run", () => {
+    // save_memory (and any future optionalTools entry) is never forced: it gets its own step with
+    // toolChoice: "auto" once every forced tool in plan.tools has had its turn, so the model
+    // decides whether to call it instead of being required to on every run.
+    const session = createWorkspaceOrchestratorSession({
+      organizationId: "org-1",
+      automation: automation(),
+      run: run(),
+      plan: {
+        tools: ["recall_memory"],
+        optionalTools: ["save_memory"],
+      },
+      repository: null,
+      composedInstructions: "Run the automation.",
+    });
+
+    createWorkspaceOrchestratorAgent(session);
+
+    expect(isStepCountMock).toHaveBeenCalledWith(WORKSPACE_ORCHESTRATOR_STEP_LIMIT);
+    expect(toolLoopAgentMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        activeTools: ["recall_memory", "save_memory"],
+      }),
+    );
+
+    const settings = toolLoopAgentMock.mock.calls.at(-1)?.[0] as {
+      prepareStep: (input: { stepNumber: number }) => unknown;
+    };
+
+    expect(settings.prepareStep({ stepNumber: 0 })).toEqual({
+      activeTools: ["recall_memory"],
+      toolChoice: { type: "tool", toolName: "recall_memory" },
+    });
+    expect(settings.prepareStep({ stepNumber: 1 })).toEqual({
+      activeTools: ["save_memory"],
+      toolChoice: "auto",
+    });
+    expect(settings.prepareStep({ stepNumber: 2 })).toEqual({
+      toolChoice: "none",
+    });
+  });
+
+  it("never caps the step count below what forced plus optional tools need", () => {
+    const sixTools = [
+      "recall_memory",
+      "use_github_repository",
+      "run_github_workflows",
+      "create_native_tms_job",
+      "assign_translate_with_agent",
+      "use_semrush",
+    ] as const;
+
+    const session = createWorkspaceOrchestratorSession({
+      organizationId: "org-1",
+      automation: automation(),
+      run: run(),
+      plan: { tools: [...sixTools], optionalTools: ["save_memory"] },
+      repository: null,
+      composedInstructions: "Run the automation.",
+    });
+
+    createWorkspaceOrchestratorAgent(session);
+
+    expect(isStepCountMock).toHaveBeenCalledWith(sixTools.length + 1 + 1);
+  });
 });

@@ -44,6 +44,14 @@ export type WorkspaceOrchestratorToolName = (typeof WORKSPACE_ORCHESTRATOR_TOOL_
 
 export type WorkspaceOrchestratorPlan = {
   tools: WorkspaceOrchestratorToolName[];
+  /**
+   * Tools offered but never forced: agent.ts's prepareStep gives each one its own step with
+   * toolChoice: "auto" after every forced tool in `tools` has run, so the model decides whether
+   * to call it based on the automation's own instructions, instead of being required to. Only
+   * save_memory uses this today — writing to the org's shared Memory.md should happen because the
+   * instructions actually asked for it, not on every run just because the tool was planned.
+   */
+  optionalTools?: WorkspaceOrchestratorToolName[];
 };
 
 export type WorkspaceOrchestratorTriggerContext = {
@@ -64,16 +72,13 @@ const NOTIFICATION_TOOLS: WorkspaceOrchestratorToolName[] = ["notify_slack", "no
 
 // Not part of WORKFLOW_TOOLS: memory tools are general availability, not ordered workflow steps,
 // so they skip orderWorkflowTools' template-skill-executor reordering entirely.
-//
-// ponytail: save_memory is deliberately excluded here, not just unreachable via
-// hasWorkspaceAutomationKnowledgeUpdatesAllowed. agent.ts's prepareStep forces every planned tool
-// via toolChoice: { type: "tool", toolName } — there is no "model may skip this" step type. Put
-// save_memory in this list and it gets called on every single run regardless of whether there is
-// anything worth remembering, contradicting the "use it only when instructions say so" design and
-// risking fabricated writes to the org's shared Memory.md. Re-add once agent.ts supports a
-// genuinely optional (toolChoice: "auto") step; the tool itself (save_memory.ts) is already built
-// and tested for that day.
 const MEMORY_TOOLS: WorkspaceOrchestratorToolName[] = ["recall_memory"];
+
+// save_memory is never forced: it goes in optionalTools (WorkspaceOrchestratorPlan), not here.
+// agent.ts's prepareStep gives it its own step with toolChoice: "auto" after every forced tool has
+// run, so the model calls it only when the automation's instructions actually ask to remember
+// something — forcing it via MEMORY_TOOLS would call it on every single run regardless.
+const OPTIONAL_MEMORY_TOOLS: WorkspaceOrchestratorToolName[] = ["save_memory"];
 
 function workflowToolEnabled(
   tool: WorkspaceOrchestratorToolName,
@@ -179,21 +184,29 @@ export function buildWorkspaceOrchestratorPlan(
     notificationToolEnabled(tool, automation.toolConfig),
   );
   const memoryTools = MEMORY_TOOLS.filter((tool) => memoryToolEnabled(tool, automation.toolConfig));
+  const optionalTools = OPTIONAL_MEMORY_TOOLS.filter((tool) =>
+    memoryToolEnabled(tool, automation.toolConfig),
+  );
 
   // recall_memory runs first: every planned tool executes strictly in this order (agent.ts's
   // prepareStep forces each one in turn), so recalled guidance must land before the workflow
   // tools it's meant to inform, not after they've already acted.
   return {
     tools: [...memoryTools, ...workflowTools, ...notificationTools],
+    optionalTools: optionalTools.length > 0 ? optionalTools : undefined,
   };
 }
 
 /**
- * Whether the plan includes at least one workflow or notification tool, not just memory tools.
- * recall_memory being the only planned tool means the run would read Memory and take no other
- * action; callers use this instead of a raw plan.tools.length check to decide whether a run is
- * meaningful enough to dispatch, not just whether *any* tool at all is planned.
+ * Whether the plan includes at least one workflow or notification tool, or an optional tool that
+ * can take real action if the model chooses to use it — not just forced memory reads.
+ * recall_memory being the only *forced* tool means the run would read Memory and, unless
+ * optionalTools offers something with real side effects, take no other action; callers use this
+ * instead of a raw plan.tools.length check to decide whether a run is meaningful enough to
+ * dispatch, not just whether *any* tool at all is planned.
  */
 export function planHasActionableTool(plan: WorkspaceOrchestratorPlan): boolean {
-  return plan.tools.some((tool) => !MEMORY_TOOLS.includes(tool));
+  return (
+    plan.tools.some((tool) => !MEMORY_TOOLS.includes(tool)) || (plan.optionalTools?.length ?? 0) > 0
+  );
 }

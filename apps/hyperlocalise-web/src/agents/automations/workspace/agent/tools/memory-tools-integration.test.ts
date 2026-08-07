@@ -12,7 +12,26 @@
  */
 import "dotenv/config";
 
-import { afterEach, beforeAll, describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+
+// The workspace-knowledge feature-flag gate save_memory/recall_memory call at the start of
+// execute() reaches a real WorkOS flag lookup. Against the placeholder WorkOS credentials the
+// standard `vp test` environment runs with, that lookup's failure path resolves to false,
+// short-circuiting both tools into their nonfatal "disabled" outcomes before they ever touch the
+// database — failing every assertion below that expects a real persisted append.
+//
+// This is a full module replacement, not importOriginal + spread: workspace-flags.ts transitively
+// imports workos-adapter.ts, which imports @/lib/e2e/config — a module missing from this branch's
+// checkout (confirmed absent from the tree; present on main), so actually loading the real module
+// to spread its other exports fails at import time. A blanket replacement is safe here because
+// recall_memory.ts/save_memory.ts (the only consumers reachable from this test) import nothing
+// else from workspace-flags.ts, and nothing else in this file's import graph touches it either.
+// @/lib/knowledge-memory/knowledge-memory stays real (see the comment below).
+const resolveWorkspaceKnowledgeFlagMock = vi.hoisted(() => vi.fn(async () => true));
+
+vi.mock("@/lib/flags/workspace-flags", () => ({
+  resolveWorkspaceKnowledgeFlag: resolveWorkspaceKnowledgeFlagMock,
+}));
 
 import { createAuthTestFixture } from "@/api/test-auth.fixture";
 import type {
@@ -37,6 +56,10 @@ const fixture = createAuthTestFixture();
 
 beforeAll(async () => {
   await db.$client.query("select 1");
+});
+
+beforeEach(() => {
+  resolveWorkspaceKnowledgeFlagMock.mockResolvedValue(true);
 });
 
 afterEach(async () => {

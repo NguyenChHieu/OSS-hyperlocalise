@@ -78,6 +78,7 @@ import {
   listDetailPanelColumns,
 } from "./issue-sheet-column-utils";
 import { IssueTypePicker, type IssueTypeValue } from "./issue-type-picker";
+import { IssueWatchControl } from "./issue-watch-control";
 import { useAssignableIssueMembersQuery } from "./use-assignable-issue-members";
 import { useIssueDetailMutations } from "./use-issue-detail-mutations";
 import { useIssueDetailQuery } from "./use-issue-detail-query";
@@ -690,6 +691,14 @@ export const IssueDetailPanel = forwardRef<
             </div>
           </section>
         ) : null}
+
+        <IssueWatchControl
+          organizationSlug={organizationSlug}
+          projectId={projectId}
+          issueId={issue.id}
+          isWatching={issue.isWatching}
+          disabled={isSaving}
+        />
 
         <IssueCommentThread
           organizationSlug={organizationSlug}

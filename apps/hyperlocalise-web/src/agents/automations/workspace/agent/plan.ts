@@ -65,14 +65,9 @@ const NOTIFICATION_TOOLS: WorkspaceOrchestratorToolName[] = ["notify_slack", "no
 // Not part of WORKFLOW_TOOLS: memory tools are general availability, not ordered workflow steps,
 // so they skip orderWorkflowTools' template-skill-executor reordering entirely.
 //
-// save_memory is forced (not offered as an "auto" step) rather than grouped into MEMORY_TOOLS
-// below: forcing every planned tool via toolChoice ({type:"tool",...}) is the only way agent.ts's
-// ToolLoopAgent reliably reaches the tools planned after it — the underlying loop only continues
-// past a step that produced zero tool calls, so a toolChoice: "auto" step risked the model ending
-// the run before a later forced notification tool ever ran (a real Codex finding against an
-// earlier version of this file). It's still not "invented content on every run" per the
-// *original* finding against forcing it: its schema accepts entry: null as an explicit "nothing
-// to remember" decision.
+// save_memory is planned separately from recall_memory so agent.ts can expose it as an optional
+// final tool. Putting it after notifications means the model may skip it without ending the run
+// before required workflow or notification tools have executed.
 const MEMORY_TOOLS: WorkspaceOrchestratorToolName[] = ["recall_memory"];
 const SAVE_MEMORY_TOOLS: WorkspaceOrchestratorToolName[] = ["save_memory"];
 // Both memory tools together, used only by planHasActionableTool: whether save_memory actually
@@ -192,12 +187,10 @@ export function buildWorkspaceOrchestratorPlan(
     memoryToolEnabled(tool, automation.toolConfig),
   );
 
-  // recall_memory runs first and save_memory runs last before notifications: every planned tool
-  // executes strictly in this order (agent.ts's prepareStep forces each one in turn), so recalled
-  // guidance lands before the workflow tools it's meant to inform, and a memory write reflects
-  // what those tools actually did before the run's notification summarizes the outcome.
+  // recall_memory runs first so guidance can inform workflow tools. save_memory runs last and is
+  // optional, so skipping an update cannot prevent required notifications from being sent.
   return {
-    tools: [...memoryTools, ...workflowTools, ...saveMemoryTools, ...notificationTools],
+    tools: [...memoryTools, ...workflowTools, ...notificationTools, ...saveMemoryTools],
   };
 }
 

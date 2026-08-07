@@ -173,14 +173,9 @@ describe("workspace orchestrator agent", () => {
     });
   });
 
-  it("forces save_memory like any other planned tool, positioned before notifications", () => {
-    // Regression for a Codex finding: an earlier version of this file gave save_memory its own
-    // step with toolChoice: "auto" so the model could skip it. But the underlying ToolLoopAgent's
-    // step loop only continues past a step that produced at least one tool call, so if the model
-    // legitimately chose not to call it, the run ended right there — the forced notify_slack step
-    // planned after it never ran, even though it was supposed to be unconditional. save_memory is
-    // forced like every other planned tool now; it stays reachable-but-not-fabricating via its own
-    // input schema (entry: null), not via an "auto" loop step.
+  it("exposes save_memory as an optional final tool after notifications", () => {
+    // save_memory is optional so the model can skip it when there is nothing to remember. Keeping
+    // it last prevents that legitimate skip from ending the run before required notifications.
     const session = createWorkspaceOrchestratorSession({
       organizationId: "org-1",
       automation: automation(),
@@ -207,12 +202,12 @@ describe("workspace orchestrator agent", () => {
       toolChoice: { type: "tool", toolName: "run_github_workflows" },
     });
     expect(settings.prepareStep({ stepNumber: 2 })).toEqual({
-      activeTools: ["save_memory"],
-      toolChoice: { type: "tool", toolName: "save_memory" },
-    });
-    expect(settings.prepareStep({ stepNumber: 3 })).toEqual({
       activeTools: ["notify_slack"],
       toolChoice: { type: "tool", toolName: "notify_slack" },
+    });
+    expect(settings.prepareStep({ stepNumber: 3 })).toEqual({
+      activeTools: ["save_memory"],
+      toolChoice: "auto",
     });
     expect(settings.prepareStep({ stepNumber: 4 })).toEqual({
       toolChoice: "none",

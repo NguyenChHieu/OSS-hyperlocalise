@@ -33,12 +33,10 @@ export function createWorkspaceOrchestratorAgent(session: WorkspaceOrchestratorS
   // the Slack/email notification) past the cap, so it never ran even though the automation
   // reported success.
   //
-  // Every planned tool is forced via toolChoice: { type: "tool", toolName }, never "auto": the
-  // underlying ToolLoopAgent's step loop only continues past a step that produced at least one
-  // tool call, so an "auto" step the model could legitimately skip (e.g. a genuinely optional
-  // save_memory call) risked ending the run before any tool planned after it — like a Slack/email
-  // notification — ever ran. save_memory being forced doesn't mean it fabricates content: its own
-  // input schema accepts an explicit "nothing to remember" decision instead.
+  // Planned workflow and notification tools are forced so the loop reaches every required side
+  // effect. save_memory is the lone optional planned tool and is intentionally placed last by
+  // buildWorkspaceOrchestratorPlan; if the model skips it, the run has already done its required
+  // work instead of ending before a later notification.
   const stepLimit = Math.max(WORKSPACE_ORCHESTRATOR_STEP_LIMIT, plannedToolCount + 1);
 
   return new ToolLoopAgent({
@@ -53,6 +51,13 @@ export function createWorkspaceOrchestratorAgent(session: WorkspaceOrchestratorS
     prepareStep: ({ stepNumber }) => {
       const toolName = session.plan.tools[stepNumber];
       if (toolName) {
+        if (toolName === "save_memory") {
+          return {
+            activeTools: [toolName],
+            toolChoice: "auto",
+          };
+        }
+
         return {
           activeTools: [toolName],
           toolChoice: { type: "tool", toolName },

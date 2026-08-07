@@ -187,11 +187,9 @@ describe("buildWorkspaceOrchestratorPlan", () => {
     expect(plan.tools).toEqual(["recall_memory", "run_github_workflows", "notify_slack"]);
   });
 
-  it("includes save_memory, forced, positioned after workflow tools and before notifications, when allowUpdates is on", () => {
-    // save_memory is a forced tool like every other planned tool (see plan.ts's MEMORY_TOOLS
-    // comment for why): agent.ts's ToolLoopAgent only continues past a step that produced a tool
-    // call, so an "optional, model may skip" step positioned before other forced tools risked the
-    // run ending before those later tools — e.g. a Slack/email notification — ever ran.
+  it("includes save_memory as the optional final tool when allowUpdates is on", () => {
+    // save_memory stays reachable when updates are allowed, but it is placed after required
+    // workflow and notification tools so the model can skip it without ending the run early.
     const plan = buildWorkspaceOrchestratorPlan(
       automation({
         projectId: "project-1",
@@ -212,8 +210,8 @@ describe("buildWorkspaceOrchestratorPlan", () => {
     expect(plan.tools).toEqual([
       "recall_memory",
       "run_github_workflows",
-      "save_memory",
       "notify_slack",
+      "save_memory",
     ]);
   });
 
@@ -266,7 +264,7 @@ describe("planHasActionableTool", () => {
 
   it("is false for a plan of only recall_memory and save_memory", () => {
     // Regression for a Codex finding: save_memory living outside MEMORY_TOOLS (so agent.ts can
-    // force it — see plan.ts's MEMORY_TOOLS comment) made this predicate treat it as actionable.
+    // expose it as the optional final tool) made this predicate treat it as actionable.
     // But whether save_memory writes anything is entirely the model's call (it can always return
     // entry: null), so a plan of only these two tools is never a *guaranteed* effect the way a
     // workflow or notification tool is — and workspaceAutomationFormCanActivate already excludes

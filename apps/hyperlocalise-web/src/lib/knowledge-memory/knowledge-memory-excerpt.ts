@@ -97,6 +97,15 @@ function longestMatchedSpanLength(units: ExcerptUnit[], tokenWeights: Map<string
   return longest;
 }
 
+// Solved from truncateAroundMatch's own centering geometry (see buildSegmentExcerpt's heading-
+// reserve comment for the full derivation): leadChars reserves floor(budget/4) before the match,
+// up to 6 chars go to both ellipsis markers, leaving budget - budget/4 - 6 for the token and
+// whatever follows it. Requiring that be >= spanLength (using the safe lower bound budget -
+// budget/4 = (3/4)budget) solves to budget >= (spanLength + 6) * 4 / 3.
+function minCharsToKeepSpanIntact(spanLength: number): number {
+  return Math.ceil(((spanLength + 6) * 4) / 3);
+}
+
 /**
  * Truncates text that's still too long even after unit splitting/packing. A plain prefix cut
  * would reintroduce the exact bug this module exists to fix (one level down, inside a single
@@ -281,6 +290,21 @@ function headingMatchesQuery(segment: KnowledgeMemorySegment, queryTokens: Set<s
   return false;
 }
 
+// The smallest cap a unit actually needs: its own full length when that already fits within the
+// span-preserving minimum, otherwise the span-preserving minimum itself — enough for
+// truncateAroundMatch to keep this unit's own longest matched span intact. Reserving each
+// remaining unit's real need (not an equal share) means a unit with a long matched token isn't
+// shortchanged just because units ranked after it would have been content with far less.
+function unitMinimalNeed(
+  unit: ExcerptUnit,
+  tokenWeights: Map<string, number>,
+  minTruncatedChars: number,
+): number {
+  const spanLength = longestMatchedSpanLength([unit], tokenWeights);
+  const need = spanLength > 0 ? minCharsToKeepSpanIntact(spanLength) : minTruncatedChars;
+  return Math.min(unit.text.length, Math.max(need, minTruncatedChars));
+}
+
 function packUnitsWithinBudget(
   rankedUnits: ExcerptUnit[],
   unitsByOffset: Map<number, ExcerptUnit>,
@@ -306,19 +330,34 @@ function packUnitsWithinBudget(
     return true;
   };
 
-  // Give every ranked match a fair share of what's actually left when its turn comes, rather than
-  // a fixed share computed once up front — a unit that doesn't fit whole still gets truncated
-  // instead of dropped outright (a partial rule beats no rule), but a share fixed in advance never
-  // reclaims budget a short earlier unit left unused: with an 8-char first rule and a much longer
-  // second rule, a fixed 60/60 split truncates the second rule well before the action it needs, even
-  // though ~112 characters are actually free after the first rule's real (tiny) cost. Recomputing
-  // the share from the units still to come each time — remaining budget divided by remaining
-  // units — folds any earlier surplus into what's left for the rest automatically.
+  // Give every ranked match only as much of what's actually left as it needs, reserving the rest
+  // for units still to come — rather than an equal split of what's left, which can shortchange a
+  // unit with a long matched token just because units ranked after it need much less. With a
+  // 30-char protected identifier ranked first and a short "Keep betamarker." ranked second under a
+  // tight budget, an equal split gave each unit half, truncating the identifier below its own
+  // length even though the combined budget easily fits both in full once the short unit's real
+  // (tiny) need is reserved instead of an equal share for it. Recomputing the reservation from the
+  // units still to come each time — not a fixed split computed once up front — also still folds
+  // any earlier surplus into what's left for the rest automatically.
+  //
+  // unitNeeds/suffixNeedSum precompute each unit's own need once and prefix-sum them, rather than
+  // rescanning every remaining unit's text on every single unit's turn (O(rankedUnits²) matchAll
+  // scans) — a memory can have hundreds of bullets sharing a common matched token.
   const minTruncatedChars = 12;
-  const tryAddRankedUnit = (unit: ExcerptUnit, isFirst: boolean, unitsRemaining: number) => {
+  const unitNeeds = rankedUnits.map((unit) =>
+    unitMinimalNeed(unit, tokenWeights, minTruncatedChars),
+  );
+  const suffixNeedSum: number[] = Array.from({ length: rankedUnits.length + 1 }, () => 0);
+  for (let index = rankedUnits.length - 1; index >= 0; index--) {
+    suffixNeedSum[index] = suffixNeedSum[index + 1]! + unitNeeds[index]!;
+  }
+
+  const tryAddRankedUnit = (unit: ExcerptUnit, index: number) => {
+    const isFirst = index === 0;
     const remaining = budget - used - (chosen.size > 0 ? separator.length : 0);
-    const projectedSeparators = unitsRemaining > 1 ? separator.length * (unitsRemaining - 1) : 0;
-    const share = Math.max(0, Math.floor((remaining - projectedSeparators) / unitsRemaining));
+    const restCount = rankedUnits.length - 1 - index;
+    const reserveForRest = suffixNeedSum[index + 1]! + separator.length * restCount;
+    const share = Math.max(0, remaining - reserveForRest);
     // Guarantee the top-ranked match a real shot at the full remaining budget when its share has
     // collapsed below usefulness: enough ranked units matching the same common token under a tight
     // budget (e.g. six "checkout" bullets in 80 characters) can make every unit's share land under
@@ -343,9 +382,7 @@ function packUnitsWithinBudget(
   // top-ranked match here isn't enough — with more than one ranked match, the opener could still
   // fit alongside the first but crowd out a later, independently-matching unit that all of them
   // together would otherwise have fit without it.
-  const placed = rankedUnits.filter((unit, index) =>
-    tryAddRankedUnit(unit, index === 0, rankedUnits.length - index),
-  );
+  const placed = rankedUnits.filter((unit, index) => tryAddRankedUnit(unit, index));
 
   if (forcedFirstUnit) {
     tryAdd(forcedFirstUnit);
@@ -467,16 +504,13 @@ export function buildSegmentExcerpt(input: {
   // exceeding maxChars outright. A flat 20-char floor isn't actually enough on its own: up to 6 of
   // those go to truncateAroundMatch's own leading/trailing "..." markers, so a protected identifier
   // longer than ~14 characters (e.g. "routingtoken") could still get cut off mid-word. Size the
-  // floor from the longest token actually being matched in this segment instead of a constant,
-  // solved from truncateAroundMatch's own centering geometry rather than a guessed buffer:
-  // leadChars reserves floor(budget/4) before the match, and up to 6 chars go to both ellipsis
-  // markers, leaving budget - floor(budget/4) - 6 for the token and whatever follows it. Requiring
-  // that be >= tokenLength (using budget - budget/4 = (3/4)budget as a safe lower bound on the
-  // floor'd term) solves to budget >= (tokenLength + 6) * 4 / 3. Uses the longest raw matched
-  // span (see longestMatchedSpanLength), not the longest tokenWeights key: a matched token
-  // containing an apostrophe is longer in the source text than its stripped map key.
-  const longestMatchedTokenLength = longestMatchedSpanLength(ranked, tokenWeights);
-  const minCharsForCenteredToken = Math.ceil(((longestMatchedTokenLength + 6) * 4) / 3);
+  // floor from the longest token actually being matched in this segment instead of a constant, via
+  // minCharsToKeepSpanIntact (see its own comment for the geometry this is solved from). Uses the
+  // longest raw matched span (see longestMatchedSpanLength), not the longest tokenWeights key: a
+  // matched token containing an apostrophe is longer in the source text than its stripped map key.
+  const minCharsForCenteredToken = minCharsToKeepSpanIntact(
+    longestMatchedSpanLength(ranked, tokenWeights),
+  );
   const minBodyReserve = Math.min(
     Math.max(20, minCharsForCenteredToken),
     Math.max(0, maxChars - 1),

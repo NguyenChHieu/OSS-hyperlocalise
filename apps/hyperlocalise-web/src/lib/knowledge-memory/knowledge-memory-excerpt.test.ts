@@ -313,6 +313,32 @@ describe("buildSegmentExcerpt", () => {
     expect(elapsedMs).toBeLessThan(3000);
   });
 
+  it("packs hundreds of matching ranked units without quadratic blowup", () => {
+    // Regression risk introduced alongside the share-allocation fix above: computing each unit's
+    // own share reservation now needs to know how much every *other* still-to-come unit needs.
+    // Rescanning every remaining unit's text on every single unit's turn would make this
+    // O(ranked units²) matchAll scans — unlike the previous test, this one's query token actually
+    // matches every bullet, so every one of the 500 bullets ends up in packUnitsWithinBudget's
+    // rankedUnits array, not filtered out by an empty ranked list before that code even runs.
+    const bulletSegment = segment({
+      kind: "bullet_group",
+      segmentText: Array.from(
+        { length: 500 },
+        (_, index) => `- Bullet number ${index} mentions checkout wording explicitly.`,
+      ).join("\n"),
+    });
+
+    const start = performance.now();
+    buildSegmentExcerpt({
+      segment: bulletSegment,
+      queryTokens: tokens("checkout"),
+      maxChars: 500,
+    });
+    const elapsedMs = performance.now() - start;
+
+    expect(elapsedMs).toBeLessThan(2000);
+  });
+
   it("centers an oversized unit around many query tokens without quadratic blowup", () => {
     // Regression for a Codex finding: findBestMatchOffset scanned the oversized unit's text once
     // per query token (constructing and running a fresh regex each time), making it O(query tokens
@@ -589,6 +615,27 @@ describe("buildSegmentExcerpt", () => {
 
     expect(excerpt.length).toBeLessThanOrEqual(80);
     expect(excerpt).toContain("rock'n'roll");
+  });
+
+  it("allocates enough share to retain a long matched token when a later ranked unit needs far less", () => {
+    // Regression for a Codex finding: an equal per-unit share can be shorter than a matched token
+    // even when the combined budget could retain every match in full, because the split didn't
+    // account for how little some units actually need. A 31-char identifier ranked first got an
+    // equal (half) share and lost its tail, even though the second unit ("Keep betamarker
+    // unchanged.") only needs a fraction of its own equal share to keep its own match intact.
+    const paragraph = [
+      "Never translate the protectedidentifiertoken32chars marker under any circumstances.",
+      "Keep betamarker unchanged.",
+    ].join(" ");
+
+    const excerpt = buildSegmentExcerpt({
+      segment: segment({ segmentText: paragraph }),
+      queryTokens: tokens("protectedidentifiertoken32chars", "betamarker"),
+      maxChars: 100,
+    });
+
+    expect(excerpt).toContain("protectedidentifiertoken32chars");
+    expect(excerpt).toContain("betamarker");
   });
 
   it("keeps the opening rule for a heading-driven match instead of only an incidental body match", () => {

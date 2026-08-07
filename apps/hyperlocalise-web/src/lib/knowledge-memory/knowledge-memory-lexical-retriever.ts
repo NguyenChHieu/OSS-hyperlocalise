@@ -248,16 +248,21 @@ export function buildKnowledgeMemoryQueryTokens(
   return tokens;
 }
 
-export const retrieveKnowledgeMemorySegmentsLexically: KnowledgeMemoryRetriever = ({
-  segments,
-  query,
-}) => {
-  const queryParts = buildQueryParts(query);
-  const queryTokens = buildKnowledgeMemoryQueryTokens(query);
+/**
+ * Split out from retrieveKnowledgeMemorySegmentsLexically so a caller that already has queryTokens
+ * (knowledge-memory-selection.ts, which also needs them separately for excerpt selection) can reuse
+ * them here instead of paying for buildKnowledgeMemoryQueryTokens's tokenize + spelling-variant
+ * expansion a second time for the same query.
+ */
+export function retrieveKnowledgeMemorySegmentsLexicallyWithTokens(
+  segments: KnowledgeMemorySegment[],
+  query: SelectKnowledgeMemoryContextInput,
+  queryTokens: Set<string>,
+) {
   if (queryTokens.size === 0) {
     return [];
   }
-  const inputLocales = inputLocalesFromParts(queryParts);
+  const inputLocales = inputLocalesFromParts(buildQueryParts(query));
 
   return segments
     .map((segment) => ({
@@ -271,4 +276,9 @@ export const retrieveKnowledgeMemorySegmentsLexically: KnowledgeMemoryRetriever 
       }
       return a.segment.startOffset - b.segment.startOffset;
     });
-};
+}
+
+export const retrieveKnowledgeMemorySegmentsLexically: KnowledgeMemoryRetriever = ({
+  segments,
+  query,
+}) => retrieveKnowledgeMemorySegmentsLexicallyWithTokens(segments, query, buildKnowledgeMemoryQueryTokens(query));

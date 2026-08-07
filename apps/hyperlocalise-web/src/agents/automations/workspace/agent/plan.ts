@@ -65,16 +65,24 @@ const NOTIFICATION_TOOLS: WorkspaceOrchestratorToolName[] = ["notify_slack", "no
 // Not part of WORKFLOW_TOOLS: memory tools are general availability, not ordered workflow steps,
 // so they skip orderWorkflowTools' template-skill-executor reordering entirely.
 //
-// recall_memory is read-only, so planHasActionableTool below excludes it. save_memory is
-// deliberately NOT in this list even though it's a memory tool: forcing every planned tool via
-// toolChoice ({type:"tool",...}) is the only way agent.ts's ToolLoopAgent reliably reaches the
-// tools planned after it — the underlying loop only continues past a step that produced zero tool
-// calls, so a toolChoice: "auto" step risked the model ending the run before a later forced
-// notification tool ever ran (a real Codex finding against an earlier version of this file). It's
-// still not "invented content on every run" per the *original* finding against forcing it: its
-// schema accepts entry: null as an explicit "nothing to remember" decision.
+// save_memory is forced (not offered as an "auto" step) rather than grouped into MEMORY_TOOLS
+// below: forcing every planned tool via toolChoice ({type:"tool",...}) is the only way agent.ts's
+// ToolLoopAgent reliably reaches the tools planned after it — the underlying loop only continues
+// past a step that produced zero tool calls, so a toolChoice: "auto" step risked the model ending
+// the run before a later forced notification tool ever ran (a real Codex finding against an
+// earlier version of this file). It's still not "invented content on every run" per the
+// *original* finding against forcing it: its schema accepts entry: null as an explicit "nothing
+// to remember" decision.
 const MEMORY_TOOLS: WorkspaceOrchestratorToolName[] = ["recall_memory"];
 const SAVE_MEMORY_TOOLS: WorkspaceOrchestratorToolName[] = ["save_memory"];
+// Both memory tools together, used only by planHasActionableTool: whether save_memory actually
+// writes anything is entirely the model's call (it can always return entry: null), so a plan
+// offering only recall_memory and/or save_memory isn't a guaranteed real effect the way a
+// workflow or notification tool is. workspaceAutomationFormCanActivate already excludes Memory
+// (both directions) from the set of tools that make an automation activatable in the UI; treating
+// save_memory as actionable here would let dispatchManualWorkspaceAutomationRun accept and bill a
+// run the UI itself wouldn't have allowed the automation to be created with in the first place.
+const MEMORY_ONLY_TOOLS: WorkspaceOrchestratorToolName[] = [...MEMORY_TOOLS, ...SAVE_MEMORY_TOOLS];
 
 function workflowToolEnabled(
   tool: WorkspaceOrchestratorToolName,
@@ -194,12 +202,13 @@ export function buildWorkspaceOrchestratorPlan(
 }
 
 /**
- * Whether the plan includes at least one tool beyond a read-only memory recall — callers use this
- * instead of a raw plan.tools.length check to decide whether a run is meaningful enough to
- * dispatch. recall_memory being the only planned tool means the run would read Memory and take no
- * other action; save_memory, workflow, and notification tools all count since each can produce a
- * real effect.
+ * Whether the plan includes at least one tool beyond the memory tools — callers use this instead
+ * of a raw plan.tools.length check to decide whether a run is meaningful enough to dispatch. A
+ * plan of only recall_memory and/or save_memory means the run would, at best, read Memory and
+ * *maybe* write to it if the model decides to — never a guaranteed workflow or notification
+ * effect, and consistent with workspaceAutomationFormCanActivate excluding Memory from the tools
+ * that make an automation activatable in the UI.
  */
 export function planHasActionableTool(plan: WorkspaceOrchestratorPlan): boolean {
-  return plan.tools.some((tool) => !MEMORY_TOOLS.includes(tool));
+  return plan.tools.some((tool) => !MEMORY_ONLY_TOOLS.includes(tool));
 }

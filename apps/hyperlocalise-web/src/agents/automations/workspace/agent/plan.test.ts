@@ -264,14 +264,20 @@ describe("planHasActionableTool", () => {
     expect(planHasActionableTool(buildWorkspaceOrchestratorPlan(automation()))).toBe(false);
   });
 
-  it("is true when save_memory is the only planned tool beyond recall_memory", () => {
-    // save_memory can take real action (writing to Memory.md), unlike a pure recall_memory-only
-    // plan, so a plan with just these two tools isn't a guaranteed no-op.
+  it("is false for a plan of only recall_memory and save_memory", () => {
+    // Regression for a Codex finding: save_memory living outside MEMORY_TOOLS (so agent.ts can
+    // force it — see plan.ts's MEMORY_TOOLS comment) made this predicate treat it as actionable.
+    // But whether save_memory writes anything is entirely the model's call (it can always return
+    // entry: null), so a plan of only these two tools is never a *guaranteed* effect the way a
+    // workflow or notification tool is — and workspaceAutomationFormCanActivate already excludes
+    // Memory (both directions) from what makes an automation activatable in the UI. Treating this
+    // as actionable would let dispatchManualWorkspaceAutomationRun accept and bill a run the UI
+    // itself wouldn't have allowed the automation to be created with.
     const plan = buildWorkspaceOrchestratorPlan(
       automation({ toolConfig: { knowledge: { enabled: true, allowUpdates: true } } }),
     );
 
     expect(plan.tools).toEqual(["recall_memory", "save_memory"]);
-    expect(planHasActionableTool(plan)).toBe(true);
+    expect(planHasActionableTool(plan)).toBe(false);
   });
 });

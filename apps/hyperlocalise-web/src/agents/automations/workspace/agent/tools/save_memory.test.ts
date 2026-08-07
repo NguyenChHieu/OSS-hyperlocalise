@@ -18,10 +18,15 @@ const getKnowledgeMemoryForOrganizationMock = vi.hoisted(() => {
   return vi.fn();
 });
 const commitKnowledgeMemoryForOrganizationMock = vi.hoisted(() => vi.fn());
+const resolveWorkspaceKnowledgeFlagMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/lib/knowledge-memory/knowledge-memory", () => ({
   getKnowledgeMemoryForOrganization: getKnowledgeMemoryForOrganizationMock,
   commitKnowledgeMemoryForOrganization: commitKnowledgeMemoryForOrganizationMock,
+}));
+
+vi.mock("@/lib/flags/workspace-flags", () => ({
+  resolveWorkspaceKnowledgeFlag: resolveWorkspaceKnowledgeFlagMock,
 }));
 
 import type {
@@ -114,6 +119,26 @@ describe("createSaveMemoryTool", () => {
   beforeEach(() => {
     getKnowledgeMemoryForOrganizationMock.mockReset();
     commitKnowledgeMemoryForOrganizationMock.mockReset();
+    resolveWorkspaceKnowledgeFlagMock.mockReset();
+    resolveWorkspaceKnowledgeFlagMock.mockResolvedValue(true);
+  });
+
+  it("is unavailable when the workspace-knowledge feature flag is off, even with allowUpdates config", async () => {
+    // Regression for a Codex finding: automation create/update doesn't validate toolConfig against
+    // the workspace-knowledge feature flag, so a flag disabled after an automation's Memory tools
+    // were configured (or a config written some other way) would otherwise let a scheduled or
+    // manual run keep mutating Memory.md regardless of the flag — the same gate the HTTP
+    // knowledge-memory route already enforces on every request.
+    resolveWorkspaceKnowledgeFlagMock.mockResolvedValue(false);
+
+    const tool = createSaveMemoryTool(
+      session({ knowledge: { enabled: true, allowUpdates: true } }),
+    );
+    await expect(
+      tool.execute!({ entry: "Remember X." }, { toolCallId: "call-1", messages: [], context: {} }),
+    ).rejects.toThrow("memory_feature_disabled");
+    expect(resolveWorkspaceKnowledgeFlagMock).toHaveBeenCalledWith({ organizationId: "org-1" });
+    expect(getKnowledgeMemoryForOrganizationMock).not.toHaveBeenCalled();
   });
 
   it("is unavailable when knowledge is not enabled at all", async () => {

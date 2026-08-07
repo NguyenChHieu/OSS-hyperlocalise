@@ -14,6 +14,7 @@ import { z } from "zod";
 
 import { defineAgentTool } from "@/agents/_runtime/define-agent-tool";
 import { hasWorkspaceAutomationKnowledgeUpdatesAllowed } from "@/lib/agents/workspace-automations";
+import { resolveWorkspaceKnowledgeFlag } from "@/lib/flags/workspace-flags";
 import {
   commitKnowledgeMemoryForOrganization,
   getKnowledgeMemoryForOrganization,
@@ -62,6 +63,12 @@ export function buildSaveMemorySummary(automationName: string, runId: string): s
  * Being forced doesn't mean it fabricates content on every run, though: `entry` accepts `null` as
  * an explicit "the automation's instructions didn't ask me to remember anything this run" answer,
  * which short-circuits before touching the database.
+ *
+ * Also re-checks the workspace-knowledge feature flag at call time, not just toolConfig: the HTTP
+ * knowledge-memory route already rejects every request when the flag is off, but automation
+ * create/update doesn't validate it against stored toolConfig, so a flag disabled after an
+ * automation's Memory tools were configured (or a config written some other way) would otherwise
+ * let a scheduled or manual run keep mutating Memory.md regardless.
  */
 export function createSaveMemoryTool(session: WorkspaceOrchestratorSession) {
   return defineAgentTool({
@@ -73,6 +80,13 @@ export function createSaveMemoryTool(session: WorkspaceOrchestratorSession) {
     execute: async ({ entry }) => {
       if (!hasWorkspaceAutomationKnowledgeUpdatesAllowed(session.automation.toolConfig)) {
         throw new Error("memory_updates_not_allowed");
+      }
+
+      const knowledgeFeatureEnabled = await resolveWorkspaceKnowledgeFlag({
+        organizationId: session.organizationId,
+      });
+      if (!knowledgeFeatureEnabled) {
+        throw new Error("memory_feature_disabled");
       }
 
       if (entry === null) {

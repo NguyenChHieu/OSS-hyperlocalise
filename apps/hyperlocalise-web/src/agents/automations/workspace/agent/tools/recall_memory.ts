@@ -14,6 +14,7 @@ import { z } from "zod";
 
 import { defineAgentTool } from "@/agents/_runtime/define-agent-tool";
 import { hasWorkspaceAutomationKnowledgeTool } from "@/lib/agents/workspace-automations";
+import { resolveWorkspaceKnowledgeFlag } from "@/lib/flags/workspace-flags";
 import { getKnowledgeMemoryForOrganization } from "@/lib/knowledge-memory/knowledge-memory";
 import { selectKnowledgeMemoryContext } from "@/lib/knowledge-memory/knowledge-memory-selection";
 
@@ -24,6 +25,9 @@ import type { WorkspaceOrchestratorSession } from "../context";
  * Replaces the old behaviour of silently pasting a fixed excerpt into the composed instructions
  * before the run started — the agent now asks a targeted question instead, reusing the same
  * query-aware excerpting (selectKnowledgeMemoryContext) that already exists for translation jobs.
+ *
+ * Also re-checks the workspace-knowledge feature flag at call time, not just toolConfig — see
+ * save_memory.ts's docstring for why a stored toolConfig alone isn't a reliable gate.
  */
 export function createRecallMemoryTool(session: WorkspaceOrchestratorSession) {
   return defineAgentTool({
@@ -35,6 +39,13 @@ export function createRecallMemoryTool(session: WorkspaceOrchestratorSession) {
     execute: async ({ query }) => {
       if (!hasWorkspaceAutomationKnowledgeTool(session.automation.toolConfig)) {
         throw new Error("memory_not_enabled");
+      }
+
+      const knowledgeFeatureEnabled = await resolveWorkspaceKnowledgeFlag({
+        organizationId: session.organizationId,
+      });
+      if (!knowledgeFeatureEnabled) {
+        throw new Error("memory_feature_disabled");
       }
 
       const memory = await getKnowledgeMemoryForOrganization(session.organizationId);

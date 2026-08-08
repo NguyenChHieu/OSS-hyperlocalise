@@ -239,9 +239,6 @@ export function SlackLaunchIntakeIllustration({
   const initialPrompt = intl.formatMessage(slackLaunchIntakeIllustrationMessages.channelPrompt, {
     mention: `@${agentName}`,
   });
-  const followUpPrompt = intl.formatMessage(
-    slackLaunchIntakeIllustrationMessages.agentSummaryOutro,
-  );
   const mayaFollowUp = intl.formatMessage(slackLaunchIntakeIllustrationMessages.userFollowUp);
   const threadRef = useRef<HTMLDivElement>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -536,7 +533,7 @@ export function SlackLaunchIntakeIllustration({
             onFollowUp={handleFollowUpPrompt}
             isDone={isDone}
             onReset={handleReset}
-            followUpPrompt={followUpPrompt}
+            followUpPrompt={mayaFollowUp}
           />
         </motion.aside>
       )}
@@ -567,7 +564,13 @@ export function SlackLaunchIntakeIllustration({
             className="flex size-9 items-center justify-center rounded-xl"
             style={{ backgroundColor: SLACK.aubergine }}
           >
-            <SlackMark className="size-4 gap-0.5" />
+            <Image
+              src="/images/slack-logo.svg"
+              alt="Slack"
+              width={20}
+              height={20}
+              className="size-5"
+            />
           </div>
           <div className="mt-1 flex size-9 items-center justify-center rounded-xl bg-white/10 ring-2 ring-white/70">
             <HugeiconsIcon icon={Home06Icon} strokeWidth={1.8} className="size-5 text-white" />

@@ -60,6 +60,7 @@ type IssueResponse = {
     key: string | null;
     sourceText: string | null;
     values: Record<string, unknown>;
+    isWatching: boolean;
   };
 };
 
@@ -1245,6 +1246,80 @@ Second import issue,Done,EXT-2,P2`;
     expect(allowedList.status).toBe(200);
   });
 
+  it("rejects create and link when the translation key belongs to another project", async () => {
+    const { identity, organization, user, project } =
+      await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const organizationSlug = identity.organization.slug ?? "missing-slug";
+
+    const [otherProject] = await db
+      .insert(schema.projects)
+      .values({
+        id: `project_${crypto.randomUUID()}`,
+        organizationId: organization.id,
+        teamId: project.teamId,
+        createdByUserId: user.id,
+        name: "Sibling Project",
+        description: "",
+        translationContext: "",
+        sourceLocale: "en-US",
+        targetLocales: ["fr-FR"],
+      })
+      .returning();
+
+    const [foreignKey] = await db
+      .insert(schema.projectTranslationKeys)
+      .values({
+        organizationId: organization.id,
+        projectId: otherProject.id,
+        key: "foreign.key",
+        sourceText: "Foreign",
+        normalizedSourceText: "Foreign",
+      })
+      .returning();
+
+    const createResponse = await requestJson(issueSheetUrl(organizationSlug, project.id), {
+      method: "POST",
+      headers,
+      body: {
+        title: "Cross-project key create",
+        translationKeyId: foreignKey.id,
+      },
+    });
+    expect(createResponse.status).toBe(400);
+    await expect(createResponse.json()).resolves.toMatchObject({
+      error: "translation_key_not_found",
+    });
+
+    const standalone = await requestJson(issueSheetUrl(organizationSlug, project.id), {
+      method: "POST",
+      headers,
+      body: {
+        title: "Standalone before bad link",
+        issueType: "general_question",
+      },
+    });
+    expect(standalone.status).toBe(201);
+    const created = (await standalone.json()) as IssueResponse;
+
+    const linkResponse = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${created.issue.id}`),
+      {
+        method: "PATCH",
+        headers,
+        body: {
+          translationKeyId: foreignKey.id,
+          segmentId: foreignKey.id,
+          linkKind: "cat_segment",
+        },
+      },
+    );
+    expect(linkResponse.status).toBe(400);
+    await expect(linkResponse.json()).resolves.toMatchObject({
+      error: "translation_key_not_found",
+    });
+  });
+
   it("creates a cat_segment issue for a file-backed segment without a translation key", async () => {
     const { identity, project } = await projectFixture.createStoredProjectFixture();
     const headers = await projectFixture.authHeadersFor(identity);
@@ -1314,5 +1389,99 @@ Second import issue,Done,EXT-2,P2`;
     expect(body.issue.id).toBe(created.issue.id);
     expect(body.issue.translationKeyId).toBeNull();
     expect(body.issue.key).toBeNull();
+  });
+
+  it("watches and unwatches an issue and reports isWatching on GET", async () => {
+    const { identity, project } = await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const organizationSlug = identity.organization.slug ?? "missing-slug";
+
+    const createResponse = await requestJson(issueSheetUrl(organizationSlug, project.id), {
+      method: "POST",
+      headers,
+      body: {
+        title: "Watch me",
+        issueType: "general_question",
+      },
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as IssueResponse;
+    const issueId = created.issue.id;
+
+    const initialGet = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${issueId}`),
+      { headers },
+    );
+    expect(initialGet.status).toBe(200);
+    const initialBody = (await initialGet.json()) as IssueResponse;
+    expect(initialBody.issue.isWatching).toBe(true);
+
+    const unwatchResponse = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${issueId}/subscription`),
+      { method: "DELETE", headers },
+    );
+    expect(unwatchResponse.status).toBe(204);
+
+    const unwatchedGet = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${issueId}`),
+      { headers },
+    );
+    const unwatchedBody = (await unwatchedGet.json()) as IssueResponse;
+    expect(unwatchedBody.issue.isWatching).toBe(false);
+
+    const watchResponse = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${issueId}/subscription`),
+      { method: "POST", headers },
+    );
+    expect(watchResponse.status).toBe(201);
+    await expect(watchResponse.json()).resolves.toMatchObject({
+      subscription: {
+        issueId,
+        userId: expect.any(String),
+      },
+    });
+
+    const watchedGet = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${issueId}`),
+      { headers },
+    );
+    const watchedBody = (await watchedGet.json()) as IssueResponse;
+    expect(watchedBody.issue.isWatching).toBe(true);
+
+    const duplicateWatch = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${issueId}/subscription`),
+      { method: "POST", headers },
+    );
+    expect(duplicateWatch.status).toBe(201);
+  });
+
+  it("lists issue subscribers", async () => {
+    const { identity, project } = await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const organizationSlug = identity.organization.slug ?? "missing-slug";
+
+    const createResponse = await requestJson(issueSheetUrl(organizationSlug, project.id), {
+      method: "POST",
+      headers,
+      body: {
+        title: "Subscribers test",
+        issueType: "general_question",
+      },
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as IssueResponse;
+    const issueId = created.issue.id;
+
+    const subscribersResponse = await requestJson(
+      issueSheetUrl(organizationSlug, project.id, `/${issueId}/subscriptions`),
+      { headers },
+    );
+    expect(subscribersResponse.status).toBe(200);
+    const subscribersBody = (await subscribersResponse.json()) as {
+      subscribers: { userId: string; displayName: string; avatarUrl: string | null }[];
+    };
+    expect(subscribersBody.subscribers).toHaveLength(1);
+    expect(subscribersBody.subscribers[0]?.userId).toBeTruthy();
+    expect(subscribersBody.subscribers[0]?.displayName).toBeTruthy();
   });
 });

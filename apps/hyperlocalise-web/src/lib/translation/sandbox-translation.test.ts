@@ -86,6 +86,8 @@ describe("sandbox command runner", () => {
     expect(sandboxMocks.create).toHaveBeenCalledWith({
       runtime: "node26",
       timeout: 600_000,
+      snapshotExpiration: 3 * 24 * 60 * 60 * 1000,
+      keepLastSnapshots: { count: 3, deleteEvicted: true },
     });
     expect(sandboxMocks.runCommand).toHaveBeenCalledWith({
       cmd: "sh",
@@ -537,6 +539,25 @@ describe("sandbox translation temporary config", () => {
     expect(config).toContain('to: "messages-{{target}}.json"');
     expect(config).toContain("workspace -> espace de travail (fr-FR)");
     expect(config).toContain("workspace -> Arbeitsbereich (de-DE)");
+  });
+
+  it("builds multi-file multi-locale configs in one bucket", async () => {
+    const { buildMultiFileMultiLocaleTempConfig } = await import("@/lib/translation/sandbox");
+    const config = buildMultiFileMultiLocaleTempConfig(
+      [
+        { from: "work_a_messages.json", to: "work_a_messages-{{target}}.json" },
+        { from: "work_b_labels.json", to: "work_b_labels-{{target}}.json" },
+      ],
+      "en-US",
+      ["fr-FR"],
+      null,
+    );
+
+    expect(config).toContain('from: "work_a_messages.json"');
+    expect(config).toContain('to: "work_a_messages-{{target}}.json"');
+    expect(config).toContain('from: "work_b_labels.json"');
+    expect(config).toContain('to: "work_b_labels-{{target}}.json"');
+    expect(config).toContain('- "fr-FR"');
   });
 });
 

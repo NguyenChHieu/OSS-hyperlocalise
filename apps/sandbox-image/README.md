@@ -3,7 +3,7 @@
 Custom [Vercel Sandbox](https://vercel.com/docs/sandbox/concepts/images) image
 published to [Vercel Container Registry (VCR)](https://vercel.com/docs/container-registry).
 
-Today every sandbox boots the managed `node26` runtime, then
+Today every sandbox boots the managed `vercel/sandbox/node:26` image, then
 `createConfiguredVercelSandbox` installs ripgrep, the `hl` CLI, and Chromium
 system libraries over the network. Screenshot capture then installs Playwright
 into a temp directory. This image bakes those tools in so sandboxes can start
@@ -97,9 +97,23 @@ docker run --rm hyperlocalise-sandbox:local \
   node -e "require('/tmp/hyperlocalise-browser-runtime/node_modules/playwright'); console.log('ok')"
 ```
 
+## App cutover
+
+Set both on the web app deployment:
+
+```text
+VERCEL_SANDBOX_IMAGE=vcr.vercel.com/<team-slug>/<project-slug>/hyperlocalise-sandbox:latest
+RELEASE_SANDBOX_VCR_IMAGE=true
+```
+
+`RELEASE_SANDBOX_VCR_IMAGE` backs Flags SDK release flag
+`release-sandbox-vcr-image`. When the flag is on and the image env is set,
+`createConfiguredVercelSandbox` uses that image instead of
+`vercel/sandbox/node:26`. See
+[`docs/adr/2026-08-08-sandbox-vcr-image-release-flag-design.md`](../../docs/adr/2026-08-08-sandbox-vcr-image-release-flag-design.md).
+
 ## Notes
 
-- App wiring (`Sandbox.create({ image })`) is intentionally out of scope here.
 - Sandbox does not run Docker `ENTRYPOINT` / `CMD`. Start work with
   `sandbox.runCommand()`.
 - Rebuild and push when bumping ripgrep, Playwright, or the CLI pin.

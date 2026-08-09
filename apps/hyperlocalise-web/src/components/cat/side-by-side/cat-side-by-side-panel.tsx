@@ -121,6 +121,13 @@ export const CatSideBySidePanel = observer(function CatSideBySidePanel({
   onUseTmMatch,
   onAddComment,
   onResolveComment,
+  organizationSlug,
+  projectId,
+  nativeIssuesEnabled = false,
+  translationKeyId = null,
+  issueTargetLocale = null,
+  issueStringLink = null,
+  onNativeOpenIssueCountChange,
   primaryActionLabel,
   segmentShareUrl = null,
   className,
@@ -182,6 +189,22 @@ export const CatSideBySidePanel = observer(function CatSideBySidePanel({
   onUseTmMatch?: (segmentId: string, match: CatTranslationMemoryMatch) => void;
   onAddComment?: (segmentId: string, input: CatSegmentCommentInput) => void | Promise<void>;
   onResolveComment?: (segmentId: string, commentId: string) => void | Promise<void>;
+  organizationSlug?: string;
+  projectId?: string;
+  nativeIssuesEnabled?: boolean;
+  translationKeyId?: string | null;
+  issueTargetLocale?: string | null;
+  issueStringLink?: {
+    segmentId: string;
+    sourcePath: string;
+    targetLocale: string;
+    translationKeyId?: string;
+    defaultTitle?: string;
+    defaultDescription?: string;
+    linkUrl?: string;
+    linkLabel?: string;
+  } | null;
+  onNativeOpenIssueCountChange?: (openIssueCount: number) => void;
   primaryActionLabel?: string;
   segmentShareUrl?: string | null;
   className?: string;
@@ -433,6 +456,13 @@ export const CatSideBySidePanel = observer(function CatSideBySidePanel({
               ? () => onAddToIssueSheet(intelligenceSegmentId)
               : undefined
           }
+          organizationSlug={organizationSlug}
+          projectId={projectId}
+          nativeIssuesEnabled={nativeIssuesEnabled}
+          translationKeyId={translationKeyId}
+          issueTargetLocale={issueTargetLocale}
+          issueStringLink={issueStringLink}
+          onNativeOpenIssueCountChange={onNativeOpenIssueCountChange}
           placement="right"
           className="h-full"
         />

@@ -89,6 +89,8 @@ import { useIssueDetailMutations } from "./use-issue-detail-mutations";
 import { useIssueDetailQuery } from "./use-issue-detail-query";
 import { useIssueSheetColumnsQuery } from "./use-issue-sheet-columns-query";
 import { issueDetailPanelMessages as messages } from "./issue-detail-panel.messages";
+import { type IssueDetailSidebarScope } from "./issue-detail-sidebar-state";
+import { useIssueDetailSidebarOpen } from "./use-issue-detail-sidebar-open";
 import { issueSheetSharedMessages as sharedMessages } from "../../projects/[projectId]/issue-sheet/_components/issue-sheet-shared.messages";
 import { formatRelativeTimestamp } from "../workspace-files-shared";
 
@@ -203,9 +205,17 @@ export const IssueDetailPanel = forwardRef<
     issueId: string;
     onDirtyChange?: (dirty: boolean) => void;
     defaultSidebarOpen?: boolean;
+    sidebarStorageScope?: IssueDetailSidebarScope;
   }
 >(function IssueDetailPanel(
-  { organizationSlug, projectId, issueId, onDirtyChange, defaultSidebarOpen = true },
+  {
+    organizationSlug,
+    projectId,
+    issueId,
+    onDirtyChange,
+    defaultSidebarOpen = true,
+    sidebarStorageScope = "issue-detail",
+  },
   ref,
 ) {
   const intl = useIntl();
@@ -240,7 +250,11 @@ export const IssueDetailPanel = forwardRef<
   const [descriptionDraft, setDescriptionDraft] = useState("");
   const [ownerNoteDraft, setOwnerNoteDraft] = useState("");
   const [customColumnDrafts, setCustomColumnDrafts] = useState<Record<string, string>>({});
-  const [sidebarOpen, setSidebarOpen] = useState(defaultSidebarOpen);
+  const [sidebarOpen, setSidebarOpen] = useIssueDetailSidebarOpen(
+    sidebarStorageScope,
+    issueId,
+    defaultSidebarOpen,
+  );
   const isSaving = updateIssue.isPending || setValue.isPending;
 
   const titleDraftRef = useRef(titleDraft);

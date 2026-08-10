@@ -916,6 +916,35 @@ export class IssueSheetService {
         database: tx,
       });
 
+      if (input.body.priority) {
+        await this.setValue({
+          organizationId: input.organizationId,
+          projectId: input.projectId,
+          issueId: issue.id,
+          body: { columnKey: "priority", value: input.body.priority },
+          database: tx,
+        });
+      }
+
+      const customValues = input.body.values;
+      if (customValues) {
+        for (const [columnKey, value] of Object.entries(customValues)) {
+          if (columnKey === "priority") {
+            continue;
+          }
+          const savedValue = await this.setValue({
+            organizationId: input.organizationId,
+            projectId: input.projectId,
+            issueId: issue.id,
+            body: { columnKey, value },
+            database: tx,
+          });
+          if (!savedValue) {
+            throw new Error("issue_sheet_column_not_found");
+          }
+        }
+      }
+
       return issue.id;
     });
 
@@ -925,15 +954,6 @@ export class IssueSheetService {
         return conflicted;
       }
       throw new Error("issue_sheet_issue_create_failed");
-    }
-
-    if (input.body.priority) {
-      await this.setValue({
-        organizationId: input.organizationId,
-        projectId: input.projectId,
-        issueId,
-        body: { columnKey: "priority", value: input.body.priority },
-      });
     }
 
     if (assigneeUserId) {
@@ -1149,8 +1169,10 @@ export class IssueSheetService {
     projectId: string;
     issueId: string;
     body: IssueSheetSetValueBody;
+    database?: DatabaseClient;
   }) {
-    const [issue] = await this.database
+    const database = input.database ?? this.database;
+    const [issue] = await database
       .select({ id: schema.issueSheetIssues.id })
       .from(schema.issueSheetIssues)
       .where(
@@ -1166,7 +1188,7 @@ export class IssueSheetService {
       throw new Error("issue_sheet_issue_not_found");
     }
 
-    const [column] = await this.database
+    const [column] = await database
       .select({
         id: schema.issueSheetColumns.id,
         key: schema.issueSheetColumns.key,
@@ -1188,7 +1210,7 @@ export class IssueSheetService {
     }
 
     const value = this.normalizeValue(column, input.body.value);
-    await this.database
+    await database
       .insert(schema.issueSheetRowValues)
       .values({
         organizationId: input.organizationId,

@@ -12,7 +12,7 @@
  */
 import "dotenv/config";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { app } from "@/api/app";
@@ -347,6 +347,134 @@ describe("Issue Sheet routes", () => {
     expect(getIssueBody.issue.values).toMatchObject({
       sprint: "S24",
     });
+  });
+
+  it("persists custom column values from the create payload", async () => {
+    const { identity, project } = await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const organizationSlug = identity.organization.slug ?? "missing-slug";
+
+    await requestJson(issueSheetUrl(organizationSlug, project.id, "/columns"), {
+      method: "POST",
+      headers,
+      body: {
+        key: "sprint",
+        label: "Sprint",
+        type: "select",
+        config: { options: [{ id: "S24", label: "S24" }] },
+      },
+    });
+    await requestJson(issueSheetUrl(organizationSlug, project.id, "/columns"), {
+      method: "POST",
+      headers,
+      body: {
+        key: "component",
+        label: "Component",
+        type: "text",
+      },
+    });
+
+    const createResponse = await requestJson(issueSheetUrl(organizationSlug, project.id), {
+      method: "POST",
+      headers,
+      body: {
+        title: "Issue with create-time values",
+        issueType: "general_question",
+        status: "in_progress",
+        priority: "P0",
+        values: {
+          priority: "P2",
+          sprint: "S24",
+          component: "Checkout",
+        },
+      },
+    });
+
+    expect(createResponse.status).toBe(201);
+    const createdBody = (await createResponse.json()) as IssueResponse;
+    expect(createdBody.issue).toMatchObject({
+      status: "in_progress",
+      values: {
+        priority: "P0",
+        sprint: "S24",
+        component: "Checkout",
+      },
+    });
+  });
+
+  it("rejects invalid select values in the create payload", async () => {
+    const { identity, organization, project } = await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const organizationSlug = identity.organization.slug ?? "missing-slug";
+
+    await requestJson(issueSheetUrl(organizationSlug, project.id, "/columns"), {
+      method: "POST",
+      headers,
+      body: {
+        key: "sprint",
+        label: "Sprint",
+        type: "select",
+        config: { options: [{ id: "S24", label: "S24" }] },
+      },
+    });
+
+    const createResponse = await requestJson(issueSheetUrl(organizationSlug, project.id), {
+      method: "POST",
+      headers,
+      body: {
+        title: "Bad select value",
+        values: { sprint: "S99" },
+      },
+    });
+
+    expect(createResponse.status).toBe(400);
+    await expect(createResponse.json()).resolves.toMatchObject({
+      error: "invalid_issue_sheet_select_value",
+    });
+
+    const persistedIssues = await db
+      .select({ id: schema.issueSheetIssues.id })
+      .from(schema.issueSheetIssues)
+      .where(
+        and(
+          eq(schema.issueSheetIssues.organizationId, organization.id),
+          eq(schema.issueSheetIssues.projectId, project.id),
+          eq(schema.issueSheetIssues.title, "Bad select value"),
+        ),
+      );
+    expect(persistedIssues).toEqual([]);
+  });
+
+  it("rejects unknown custom column keys in the create payload", async () => {
+    const { identity, organization, project } = await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const organizationSlug = identity.organization.slug ?? "missing-slug";
+
+    const createResponse = await requestJson(issueSheetUrl(organizationSlug, project.id), {
+      method: "POST",
+      headers,
+      body: {
+        title: "Unknown custom column",
+        values: { missing_column: "S24" },
+      },
+    });
+
+    expect(createResponse.status).toBe(400);
+    await expect(createResponse.json()).resolves.toMatchObject({
+      error: "issue_sheet_column_not_found",
+    });
+
+    const persistedIssues = await db
+      .select({ id: schema.issueSheetIssues.id })
+      .from(schema.issueSheetIssues)
+      .where(
+        and(
+          eq(schema.issueSheetIssues.organizationId, organization.id),
+          eq(schema.issueSheetIssues.projectId, project.id),
+          eq(schema.issueSheetIssues.title, "Unknown custom column"),
+        ),
+      );
+    expect(persistedIssues).toEqual([]);
   });
 
   it("deduplicates open rows for the same external reference", async () => {

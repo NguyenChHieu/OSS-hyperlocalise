@@ -10,15 +10,7 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { describe, expect, it, vi } from "vite-plus/test";
-
-vi.mock("@/lib/env", () => ({
-  env: {
-    OPENAI_API_KEY: "test-openai-api-key",
-    RESEND_API_KEY: "test-key",
-    RESEND_FROM_NAME: "Hyperlocalise",
-  },
-}));
+import { describe, expect, it } from "vite-plus/test";
 
 import { getTranslatedFileDiagnostics } from "@/lib/translation/diagnostics";
 
@@ -46,9 +38,19 @@ describe("email translation workflow filenames", () => {
   });
 
   it("passes provider credentials to the sandbox translation command", () => {
-    expect(getSandboxTranslationEnv()).toEqual({
-      OPENAI_API_KEY: "test-openai-api-key",
-    });
+    const previous = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "test-openai-api-key";
+    try {
+      expect(getSandboxTranslationEnv()).toEqual({
+        OPENAI_API_KEY: "test-openai-api-key",
+      });
+    } finally {
+      if (previous === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = previous;
+      }
+    }
   });
 });
 

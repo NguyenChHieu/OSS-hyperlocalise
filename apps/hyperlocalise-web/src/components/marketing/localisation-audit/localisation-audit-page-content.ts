@@ -10,6 +10,17 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
+import { DEFAULT_APP_LOCALE } from "@/lib/app-i18n/locales";
+import { getBlogPostPath } from "@/lib/blog/blog-post-path";
+
+export const LOCALISATION_AUDIT_GUIDE_SLUG = "what-is-a-website-localisation-audit";
+
+export function getLocalisationAuditGuideHref(): string {
+  return (
+    getBlogPostPath(DEFAULT_APP_LOCALE, LOCALISATION_AUDIT_GUIDE_SLUG) ??
+    `/${DEFAULT_APP_LOCALE}/blog/${LOCALISATION_AUDIT_GUIDE_SLUG}`
+  );
+}
 
 export function getLocalisationAuditPageCopy(_locale: string) {
   return {
@@ -27,14 +38,14 @@ export function getLocalisationAuditPageCopy(_locale: string) {
       "One free audit per domain. If we already audited it, you will see the public teaser report.",
     methodologyHeading: "What we check",
     technicalChecks: [
-      "hreflang and HTML lang consistency",
-      "Locale URL patterns and mixed-language signals",
-      "Homepage and high-value navigation samples",
+      "Locale detection, routing, language switcher, hreflang, and canonicals",
+      "Localized metadata, sitemaps, structured data, and formatting",
+      "Accessibility localisation on sampled pages",
     ],
     linguisticChecks: [
-      "Heuristic language/locale mismatches",
-      "Light LLM review on optional focus markets",
-      "Sampled product, pricing, and nav copy",
+      "Translation completeness, terminology, and cross-page consistency",
+      "Accuracy, fluency, brand voice, and grammar when heuristics are inconclusive",
+      "Contextual and visual credits on the same sampled pages",
     ],
     crawlLimits:
       "Smart sample of about 10–15 public pages. We do not log in, submit forms, or crawl private areas.",
@@ -69,6 +80,13 @@ export function getLocalisationAuditResultCopy(_locale: string) {
     progressCrawling: "Crawling",
     progressAnalyzing: "Analyzing",
     progressScoring: "Scoring",
+    progressStepOf: "Step {current} of {total}",
+    progressBarLabel: "Audit progress",
+    progressQueuedDetail: "This audit is queued and will start shortly.",
+    progressPreparingDetail: "Checking the domain and opening a safe crawl.",
+    progressCrawlingDetail: "Sampling public pages and locale roots.",
+    progressAnalyzingDetail: "Checking technical, linguistic, contextual, and visual signals.",
+    progressScoringDetail: "Combining credits into the four module scores.",
     staleTitle: "This audit looks stuck",
     staleBody:
       "No progress for a while. You can safely retry — we will reclaim the stalled run and start a fresh attempt.",
@@ -78,9 +96,18 @@ export function getLocalisationAuditResultCopy(_locale: string) {
     retrying: "Retrying…",
     scoreLabel: "Localisation score",
     scoreOutOf: "/100",
+    scoreRatingExcellent: "Excellent",
+    scoreRatingGood: "Good",
+    scoreRatingNeedsImprovement: "Needs improvement",
+    scoreRatingPoor: "Poor",
+    scoreRatingCritical: "Critical",
+    dimensionTechnical: "Technical Audit",
+    dimensionLinguistic: "Linguistic Audit",
+    dimensionContextual: "Contextual Audit",
+    dimensionVisual: "Visual Audit",
     freshnessLabel: "Audited",
     scopeLabel: "Scope",
-    scopeBody: "Public smart sample · technical checks + light linguistic review",
+    scopeBody: "Public smart sample · technical, linguistic, contextual, and visual credits",
     confidenceLabel: "Confidence",
     confidenceBody: "Indicative health check from sampled pages — not a full site crawl.",
     fixFirstHeading: "Fix first",
@@ -106,6 +133,7 @@ export function getLocalisationAuditResultCopy(_locale: string) {
     unlocking: "Sending…",
     unlockQueued: "Check your inbox for a verified link to unlock the full report.",
     fullFindingsHeading: "Full findings",
+    creditsHeading: "Credit scores",
     linguisticHeading: "Linguistic notes",
     pagesHeading: "Pages sampled",
     reauditHeading: "Next step",
@@ -118,15 +146,39 @@ export function getLocalisationAuditResultCopy(_locale: string) {
     createWorkspace: "Create a workspace",
     deeperAudit: "Run a deeper registered audit",
     bookReview: "Book an audit review",
-    scoreInterpretationHigh: "Strong technical and linguistic signals on the sampled pages.",
-    scoreInterpretationMid: "Usable foundation with clear gaps that can hurt conversion or SEO.",
-    scoreInterpretationLow: "High-impact localisation issues likely affecting discovery or trust.",
+    scoreInterpretationExcellent: "The localised experience is in strong shape.",
+    scoreInterpretationGood:
+      "The website is generally well localised, with some issues to improve.",
+    scoreInterpretationNeedsImprovement: "Users may encounter noticeable localisation problems.",
+    scoreInterpretationPoor: "Significant localisation gaps are affecting the experience.",
+    scoreInterpretationCritical:
+      "The localised experience has major problems that should be addressed.",
+    methodologyLink: "How we score localisation audits",
   };
 }
 
-export function interpretScore(score: number | null | undefined) {
-  if (score == null) return "unknown" as const;
-  if (score >= 80) return "high" as const;
-  if (score >= 50) return "mid" as const;
-  return "low" as const;
+export type LocalisationAuditRating =
+  | "excellent"
+  | "good"
+  | "needs-improvement"
+  | "poor"
+  | "critical"
+  | "unknown";
+
+export function interpretScore(score: number | null | undefined): LocalisationAuditRating {
+  if (score == null) return "unknown";
+  if (score >= 90) return "excellent";
+  if (score >= 75) return "good";
+  if (score >= 50) return "needs-improvement";
+  if (score >= 25) return "poor";
+  return "critical";
+}
+
+export function interpretScoreCtaBand(
+  rating: LocalisationAuditRating,
+): "high" | "mid" | "low" | "unknown" {
+  if (rating === "excellent" || rating === "good") return "high";
+  if (rating === "needs-improvement") return "mid";
+  if (rating === "unknown") return "unknown";
+  return "low";
 }

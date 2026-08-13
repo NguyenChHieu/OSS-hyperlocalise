@@ -13,15 +13,23 @@
  * Version 2.0 or later.
  */
 import Link from "next/link";
+import { CheckIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { REQUEST_DEMO_URL } from "@/components/marketing/request-demo";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TypographyH1, TypographyH2, TypographyP } from "@/components/ui/typography";
 import { clientAnalytics } from "@/lib/analytics/client";
 import { LOCALISATION_AUDIT_ANALYTICS_EVENTS, scoreBand } from "@/lib/analytics/events";
+import {
+  formatDimensionScore,
+  scoreTone,
+  severityTone,
+  type LocalisationAuditTone,
+} from "@/lib/localisation-audit/score-tone";
 import type { LocalisationAuditStanding } from "@/lib/localisation-audit/store";
 import type {
   LocalisationAuditFinding,
@@ -29,8 +37,14 @@ import type {
   LocalisationAuditReport,
   LocalisationAuditTeaser,
 } from "@/lib/localisation-audit/types";
+import { cn } from "@/lib/primitives/cn";
 
-import { getLocalisationAuditResultCopy, interpretScore } from "./localisation-audit-page-content";
+import {
+  getLocalisationAuditGuideHref,
+  getLocalisationAuditResultCopy,
+  interpretScore,
+  interpretScoreCtaBand,
+} from "./localisation-audit-page-content";
 
 type AuditPayload = {
   id: string;
@@ -59,6 +73,71 @@ type LocalisationAuditResultProps = {
 
 const PROGRESS_STAGES = ["queued", "preparing", "crawling", "analyzing", "scoring"] as const;
 
+function auditToneTextClass(tone: LocalisationAuditTone) {
+  switch (tone) {
+    case "safe":
+      return "text-grove-900 dark:text-grove-300";
+    case "watch":
+      return "text-beam-900 dark:text-warning-foreground";
+    case "risk":
+      return "text-destructive";
+    case "info":
+      return "text-blue-1000 dark:text-blue-900";
+    default:
+      return "text-muted-foreground";
+  }
+}
+
+function auditToneBadgeClass(tone: LocalisationAuditTone) {
+  switch (tone) {
+    case "safe":
+      return "border-grove-700/25 bg-grove-100 text-grove-900 dark:border-grove-500/30 dark:bg-grove-100 dark:text-grove-900";
+    case "watch":
+      return "border-warning/25 bg-warning/10 text-warning-foreground dark:border-warning/30 dark:bg-warning/20 dark:text-warning-foreground";
+    case "risk":
+      return "border-destructive/25 bg-destructive/10 text-destructive dark:border-destructive/30 dark:bg-destructive/20 dark:text-destructive";
+    case "info":
+      return "border-blue-700/25 bg-blue-100 text-blue-1000 dark:border-blue-600/30 dark:bg-blue-100 dark:text-blue-900";
+    default:
+      return "border-border text-muted-foreground";
+  }
+}
+
+function ScoreValue({
+  score,
+  className,
+}: {
+  score: number | null | undefined;
+  className?: string;
+}) {
+  if (score == null) {
+    return <span className={cn("tabular-nums text-muted-foreground", className)}>—</span>;
+  }
+  return (
+    <span className={cn("tabular-nums", auditToneTextClass(scoreTone(score)), className)}>
+      {score}
+    </span>
+  );
+}
+
+function DimensionScoreCircle({ label, score }: { label: string; score: number | null }) {
+  const display = formatDimensionScore(score);
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <span
+        className={cn(
+          "flex size-16 items-center justify-center rounded-full font-semibold tabular-nums",
+          score == null ? "text-sm" : "text-lg",
+          auditToneBadgeClass(scoreTone(score)),
+        )}
+      >
+        {display}
+      </span>
+      <span className="text-center text-pretty text-sm text-muted-foreground">{label}</span>
+    </div>
+  );
+}
+
 function FindingList({ findings }: { findings: LocalisationAuditFinding[] }) {
   if (findings.length === 0) {
     return <p className="text-muted-foreground">No findings in this section.</p>;
@@ -66,33 +145,139 @@ function FindingList({ findings }: { findings: LocalisationAuditFinding[] }) {
 
   return (
     <ul className="space-y-6">
-      {findings.map((finding) => (
-        <li key={finding.id} className="border-t border-border pt-6 first:border-t-0 first:pt-0">
-          <p className="text-xs font-medium tracking-[0.14em] text-muted-foreground uppercase">
-            {finding.severity} · {finding.category}
-          </p>
-          <p className="mt-2 text-lg font-medium">{finding.title}</p>
-          <p className="mt-1 text-muted-foreground">{finding.summary}</p>
-          {finding.url ? (
-            <p className="mt-2 break-all text-sm text-muted-foreground">{finding.url}</p>
-          ) : null}
-          {finding.evidence ? (
-            <p className="mt-2 text-sm text-muted-foreground italic">“{finding.evidence}”</p>
-          ) : null}
-        </li>
-      ))}
+      {findings.map((finding) => {
+        const tone = severityTone(finding.severity);
+        return (
+          <li key={finding.id} className="border-t border-border pt-6 first:border-t-0 first:pt-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className={cn("capitalize", auditToneBadgeClass(tone))}>
+                {finding.severity}
+              </Badge>
+              <span className="text-xs font-medium tracking-[0.14em] text-muted-foreground uppercase">
+                {finding.category}
+                {finding.confidence != null ? ` · ${finding.confidence}% confidence` : ""}
+              </span>
+            </div>
+            <p className="mt-2 text-lg font-medium">{finding.title}</p>
+            <p className="mt-1 text-pretty text-muted-foreground">{finding.summary}</p>
+            {finding.url ? (
+              <p className="mt-2 break-all text-sm text-muted-foreground">{finding.url}</p>
+            ) : null}
+            {finding.evidence ? (
+              <p className="mt-2 text-sm text-muted-foreground italic">“{finding.evidence}”</p>
+            ) : null}
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
 function stageIndex(stage: LocalisationAuditProgressStage | null | undefined) {
-  if (!stage) return 0;
+  if (!stage || stage === "failed") return 0;
+  if (stage === "completed") return PROGRESS_STAGES.length - 1;
   const index = (PROGRESS_STAGES as readonly string[]).indexOf(stage);
   return index >= 0 ? index : 0;
 }
 
+function AuditProgressTrack({
+  activeIndex,
+  copy,
+}: {
+  activeIndex: number;
+  copy: ReturnType<typeof getLocalisationAuditResultCopy>;
+}) {
+  const labels = {
+    queued: copy.progressQueued,
+    preparing: copy.progressPreparing,
+    crawling: copy.progressCrawling,
+    analyzing: copy.progressAnalyzing,
+    scoring: copy.progressScoring,
+  } as const;
+  const details = {
+    queued: copy.progressQueuedDetail,
+    preparing: copy.progressPreparingDetail,
+    crawling: copy.progressCrawlingDetail,
+    analyzing: copy.progressAnalyzingDetail,
+    scoring: copy.progressScoringDetail,
+  } as const;
+  const total = PROGRESS_STAGES.length;
+  const currentIndex = Math.min(activeIndex, total - 1);
+  const currentStage = PROGRESS_STAGES[currentIndex]!;
+  const currentStep = currentIndex + 1;
+
+  return (
+    <div className="mt-10 max-w-2xl">
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="text-pretty text-sm font-medium">{labels[currentStage]}</p>
+        <p className="text-sm text-muted-foreground tabular-nums">
+          {formatCopy(copy.progressStepOf, { current: currentStep, total })}
+        </p>
+      </div>
+
+      <ol className="mt-6 grid grid-cols-5" aria-label={copy.progressBarLabel}>
+        {PROGRESS_STAGES.map((stage, index) => {
+          const done = index < activeIndex;
+          const current = index === activeIndex;
+          const isLast = index === total - 1;
+          return (
+            <li
+              key={stage}
+              className="relative flex flex-col items-center"
+              aria-current={current ? "step" : undefined}
+            >
+              {isLast ? null : (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "absolute top-3 start-[calc(50%+0.75rem)] h-px w-[calc(100%-1.5rem)]",
+                    index < activeIndex ? "bg-foreground" : "bg-border",
+                  )}
+                />
+              )}
+              <span
+                className={cn(
+                  "relative flex size-6 items-center justify-center rounded-full",
+                  done && "bg-foreground text-background",
+                  current && "border-2 border-foreground bg-background",
+                  !done && !current && "border border-border bg-background",
+                )}
+              >
+                {done ? <CheckIcon className="size-3.5" aria-hidden /> : null}
+                {current ? (
+                  <span className="size-2 rounded-full bg-foreground motion-safe:animate-pulse" />
+                ) : null}
+              </span>
+              <p
+                className={cn(
+                  "mt-2 text-center text-xs text-pretty",
+                  current && "font-medium",
+                  done && "text-foreground",
+                  !done && !current && "text-muted-foreground",
+                )}
+              >
+                {labels[stage]}
+              </p>
+            </li>
+          );
+        })}
+      </ol>
+
+      <p
+        key={currentStage}
+        className="mt-4 text-pretty text-sm text-muted-foreground motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200"
+      >
+        {details[currentStage]}
+      </p>
+      <p className="sr-only" aria-live="polite">
+        {labels[currentStage]}. {details[currentStage]}
+      </p>
+    </div>
+  );
+}
+
 function prioritizeFindings(findings: LocalisationAuditFinding[]) {
-  const weight = { critical: 0, warning: 1, info: 2 } as const;
+  const weight = { critical: 0, high: 1, warning: 1, medium: 2, low: 3, info: 4 } as const;
   return findings.toSorted((a, b) => weight[a.severity] - weight[b.severity]).slice(0, 3);
 }
 
@@ -249,30 +434,7 @@ export function LocalisationAuditResult({
         <p className="mt-2 text-sm text-muted-foreground">{copy.expectedDuration}</p>
         <p className="mt-6 text-sm text-muted-foreground">{audit.domainKey}</p>
 
-        <ol className="mt-10 flex flex-wrap gap-3">
-          {PROGRESS_STAGES.map((stage, index) => {
-            const labels = {
-              queued: copy.progressQueued,
-              preparing: copy.progressPreparing,
-              crawling: copy.progressCrawling,
-              analyzing: copy.progressAnalyzing,
-              scoring: copy.progressScoring,
-            } as const;
-            const active = index <= activeIndex;
-            return (
-              <li
-                key={stage}
-                className={`rounded-full border px-3 py-1 text-sm ${
-                  active
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border text-muted-foreground"
-                }`}
-              >
-                {labels[stage]}
-              </li>
-            );
-          })}
-        </ol>
+        <AuditProgressTrack activeIndex={activeIndex} copy={copy} />
 
         <div className="mt-12 max-w-md">
           <TypographyH2 className="pb-0 text-xl">{copy.emailWhenReadyHeading}</TypographyH2>
@@ -326,13 +488,33 @@ export function LocalisationAuditResult({
   const teaser = audit.teaser;
   const report = audit.unlocked ? audit.report : null;
   const score = audit.score ?? teaser?.score ?? null;
-  const band = interpretScore(score);
+  const rating = interpretScore(score);
+  const band = interpretScoreCtaBand(rating);
   const interpretation =
-    band === "high"
-      ? copy.scoreInterpretationHigh
-      : band === "mid"
-        ? copy.scoreInterpretationMid
-        : copy.scoreInterpretationLow;
+    rating === "excellent"
+      ? copy.scoreInterpretationExcellent
+      : rating === "good"
+        ? copy.scoreInterpretationGood
+        : rating === "needs-improvement"
+          ? copy.scoreInterpretationNeedsImprovement
+          : rating === "poor"
+            ? copy.scoreInterpretationPoor
+            : rating === "critical"
+              ? copy.scoreInterpretationCritical
+              : copy.scoreInterpretationNeedsImprovement;
+  const ratingLabel =
+    rating === "excellent"
+      ? copy.scoreRatingExcellent
+      : rating === "good"
+        ? copy.scoreRatingGood
+        : rating === "needs-improvement"
+          ? copy.scoreRatingNeedsImprovement
+          : rating === "poor"
+            ? copy.scoreRatingPoor
+            : rating === "critical"
+              ? copy.scoreRatingCritical
+              : null;
+  const dimensionScores = teaser?.dimensionScores ?? report?.dimensionScores;
   const fixFirst = prioritizeFindings(teaser?.headlineFindings ?? report?.findings ?? []);
   const headlineFindings = teaser?.headlineFindings ?? [];
   const totalFindings = report?.findings.length ?? teaser?.findingsCount ?? headlineFindings.length;
@@ -349,13 +531,43 @@ export function LocalisationAuditResult({
     <>
       <section className="px-5 pt-16 pb-12 sm:px-8 sm:pt-20 lg:px-10">
         <p className="text-sm text-muted-foreground">{audit.domainKey}</p>
-        <TypographyH1 className="mt-3">
-          {copy.scoreLabel}: {score ?? "—"}
+        <TypographyH1 className="mt-3 text-balance">
+          {copy.scoreLabel}: <ScoreValue score={score} />
           <span className="text-muted-foreground">{copy.scoreOutOf}</span>
         </TypographyH1>
-        <TypographyP className="mt-4 max-w-2xl text-lg text-muted-foreground">
+        {ratingLabel ? (
+          <Badge variant="outline" className={cn("mt-4", auditToneBadgeClass(scoreTone(score)))}>
+            {ratingLabel}
+          </Badge>
+        ) : null}
+        <TypographyP className="mt-4 max-w-2xl text-pretty text-lg text-muted-foreground">
           {interpretation}
         </TypographyP>
+        {dimensionScores ? (
+          <ul className="mt-8 grid max-w-2xl grid-cols-2 gap-6 sm:grid-cols-4">
+            <li>
+              <DimensionScoreCircle
+                label={copy.dimensionTechnical}
+                score={dimensionScores.technical}
+              />
+            </li>
+            <li>
+              <DimensionScoreCircle
+                label={copy.dimensionLinguistic}
+                score={dimensionScores.linguistic}
+              />
+            </li>
+            <li>
+              <DimensionScoreCircle
+                label={copy.dimensionContextual}
+                score={dimensionScores.contextual}
+              />
+            </li>
+            <li>
+              <DimensionScoreCircle label={copy.dimensionVisual} score={dimensionScores.visual} />
+            </li>
+          </ul>
+        ) : null}
         <div className="mt-6 flex flex-wrap gap-x-8 gap-y-2 text-sm text-muted-foreground">
           {freshness ? (
             <span>
@@ -370,8 +582,14 @@ export function LocalisationAuditResult({
           </span>
         </div>
         <TypographyP className="mt-4 max-w-2xl text-muted-foreground">
-          Sampled {teaser?.pagesCrawled ?? report?.pagesCrawled ?? 0} pages for technical and
-          linguistic localisation signals.
+          Sampled {teaser?.pagesCrawled ?? report?.pagesCrawled ?? 0} pages across technical,
+          linguistic, contextual, and visual localisation credits.{" "}
+          <Link
+            href={getLocalisationAuditGuideHref()}
+            className="font-medium text-foreground underline-offset-4 hover:underline"
+          >
+            {copy.methodologyLink}
+          </Link>
         </TypographyP>
       </section>
 
@@ -479,6 +697,35 @@ export function LocalisationAuditResult({
               <FindingList findings={report.findings} />
             </div>
           </section>
+
+          {report.credits && report.credits.length > 0 ? (
+            <section className="border-t border-border px-5 py-16 sm:px-8 lg:px-10">
+              <TypographyH2 className="pb-0">{copy.creditsHeading}</TypographyH2>
+              <ul className="mt-8 space-y-3 text-sm">
+                {report.credits.map((credit) => (
+                  <li
+                    key={credit.id}
+                    className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-t border-border pt-3 first:border-t-0 first:pt-0"
+                  >
+                    <span>
+                      {credit.id}
+                      <span className="text-muted-foreground"> · {credit.dimension}</span>
+                    </span>
+                    <span className="tabular-nums">
+                      {credit.method === "na" || credit.score == null ? (
+                        <span className="text-muted-foreground">N/A</span>
+                      ) : (
+                        <ScoreValue score={credit.score} />
+                      )}
+                      {credit.method !== "na" ? (
+                        <span className="text-muted-foreground"> · {credit.method}</span>
+                      ) : null}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
           {report.linguisticNotes.length > 0 ? (
             <section className="border-t border-border px-5 py-16 sm:px-8 lg:px-10">

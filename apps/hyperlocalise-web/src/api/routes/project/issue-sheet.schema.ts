@@ -12,6 +12,7 @@
  */
 import { z } from "zod";
 
+import { ISSUE_SHEET_COLUMN_ICON_IDS } from "@/lib/projects/issue-sheet/issue-sheet-column-icons";
 import { issueSheetImportContentExceedsByteLimit } from "@/lib/projects/issue-sheet/issue-sheet-csv-import";
 
 import { projectIdParamsSchema } from "./project.schema";
@@ -42,6 +43,7 @@ export const issueSheetColumnTypeSchema = z.enum([
   "enrichment",
 ]);
 export const issueSheetColumnLayerSchema = z.enum(["system", "generated", "custom", "enrichment"]);
+export const issueSheetColumnIconIdSchema = z.enum(ISSUE_SHEET_COLUMN_ICON_IDS);
 
 export const issueSheetParamsSchema = projectIdParamsSchema;
 export const issueSheetIssueParamsSchema = projectIdParamsSchema.extend({
@@ -121,6 +123,7 @@ export const issueSheetCreateColumnBodySchema = z.object({
     .regex(/^[a-z][a-z0-9_]*$/, "Use lowercase letters, numbers, and underscores"),
   label: z.string().trim().min(1).max(120),
   type: issueSheetColumnTypeSchema.exclude(["enrichment"]),
+  icon: issueSheetColumnIconIdSchema.nullable().optional(),
   config: z
     .object({
       options: z
@@ -135,6 +138,32 @@ export const issueSheetCreateColumnBodySchema = z.object({
         .optional(),
     })
     .optional(),
+});
+
+const issueSheetColumnSelectOptionSchema = z.object({
+  id: z.string().trim().min(1).max(64),
+  label: z.string().trim().min(1).max(120),
+  color: z.string().trim().min(1).max(64).optional(),
+});
+
+export const issueSheetUpdateColumnBodySchema = z
+  .object({
+    label: z.string().trim().min(1).max(120).optional(),
+    hidden: z.boolean().optional(),
+    sortOrder: z.number().int().min(0).max(100_000).optional(),
+    icon: issueSheetColumnIconIdSchema.nullable().optional(),
+    config: z
+      .object({
+        options: z.array(issueSheetColumnSelectOptionSchema).max(25).optional(),
+      })
+      .optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "at least one field must be provided",
+  });
+
+export const issueSheetReorderColumnsBodySchema = z.object({
+  columnIds: z.array(z.string().uuid()).min(1).max(200),
 });
 
 export const issueSheetSetValueBodySchema = z.object({
@@ -318,5 +347,7 @@ export type IssueSheetQuery = z.infer<typeof issueSheetQuerySchema>;
 export type IssueSheetCreateIssueBody = z.infer<typeof issueSheetCreateIssueBodySchema>;
 export type IssueSheetUpdateIssueBody = z.infer<typeof issueSheetUpdateIssueBodySchema>;
 export type IssueSheetCreateColumnBody = z.infer<typeof issueSheetCreateColumnBodySchema>;
+export type IssueSheetUpdateColumnBody = z.infer<typeof issueSheetUpdateColumnBodySchema>;
+export type IssueSheetReorderColumnsBody = z.infer<typeof issueSheetReorderColumnsBodySchema>;
 export type IssueSheetSetValueBody = z.infer<typeof issueSheetSetValueBodySchema>;
 export type IssueSheetImportBody = z.infer<typeof issueSheetImportBodySchema>;

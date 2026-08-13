@@ -32,6 +32,7 @@ import {
 import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 
+import { IssueColumnIcon } from "@/components/issue-column-icon/issue-column-icon";
 import { MarkdownEditor } from "@/components/markdown-editor/markdown-editor";
 import { Button } from "@/components/ui/button";
 import {
@@ -80,6 +81,7 @@ import {
 import { IssuePriorityIcon } from "../../../../_components/issue-detail/issue-priority-icon";
 import { IssueStatusIcon } from "../../../../_components/issue-detail/issue-status-icon";
 import type { IssueSheetColumn } from "../../../../_components/issue-detail/issue-sheet-column-types";
+import { isIssueSheetColumnVisible } from "../../../../_components/issue-detail/issue-sheet-column-utils";
 import { useAssignableIssueMembersQuery } from "../../../../_components/issue-detail/use-assignable-issue-members";
 import { useIssueSheetColumnsQuery } from "../../../../_components/issue-detail/use-issue-sheet-columns-query";
 import { useProjectPageQuery } from "../../_components/project-page-shell";
@@ -106,7 +108,9 @@ async function readJsonOrThrow<T>(response: Response, fallbackMessage: string): 
 
 function isCreateCompactCustomColumn(column: IssueSheetColumn) {
   return (
-    !CREATE_EXCLUDED_COLUMN_KEYS.has(column.key) && CREATE_COMPACT_COLUMN_TYPES.has(column.type)
+    !column.hidden &&
+    !CREATE_EXCLUDED_COLUMN_KEYS.has(column.key) &&
+    CREATE_COMPACT_COLUMN_TYPES.has(column.type)
   );
 }
 
@@ -325,6 +329,7 @@ export function IssueSheetCreateIssueDialog({
     () => (columnsQuery.data ?? []).filter(isCreateCompactCustomColumn),
     [columnsQuery.data],
   );
+  const showPriorityField = isIssueSheetColumnVisible(columnsQuery.data ?? [], "priority");
 
   const statusItems = useMemo(
     () =>
@@ -526,37 +531,39 @@ export function IssueSheetCreateIssueDialog({
                 </SelectContent>
               </Select>
 
-              <Select
-                value={priority}
-                items={priorityItems}
-                onValueChange={(value) => {
-                  if (value && issuePriorityValues.includes(value as IssuePriorityValue)) {
-                    setPriority(value as IssuePriorityValue);
-                  }
-                }}
-                disabled={createIssue.isPending}
-              >
-                <SelectTrigger
-                  aria-label={intl.formatMessage(messages.priorityLabel)}
-                  showIcon={false}
-                  className={propertyTriggerClassName}
+              {showPriorityField ? (
+                <Select
+                  value={priority}
+                  items={priorityItems}
+                  onValueChange={(value) => {
+                    if (value && issuePriorityValues.includes(value as IssuePriorityValue)) {
+                      setPriority(value as IssuePriorityValue);
+                    }
+                  }}
+                  disabled={createIssue.isPending}
                 >
-                  <span className="flex items-center gap-1.5">
-                    <IssuePriorityIcon priority={priority} size="sm" />
-                    {priority}
-                  </span>
-                </SelectTrigger>
-                <SelectContent>
-                  {priorityItems.map((item) => (
-                    <SelectItem key={item.value} value={item.value} label={item.label}>
-                      <span className="flex items-center gap-2">
-                        <IssuePriorityIcon priority={item.value} size="sm" />
-                        {item.label}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <SelectTrigger
+                    aria-label={intl.formatMessage(messages.priorityLabel)}
+                    showIcon={false}
+                    className={propertyTriggerClassName}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <IssuePriorityIcon priority={priority} size="sm" />
+                      {priority}
+                    </span>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {priorityItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value} label={item.label}>
+                        <span className="flex items-center gap-2">
+                          <IssuePriorityIcon priority={item.value} size="sm" />
+                          {item.label}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
 
               {resolvedProjectId ? (
                 <IssueAssigneePicker
@@ -742,11 +749,7 @@ export function IssueSheetCreateIssueDialog({
                             return (
                               <DropdownMenuSub key={column.id}>
                                 <DropdownMenuSubTrigger>
-                                  <HugeiconsIcon
-                                    icon={Tag01Icon}
-                                    strokeWidth={1.8}
-                                    className="size-4"
-                                  />
+                                  <IssueColumnIcon iconId={column.icon} className="size-4" />
                                   {setLabel}
                                 </DropdownMenuSubTrigger>
                                 <DropdownMenuSubContent className="min-w-44">
@@ -792,11 +795,7 @@ export function IssueSheetCreateIssueDialog({
                             return (
                               <DropdownMenuSub key={column.id}>
                                 <DropdownMenuSubTrigger>
-                                  <HugeiconsIcon
-                                    icon={Tag01Icon}
-                                    strokeWidth={1.8}
-                                    className="size-4"
-                                  />
+                                  <IssueColumnIcon iconId={column.icon} className="size-4" />
                                   {setLabel}
                                 </DropdownMenuSubTrigger>
                                 <DropdownMenuSubContent className="min-w-52">
@@ -840,11 +839,7 @@ export function IssueSheetCreateIssueDialog({
                           return (
                             <DropdownMenuSub key={column.id}>
                               <DropdownMenuSubTrigger>
-                                <HugeiconsIcon
-                                  icon={Tag01Icon}
-                                  strokeWidth={1.8}
-                                  className="size-4"
-                                />
+                                <IssueColumnIcon iconId={column.icon} className="size-4" />
                                 {setLabel}
                               </DropdownMenuSubTrigger>
                               <DropdownMenuSubContent className="w-64 p-2">

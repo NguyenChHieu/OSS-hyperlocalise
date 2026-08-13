@@ -52,6 +52,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { TypographyP } from "@/components/ui/typography";
+import {
+  IssueColumnIcon,
+  resolveIssueSheetColumnIcon,
+} from "@/components/issue-column-icon/issue-column-icon";
 import { cn } from "@/lib/primitives/cn";
 
 import { IssueCustomColumnField } from "./issue-custom-column-field";
@@ -79,6 +83,7 @@ import {
   buildCustomColumnDrafts,
   customColumnValueFromIssue,
   isDraftableCustomColumn,
+  isIssueSheetColumnVisible,
   isMainContentCustomColumn,
   isSidebarCustomColumn,
   listDetailPanelColumns,
@@ -288,6 +293,9 @@ export const IssueDetailPanel = forwardRef<
     [columnsQuery.data],
   );
   detailColumnsRef.current = detailColumns;
+  const columns = columnsQuery.data ?? [];
+  const showPriorityField = isIssueSheetColumnVisible(columns, "priority");
+  const showOwnerNoteField = isIssueSheetColumnVisible(columns, "owner_note");
 
   useEffect(() => {
     if (!issue) {
@@ -645,27 +653,30 @@ export const IssueDetailPanel = forwardRef<
           imageUpload={{ organizationSlug, projectId }}
         />
 
-        <section className="mt-2 grid gap-2 border-t border-border pt-4">
-          <TypographyP className="text-sm font-medium text-foreground">
-            <FormattedMessage {...messages.fieldOwnerNote} />
-          </TypographyP>
-          <IssueMarkdownField
-            key={`${issue.id}-owner-note`}
-            value={ownerNoteDraft}
-            onChange={setOwnerNoteDraft}
-            onCommit={saveOwnerNote}
-            disabled={isSaving}
-            placeholder={intl.formatMessage(messages.fieldOwnerNotePlaceholder)}
-            emptyMessage={intl.formatMessage(markdownFieldMessages.emptyOwnerNote)}
-            ariaLabel={intl.formatMessage(messages.fieldOwnerNote)}
-            imageUpload={{ organizationSlug, projectId }}
-          />
-        </section>
+        {showOwnerNoteField ? (
+          <section className="mt-2 grid gap-2 border-t border-border pt-4">
+            <TypographyP className="text-sm font-medium text-foreground">
+              <FormattedMessage {...messages.fieldOwnerNote} />
+            </TypographyP>
+            <IssueMarkdownField
+              key={`${issue.id}-owner-note`}
+              value={ownerNoteDraft}
+              onChange={setOwnerNoteDraft}
+              onCommit={saveOwnerNote}
+              disabled={isSaving}
+              placeholder={intl.formatMessage(messages.fieldOwnerNotePlaceholder)}
+              emptyMessage={intl.formatMessage(markdownFieldMessages.emptyOwnerNote)}
+              ariaLabel={intl.formatMessage(messages.fieldOwnerNote)}
+              imageUpload={{ organizationSlug, projectId }}
+            />
+          </section>
+        ) : null}
 
         {showCustomColumns
           ? mainCustomColumns.map((column) => (
               <section key={column.id} className="mt-2 grid gap-2 border-t border-border pt-4">
-                <TypographyP className="text-sm font-medium text-foreground">
+                <TypographyP className="inline-flex items-center gap-1.5 text-sm font-medium text-foreground">
+                  <IssueColumnIcon iconId={column.icon} className="text-muted-foreground" />
                   {column.label}
                 </TypographyP>
                 <IssueCustomColumnField
@@ -924,39 +935,41 @@ export const IssueDetailPanel = forwardRef<
                 />
               </PropertyRow>
 
-              <PropertyRow
-                icon={Flag01Icon}
-                label={<FormattedMessage {...messages.fieldPriority} />}
-              >
-                <Select
-                  value={priority || undefined}
-                  items={priorityItems}
-                  onValueChange={(value) => {
-                    if (value) {
-                      setValue.mutate({ columnKey: "priority", value });
-                    }
-                  }}
-                  disabled={isSaving}
+              {showPriorityField ? (
+                <PropertyRow
+                  icon={Flag01Icon}
+                  label={<FormattedMessage {...messages.fieldPriority} />}
                 >
-                  <SelectTrigger className={ghostSelectTriggerClassName} showIcon={false}>
-                    {priority ? (
-                      <IssuePriorityIcon priority={priority} size="sm" />
-                    ) : (
-                      <SelectValue placeholder={emptyValue} />
-                    )}
-                  </SelectTrigger>
-                  <SelectContent>
-                    {priorityItems.map((item) => (
-                      <SelectItem key={item.value} value={item.value} label={item.label}>
-                        <span className="flex items-center gap-2">
-                          <IssuePriorityIcon priority={item.value} size="sm" />
-                          {item.label}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </PropertyRow>
+                  <Select
+                    value={priority || undefined}
+                    items={priorityItems}
+                    onValueChange={(value) => {
+                      if (value) {
+                        setValue.mutate({ columnKey: "priority", value });
+                      }
+                    }}
+                    disabled={isSaving}
+                  >
+                    <SelectTrigger className={ghostSelectTriggerClassName} showIcon={false}>
+                      {priority ? (
+                        <IssuePriorityIcon priority={priority} size="sm" />
+                      ) : (
+                        <SelectValue placeholder={emptyValue} />
+                      )}
+                    </SelectTrigger>
+                    <SelectContent>
+                      {priorityItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value} label={item.label}>
+                          <span className="flex items-center gap-2">
+                            <IssuePriorityIcon priority={item.value} size="sm" />
+                            {item.label}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </PropertyRow>
+              ) : null}
 
               <PropertyRow
                 icon={UserCircleIcon}
@@ -1028,7 +1041,11 @@ export const IssueDetailPanel = forwardRef<
 
               {showCustomColumns
                 ? sidebarCustomColumns.map((column) => (
-                    <PropertyRow key={column.id} icon={Tag01Icon} label={column.label}>
+                    <PropertyRow
+                      key={column.id}
+                      icon={resolveIssueSheetColumnIcon(column.icon)}
+                      label={column.label}
+                    >
                       <IssueCustomColumnField
                         column={column}
                         value={issue.values[column.key]}
@@ -1173,39 +1190,41 @@ export const IssueDetailPanel = forwardRef<
                 </SelectContent>
               </Select>
 
-              <Select
-                value={priority || undefined}
-                items={priorityItems}
-                onValueChange={(value) => {
-                  if (value) {
-                    setValue.mutate({ columnKey: "priority", value });
-                  }
-                }}
-                disabled={isSaving}
-              >
-                <SelectTrigger
-                  className={iconRailSelectTriggerClassName}
-                  showIcon={false}
-                  aria-label={intl.formatMessage(messages.fieldPriority)}
-                  title={priority || emptyValue}
+              {showPriorityField ? (
+                <Select
+                  value={priority || undefined}
+                  items={priorityItems}
+                  onValueChange={(value) => {
+                    if (value) {
+                      setValue.mutate({ columnKey: "priority", value });
+                    }
+                  }}
+                  disabled={isSaving}
                 >
-                  {priority ? (
-                    <IssuePriorityIcon priority={priority} size="sm" />
-                  ) : (
-                    <HugeiconsIcon icon={Flag01Icon} strokeWidth={1.8} className="size-3.5" />
-                  )}
-                </SelectTrigger>
-                <SelectContent align="end">
-                  {priorityItems.map((item) => (
-                    <SelectItem key={item.value} value={item.value} label={item.label}>
-                      <span className="flex items-center gap-2">
-                        <IssuePriorityIcon priority={item.value} size="sm" />
-                        {item.label}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <SelectTrigger
+                    className={iconRailSelectTriggerClassName}
+                    showIcon={false}
+                    aria-label={intl.formatMessage(messages.fieldPriority)}
+                    title={priority || emptyValue}
+                  >
+                    {priority ? (
+                      <IssuePriorityIcon priority={priority} size="sm" />
+                    ) : (
+                      <HugeiconsIcon icon={Flag01Icon} strokeWidth={1.8} className="size-3.5" />
+                    )}
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    {priorityItems.map((item) => (
+                      <SelectItem key={item.value} value={item.value} label={item.label}>
+                        <span className="flex items-center gap-2">
+                          <IssuePriorityIcon priority={item.value} size="sm" />
+                          {item.label}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : null}
             </div>
           ) : null}
         </aside>

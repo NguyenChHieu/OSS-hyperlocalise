@@ -154,6 +154,7 @@ export const issueSheetMswHandlers = [
       key: string;
       label: string;
       type: string;
+      icon?: string | null;
       config?: { options?: { id: string; label: string }[] };
     };
     return HttpResponse.json(
@@ -166,10 +167,60 @@ export const issueSheetMswHandlers = [
           type: body.type,
           config: body.config ?? {},
           sortOrder: issueSheetResponseFixture.columns.length,
+          hidden: false,
+          icon: body.icon ?? null,
         },
       },
       { status: 201 },
     );
+  }),
+  http.patch(`${issueSheetBasePath}/columns/:columnId`, async ({ params, request }) => {
+    const column = issueSheetResponseFixture.columns.find((entry) => entry.id === params.columnId);
+    if (!column) {
+      return HttpResponse.json({ error: "issue_sheet_column_not_found" }, { status: 404 });
+    }
+    const body = (await request.json()) as {
+      label?: string;
+      hidden?: boolean;
+      icon?: string | null;
+      config?: { options?: { id: string; label: string }[] };
+    };
+    if (body.label !== undefined) {
+      column.label = body.label;
+    }
+    if (body.hidden !== undefined) {
+      column.hidden = body.hidden;
+    }
+    if (body.icon !== undefined) {
+      column.icon = body.icon;
+    }
+    if (body.config !== undefined) {
+      column.config = body.config;
+    }
+    return HttpResponse.json({ column });
+  }),
+  http.put(`${issueSheetBasePath}/columns/order`, async ({ request }) => {
+    const body = (await request.json()) as { columnIds: string[] };
+    const byId = new Map(issueSheetResponseFixture.columns.map((column) => [column.id, column]));
+    issueSheetResponseFixture.columns = body.columnIds.flatMap((columnId, index) => {
+      const column = byId.get(columnId);
+      if (!column) {
+        return [];
+      }
+      column.sortOrder = (index + 1) * 10;
+      return [column];
+    });
+    return HttpResponse.json({ columns: issueSheetResponseFixture.columns });
+  }),
+  http.delete(`${issueSheetBasePath}/columns/:columnId`, ({ params }) => {
+    const index = issueSheetResponseFixture.columns.findIndex(
+      (entry) => entry.id === params.columnId,
+    );
+    if (index < 0) {
+      return HttpResponse.json({ error: "issue_sheet_column_not_found" }, { status: 404 });
+    }
+    issueSheetResponseFixture.columns.splice(index, 1);
+    return new HttpResponse(null, { status: 204 });
   }),
   ...issueSubscriptionHandlers,
 ];

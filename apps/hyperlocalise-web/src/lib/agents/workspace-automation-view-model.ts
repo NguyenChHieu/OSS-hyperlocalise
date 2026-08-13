@@ -65,6 +65,8 @@ export type WorkspaceAutomationFormState = {
   createNativeTmsJobUseProjectTargetLocales: boolean;
   createNativeTmsJobTargetLocales: string[];
   assignTranslateWithAgentEnabled: boolean;
+  listIssuesEnabled: boolean;
+  createIssueEnabled: boolean;
   knowledgeEnabled: boolean;
   knowledgeAllowUpdates: boolean;
   mcpEnabled: boolean;
@@ -83,6 +85,9 @@ function workspaceAutomationFormNeedsProject(form: WorkspaceAutomationFormState)
     return true;
   }
   if (form.createNativeTmsJobEnabled || form.assignTranslateWithAgentEnabled) {
+    return true;
+  }
+  if (form.listIssuesEnabled || form.createIssueEnabled) {
     return true;
   }
   return form.githubEnabled && form.githubMode === "sync";
@@ -121,7 +126,7 @@ export const WORKSPACE_AUTOMATION_API_ERROR_MESSAGES: Record<string, string> = {
     "Use GitHub repo automations with a scheduled or manual trigger, not GitHub push.",
   github_push_branches_required: "Add at least one branch pattern for GitHub push triggers.",
   scheduled_workflow_required:
-    "Scheduled automations require at least one GitHub or Contentful workflow.",
+    "Scheduled automations require at least one GitHub, Contentful, or Issues workflow tool.",
   slack_not_connected: "Connect Slack in Integrations before enabling Slack notifications.",
   slack_channel_required: "Choose a Slack channel for notifications.",
   email_not_connected: "Enable the email agent in Integrations before using email notifications.",
@@ -145,6 +150,7 @@ export const WORKSPACE_AUTOMATION_API_ERROR_MESSAGES: Record<string, string> = {
   ahrefs_connection_not_found:
     "The selected Ahrefs connection was not found. Choose another connection.",
   ahrefs_not_connected: "Enable the selected Ahrefs connection in Integrations before using it.",
+  issues_feature_unavailable: "Enable workspace Issues before using Issue Sheet automation tools.",
   github_repository_not_enabled: "Enable this repository before configuring automation.",
   github_repository_archived: "Archived repositories cannot use automations.",
   project_not_found: "The selected project could not be found.",
@@ -187,6 +193,8 @@ export function createDefaultWorkspaceAutomationFormState(): WorkspaceAutomation
     createNativeTmsJobUseProjectTargetLocales: true,
     createNativeTmsJobTargetLocales: [],
     assignTranslateWithAgentEnabled: false,
+    listIssuesEnabled: false,
+    createIssueEnabled: false,
     knowledgeEnabled: false,
     knowledgeAllowUpdates: false,
     mcpEnabled: false,
@@ -207,6 +215,8 @@ export function createWorkspaceAutomationFormStateFromRecord(
   const contentful = automation.toolConfig.contentful;
   const createNativeTmsJob = automation.toolConfig.createNativeTmsJob;
   const assignTranslateWithAgent = automation.toolConfig.assignTranslateWithAgent;
+  const listIssues = automation.toolConfig.listIssues;
+  const createIssue = automation.toolConfig.createIssue;
   const knowledge = automation.toolConfig.knowledge;
   const mcp = automation.toolConfig.mcp;
   const semrush = automation.toolConfig.semrush;
@@ -266,6 +276,8 @@ export function createWorkspaceAutomationFormStateFromRecord(
       ? [...createNativeTmsJob.targetLocales]
       : [],
     assignTranslateWithAgentEnabled: Boolean(assignTranslateWithAgent?.enabled),
+    listIssuesEnabled: Boolean(listIssues?.enabled),
+    createIssueEnabled: Boolean(createIssue?.enabled),
     knowledgeEnabled: Boolean(knowledge?.enabled),
     knowledgeAllowUpdates: Boolean(knowledge?.allowUpdates),
     mcpEnabled: Boolean(mcp?.enabled),
@@ -428,6 +440,20 @@ export function formStateToWorkspaceAutomationPayload(form: WorkspaceAutomationF
     ...(form.assignTranslateWithAgentEnabled
       ? {
           assignTranslateWithAgent: {
+            enabled: true,
+          },
+        }
+      : {}),
+    ...(form.listIssuesEnabled
+      ? {
+          listIssues: {
+            enabled: true,
+          },
+        }
+      : {}),
+    ...(form.createIssueEnabled
+      ? {
+          createIssue: {
             enabled: true,
           },
         }
@@ -625,6 +651,8 @@ export function mapWorkspaceAutomationApiErrorToFieldErrors(
     case "ahrefs_connection_not_found":
     case "ahrefs_not_connected":
       return { ahrefsConnectionId: message };
+    case "issues_feature_unavailable":
+      return { form: message };
     default:
       return { form: message };
   }
@@ -638,6 +666,8 @@ export function workspaceAutomationFormCanActivate(form: WorkspaceAutomationForm
     form.contentfulEnabled ||
     form.createNativeTmsJobEnabled ||
     form.assignTranslateWithAgentEnabled ||
+    form.listIssuesEnabled ||
+    form.createIssueEnabled ||
     form.mcpEnabled ||
     form.semrushEnabled ||
     form.ahrefsEnabled

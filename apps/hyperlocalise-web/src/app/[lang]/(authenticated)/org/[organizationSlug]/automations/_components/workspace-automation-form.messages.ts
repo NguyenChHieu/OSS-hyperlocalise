@@ -367,6 +367,46 @@ export const workspaceAutomationFormMessages = defineMessages({
     id: "dg15k+jhq4",
     description: "Menu item and tool title for assigning Translate with agent",
   },
+  listIssues: {
+    defaultMessage: "List issues",
+    id: "DeCrAOQFGT",
+    description: "Menu item and tool title for listing Issue Sheet issues",
+  },
+  listIssuesDescription: {
+    defaultMessage: "Read Issue Sheet issues for the selected project during this automation.",
+    id: "04BDy8jZlJ",
+    description: "Description for the List issues automation tool",
+  },
+  createIssue: {
+    defaultMessage: "Create issue",
+    id: "SGKONsO7tY",
+    description: "Menu item and tool title for creating Issue Sheet issues",
+  },
+  createIssueDescription: {
+    defaultMessage: "File Issue Sheet issues for the selected project from automation findings.",
+    id: "MweQRnF9MU",
+    description: "Description for the Create issue automation tool",
+  },
+  issuesUnavailableDescription: {
+    defaultMessage: "Enable workspace Issues before using Issue Sheet tools in automations.",
+    id: "uyibAnXll7",
+    description: "Description when workspace Issues feature flag is off",
+  },
+  enableIssuesFirstShortcut: {
+    defaultMessage: "Enable first",
+    id: "SCwFU6O6EH",
+    description: "Shortcut shown when workspace Issues is not enabled for the organization",
+  },
+  removeListIssues: {
+    defaultMessage: "Remove List issues tool",
+    id: "N7Y/6FnTVv",
+    description: "Accessible label to remove the List issues tool",
+  },
+  removeCreateIssue: {
+    defaultMessage: "Remove Create issue tool",
+    id: "iIHDh1dH3y",
+    description: "Accessible label to remove the Create issue tool",
+  },
   mcpServer: {
     defaultMessage: "MCP Server",
     id: "j3sarok4E/",

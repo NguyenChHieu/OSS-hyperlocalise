@@ -14,6 +14,7 @@ import { and, asc, desc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm
 import { z } from "zod";
 
 import { db, schema, type DatabaseClient } from "@/lib/database";
+import { resolveWorkspaceIssuesFlag } from "@/lib/flags/workspace-flags";
 import { err, isErr, ok, type Result } from "@/lib/primitives/result/results";
 import { optionalProjectIdSchema } from "@/lib/projects/identity/project-id";
 import { lockAhrefsConnectionForUpdate } from "@/lib/ahrefs/connections";
@@ -143,6 +144,18 @@ const assignTranslateWithAgentToolConfigSchema = z
   })
   .default({ enabled: false });
 
+const listIssuesToolConfigSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+  })
+  .default({ enabled: false });
+
+const createIssueToolConfigSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+  })
+  .default({ enabled: false });
+
 const knowledgeToolConfigSchema = z
   .object({
     enabled: z.boolean().default(false),
@@ -224,6 +237,8 @@ const toolConfigObjectSchema = z
     contentful: contentfulToolConfigSchema.optional(),
     createNativeTmsJob: createNativeTmsJobToolConfigSchema.optional(),
     assignTranslateWithAgent: assignTranslateWithAgentToolConfigSchema.optional(),
+    listIssues: listIssuesToolConfigSchema.optional(),
+    createIssue: createIssueToolConfigSchema.optional(),
     knowledge: knowledgeToolConfigSchema.optional(),
     mcp: mcpToolConfigSchema.optional(),
     semrush: semrushToolConfigSchema.optional(),
@@ -261,6 +276,8 @@ export type WorkspaceAutomationCreateNativeTmsJobToolConfig = z.infer<
 export type WorkspaceAutomationAssignTranslateWithAgentToolConfig = z.infer<
   typeof assignTranslateWithAgentToolConfigSchema
 >;
+export type WorkspaceAutomationListIssuesToolConfig = z.infer<typeof listIssuesToolConfigSchema>;
+export type WorkspaceAutomationCreateIssueToolConfig = z.infer<typeof createIssueToolConfigSchema>;
 export type WorkspaceAutomationKnowledgeToolConfig = z.infer<typeof knowledgeToolConfigSchema>;
 export type WorkspaceAutomationMcpToolConfig = z.infer<typeof mcpToolConfigSchema>;
 export type WorkspaceAutomationSemrushToolConfig = z.infer<typeof semrushToolConfigSchema>;
@@ -290,7 +307,7 @@ export type WorkspaceAutomationConfigValidationError =
     }
   | {
       code: "scheduled_workflow_required";
-      message: "Scheduled automations require at least one GitHub or Contentful workflow.";
+      message: "Scheduled automations require at least one GitHub, Contentful, or Issues workflow tool.";
     }
   | {
       code: "contentful_connection_required";
@@ -367,6 +384,10 @@ export type WorkspaceAutomationConfigValidationError =
   | {
       code: "ahrefs_not_connected";
       message: "Enable the selected Ahrefs connection in Integrations before using it.";
+    }
+  | {
+      code: "issues_feature_unavailable";
+      message: "Enable workspace Issues before using Issue Sheet automation tools.";
     };
 
 type AutomationRow = typeof schema.workspaceAutomations.$inferSelect;
@@ -388,6 +409,14 @@ export function hasWorkspaceAutomationAssignTranslateWithAgentTool(
   toolConfig: WorkspaceAutomationToolConfig,
 ) {
   return Boolean(toolConfig.assignTranslateWithAgent?.enabled);
+}
+
+export function hasWorkspaceAutomationListIssuesTool(toolConfig: WorkspaceAutomationToolConfig) {
+  return Boolean(toolConfig.listIssues?.enabled);
+}
+
+export function hasWorkspaceAutomationCreateIssueTool(toolConfig: WorkspaceAutomationToolConfig) {
+  return Boolean(toolConfig.createIssue?.enabled);
 }
 
 export function hasWorkspaceAutomationKnowledgeTool(toolConfig: WorkspaceAutomationToolConfig) {
@@ -484,6 +513,12 @@ export function workspaceAutomationNeedsProject(input: {
   ) {
     return true;
   }
+  if (
+    hasWorkspaceAutomationListIssuesTool(input.toolConfig) ||
+    hasWorkspaceAutomationCreateIssueTool(input.toolConfig)
+  ) {
+    return true;
+  }
   return hasWorkspaceAutomationGithubWorkflow(input.toolConfig);
 }
 
@@ -574,11 +609,14 @@ function validateWorkspaceAutomationConfig(input: {
     input.triggerConfig.mode === "scheduled" &&
     !hasWorkspaceAutomationGithubAgentTool(input.toolConfig) &&
     !hasWorkspaceAutomationGithubWorkflow(input.toolConfig) &&
-    !hasWorkspaceAutomationContentfulWorkflow(input.toolConfig)
+    !hasWorkspaceAutomationContentfulWorkflow(input.toolConfig) &&
+    !hasWorkspaceAutomationListIssuesTool(input.toolConfig) &&
+    !hasWorkspaceAutomationCreateIssueTool(input.toolConfig)
   ) {
     return err({
       code: "scheduled_workflow_required",
-      message: "Scheduled automations require at least one GitHub or Contentful workflow.",
+      message:
+        "Scheduled automations require at least one GitHub, Contentful, or Issues workflow tool.",
     });
   }
 
@@ -867,6 +905,22 @@ export async function validateWorkspaceAutomationIntegrations(input: {
       return err({
         code: "ahrefs_not_connected",
         message: "Enable the selected Ahrefs connection in Integrations before using it.",
+      });
+    }
+  }
+
+  if (
+    hasWorkspaceAutomationListIssuesTool(input.toolConfig) ||
+    hasWorkspaceAutomationCreateIssueTool(input.toolConfig)
+  ) {
+    const issuesEnabled = await resolveWorkspaceIssuesFlag({
+      organizationId: input.organizationId,
+      dbClient: database,
+    });
+    if (!issuesEnabled) {
+      return err({
+        code: "issues_feature_unavailable",
+        message: "Enable workspace Issues before using Issue Sheet automation tools.",
       });
     }
   }

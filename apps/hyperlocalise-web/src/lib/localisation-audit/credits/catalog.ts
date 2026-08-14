@@ -61,7 +61,8 @@ export const LOCALISATION_AUDIT_CREDITS: LocalisationAuditCreditDefinition[] = [
     dimension: "technical",
     title: "Sitemap",
     mode: "heuristic",
-    rubric: "Localized URLs should appear in the sitemap when a sitemap is published.",
+    rubric:
+      "Like Lighthouse: a valid XML sitemap must be discoverable, robots.txt should reference it with an absolute Sitemap: URL, and localized URLs should appear for published locales.",
   },
   {
     id: "structured-data",
@@ -75,7 +76,8 @@ export const LOCALISATION_AUDIT_CREDITS: LocalisationAuditCreditDefinition[] = [
     dimension: "technical",
     title: "International formatting",
     mode: "hybrid",
-    rubric: "Dates, numbers, and currency should match locale conventions.",
+    rubric:
+      "Dates, numbers, currency, Arabic Western digits, and Gregorian calendars should match locale conventions.",
   },
   {
     id: "accessibility-localisation",
@@ -103,8 +105,9 @@ export const LOCALISATION_AUDIT_CREDITS: LocalisationAuditCreditDefinition[] = [
     id: "cross-page-consistency",
     dimension: "linguistic",
     title: "Cross-page consistency",
-    mode: "hybrid",
-    rubric: "Related navigation and messaging should stay consistent across the locale.",
+    mode: "na",
+    rubric:
+      "Related navigation and messaging should stay consistent across the locale. Skipped in the public audit because label variance is usually noise.",
   },
   {
     id: "translation-accuracy",
@@ -204,14 +207,24 @@ export const LOCALISATION_AUDIT_CREDITS: LocalisationAuditCreditDefinition[] = [
     dimension: "visual",
     title: "RTL support",
     mode: "hybrid",
-    rubric: "RTL locales should set dir and mirror layout, navigation, and forms.",
+    rubric:
+      "RTL locales should set dir=rtl, avoid direction:ltr overrides, and prefer logical CSS over physical left/right properties.",
   },
   {
     id: "font-and-script",
     dimension: "visual",
     title: "Font and script support",
     mode: "heuristic",
-    rubric: "Typography should support the target script without generic fallback-only stacks.",
+    rubric:
+      "Typography should support the target script without generic fallback-only stacks, tofu glyphs, or missing CJK fonts.",
+  },
+  {
+    id: "cjk-typography",
+    dimension: "visual",
+    title: "CJK typography",
+    mode: "heuristic",
+    rubric:
+      "Korean pages should avoid word-break: break-all and prefer word-break: keep-all; CJK forms should use local name-field conventions.",
   },
   {
     id: "localized-images",

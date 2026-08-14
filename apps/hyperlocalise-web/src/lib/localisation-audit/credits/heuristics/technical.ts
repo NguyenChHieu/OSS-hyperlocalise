@@ -12,16 +12,22 @@
  */
 import type { LocalisationAuditCrawledPage, LocalisationAuditFinding } from "../../types";
 import {
+  canonicalPathLocale,
   clampScore,
   clipFindingEvidence,
   creditFinding,
   formatFindingWhere,
+  htmlLangMatchesPathLocale,
+  htmlLangSuggestionForPathLocale,
   languageOf,
   looksPrimarilyEnglish,
-  normalizeLocale,
   pageLocale,
   pathLocaleFromUrl,
   pathWithoutLocale,
+  textHasEasternArabicDigits,
+  textHasGregorianCalendarSignals,
+  textHasHijriCalendarSignals,
+  textHasWesternDigits,
 } from "../shared";
 import type { HeuristicCreditOutcome, HeuristicScorer } from "../types";
 
@@ -54,27 +60,10 @@ const scoreLocaleDetection: HeuristicScorer = (context) => {
     ]);
   }
 
-  let missingLang = 0;
+  const missingLangPages: LocalisationAuditCrawledPage[] = [];
   for (const page of okPages) {
     if (!page.htmlLang) {
-      missingLang += 1;
-      if (findings.length < 5) {
-        findings.push(
-          creditFinding({
-            id: `locale-detection-missing-${findings.length}`,
-            creditId: "locale-detection",
-            category: "technical",
-            severity: "high",
-            title: "Missing language declaration",
-            summary:
-              "The page does not set html lang, so browsers and assistive tech cannot identify the locale.",
-            where: formatFindingWhere({ section: "Document head", tag: "<html lang>" }),
-            url: page.url,
-            evidence: "html lang is missing",
-            advice: "Set html lang to the page locale on this URL.",
-          }),
-        );
-      }
+      missingLangPages.push(page);
     } else if (!/^[a-z]{2}(?:-[A-Za-z]{2})?$/.test(page.htmlLang.trim())) {
       score -= 12;
       findings.push(
@@ -94,11 +83,8 @@ const scoreLocaleDetection: HeuristicScorer = (context) => {
     }
 
     const pathLocale = pathLocaleFromUrl(page.url);
-    if (
-      pathLocale &&
-      page.htmlLang &&
-      normalizeLocale(pathLocale) !== normalizeLocale(page.htmlLang)
-    ) {
+    if (pathLocale && page.htmlLang && !htmlLangMatchesPathLocale(page.htmlLang, pathLocale)) {
+      const suggested = htmlLangSuggestionForPathLocale(pathLocale);
       score -= 18;
       findings.push(
         creditFinding({
@@ -107,18 +93,43 @@ const scoreLocaleDetection: HeuristicScorer = (context) => {
           category: "technical",
           severity: "high",
           title: "URL locale and html lang disagree",
-          summary: `Path suggests ${pathLocale} but html lang is ${page.htmlLang}.`,
+          summary: `Path locale ${pathLocale} expects html lang ${suggested}, but the page declares ${page.htmlLang}.`,
           where: formatFindingWhere({ section: "Document head", tag: "<html lang>" }),
           url: page.url,
           evidence: `<html lang="${page.htmlLang}"> while the path locale is ${pathLocale}`,
-          advice: `Set html lang="${pathLocale}" so it matches this page’s URL locale.`,
+          advice: `Set html lang="${suggested}" so it matches this page’s URL locale.`,
         }),
       );
     }
   }
 
-  if (missingLang > 0) {
+  if (missingLangPages.length > 0) {
+    const missingLang = missingLangPages.length;
     score -= Math.min(60, missingLang * 20);
+    const sampleUrls = missingLangPages
+      .slice(0, 3)
+      .map((page) => page.url)
+      .join(", ");
+    findings.push(
+      creditFinding({
+        id: "locale-detection-missing",
+        creditId: "locale-detection",
+        category: "technical",
+        severity: "high",
+        title: "Missing language declaration",
+        summary:
+          missingLang === 1
+            ? "The page does not set html lang, so browsers and assistive tech cannot identify the locale."
+            : `${missingLang} sampled pages do not set html lang, so browsers and assistive tech cannot identify the locale.`,
+        where: formatFindingWhere({ section: "Document head", tag: "<html lang>" }),
+        url: missingLangPages[0]?.url,
+        evidence:
+          missingLang === 1
+            ? "html lang is missing"
+            : `html lang is missing on ${missingLang} pages, e.g. ${sampleUrls}`,
+        advice: "Set html lang to a BCP 47 language tag for each page locale, such as en or fr-FR.",
+      }),
+    );
   }
   return scored(score, findings);
 };
@@ -178,13 +189,13 @@ const scoreLocaleRouting: HeuristicScorer = (context) => {
   }
 
   if (context.detectedLocales.length <= 1) {
-    score -= 8;
+    score -= 28;
     findings.push(
       creditFinding({
         id: "locale-routing-single-locale",
         creditId: "locale-routing",
         category: "technical",
-        severity: "info",
+        severity: "medium",
         title: "Only one locale signal detected",
         summary:
           "The sample found little evidence of multi-locale routing (hreflang, locale prefixes, or html lang variety).",
@@ -192,10 +203,12 @@ const scoreLocaleRouting: HeuristicScorer = (context) => {
         url: context.pages[0]?.url,
         evidence: `Detected locale signals: ${context.detectedLocales.map((entry) => entry.locale).join(", ") || "none"}`,
         advice:
-          "Expose additional locales through hreflang, locale prefixes, or html lang variety.",
+          "Publish additional locales through locale URL prefixes, hreflang alternates, and matching html lang tags.",
         confidence: 90,
       }),
     );
+  } else if (context.detectedLocales.length === 2) {
+    score -= 8;
   }
 
   return scored(score, findings);
@@ -224,7 +237,8 @@ const scoreLanguageSwitcher: HeuristicScorer = (context) => {
       } catch {
         continue;
       }
-      const targetLocale = pathLocaleFromUrl(href.toString());
+      const targetPathLocale = pathLocaleFromUrl(href.toString());
+      const targetLocale = targetPathLocale ? canonicalPathLocale(targetPathLocale) : null;
       const looksLikeSwitcher =
         Boolean(targetLocale) ||
         LANGUAGE_NAME.test(anchor.text.trim()) ||
@@ -471,7 +485,8 @@ const scoreCanonicalUrls: HeuristicScorer = (context) => {
       );
       continue;
     }
-    const canonicalLocale = pathLocaleFromUrl(canonicalUrl.toString());
+    const canonicalPathToken = pathLocaleFromUrl(canonicalUrl.toString());
+    const canonicalLocale = canonicalPathToken ? canonicalPathLocale(canonicalPathToken) : null;
     if (pageLoc && canonicalLocale && languageOf(pageLoc) !== languageOf(canonicalLocale)) {
       score -= 30;
       findings.push(
@@ -583,32 +598,149 @@ const scoreLocalizedSeoMetadata: HeuristicScorer = (context) => {
 
 const scoreSitemap: HeuristicScorer = (context) => {
   const { sitemap } = context;
+  const findings: LocalisationAuditFinding[] = [];
+  let score = 100;
+
+  // Lighthouse-style: a valid, fetchable sitemap is required (not N/A when missing).
   if (sitemap.sitemapUrls.length === 0) {
-    return { status: "na" };
-  }
-  if (context.detectedLocales.length <= 1) {
-    return sitemap.sitemapUrls.length > 0 ? scored(90, []) : { status: "na" };
-  }
-  if (sitemap.localizedUrls.length === 0) {
-    return scored(42, [
+    return scored(18, [
       creditFinding({
-        id: "sitemap-missing-locales",
+        id: "sitemap-missing",
         creditId: "sitemap",
         category: "technical",
-        severity: "medium",
-        title: "Sitemap is missing localized URLs",
-        summary: "A sitemap was found, but sampled entries do not include locale-prefixed URLs.",
+        severity: "high",
+        title: "Valid sitemap not found",
+        summary:
+          "No fetchable XML sitemap with URL entries was found at /sitemap.xml or via robots.txt.",
         where: formatFindingWhere({ section: "Sitemap", tag: "sitemap.xml" }),
-        url: sitemap.sitemapUrls[0],
-        evidence: sitemap.sitemapUrls[0]
-          ? `Sitemap ${sitemap.sitemapUrls[0]} has no locale-prefixed URLs in the sample`
-          : "A sitemap was found, but sampled entries have no locale-prefixed URLs.",
-        advice: "Include localized URLs in the sitemap for every published locale.",
-        confidence: 90,
+        url: sitemap.robotsSitemapDirectives[0],
+        evidence: sitemap.robotsFound
+          ? sitemap.robotsSitemapDirectives.length > 0
+            ? `robots.txt references ${sitemap.robotsSitemapDirectives.join(", ")}, but no sitemap returned usable <loc> entries`
+            : "robots.txt was found, but it does not reference a sitemap and /sitemap.xml was missing or empty"
+          : "robots.txt was missing and /sitemap.xml was missing or empty",
+        advice:
+          "Publish a valid XML sitemap and reference it from robots.txt with an absolute Sitemap: URL.",
+        confidence: 100,
       }),
     ]);
   }
-  return scored(92, []);
+
+  if (!sitemap.robotsFound) {
+    score -= 18;
+    findings.push(
+      creditFinding({
+        id: "sitemap-robots-missing",
+        creditId: "sitemap",
+        category: "technical",
+        severity: "medium",
+        title: "robots.txt is missing",
+        summary: "A sitemap was found, but robots.txt is missing so crawlers may not discover it.",
+        where: formatFindingWhere({ section: "robots.txt", tag: "Sitemap:" }),
+        url: sitemap.sitemapUrls[0],
+        evidence: `Sitemap ${sitemap.sitemapUrls[0]} is reachable, but /robots.txt was not found`,
+        advice:
+          "Add a robots.txt that includes an absolute Sitemap: directive for the sitemap URL.",
+        confidence: 95,
+      }),
+    );
+  } else if (sitemap.robotsSitemapDirectives.length === 0) {
+    score -= 28;
+    findings.push(
+      creditFinding({
+        id: "sitemap-robots-unreferenced",
+        creditId: "sitemap",
+        category: "technical",
+        severity: "high",
+        title: "robots.txt does not reference the sitemap",
+        summary:
+          "A sitemap is reachable, but robots.txt does not include a Sitemap: directive pointing to it.",
+        where: formatFindingWhere({ section: "robots.txt", tag: "Sitemap:" }),
+        url: sitemap.sitemapUrls[0],
+        evidence: `Reachable sitemap ${sitemap.sitemapUrls[0]} is not listed in robots.txt`,
+        advice: `Add "Sitemap: ${sitemap.sitemapUrls[0]}" to robots.txt.`,
+        confidence: 100,
+      }),
+    );
+  }
+
+  if (sitemap.robotsHasRelativeSitemapDirective) {
+    score -= 12;
+    findings.push(
+      creditFinding({
+        id: "sitemap-robots-relative",
+        creditId: "sitemap",
+        category: "technical",
+        severity: "medium",
+        title: "Sitemap directive uses a relative URL",
+        summary: "robots.txt should declare Sitemap: with a fully qualified absolute URL.",
+        where: formatFindingWhere({ section: "robots.txt", tag: "Sitemap:" }),
+        url: sitemap.sitemapUrls[0],
+        evidence: "At least one Sitemap: directive in robots.txt is relative rather than absolute",
+        advice: "Use an absolute Sitemap: URL, for example https://example.com/sitemap.xml.",
+        confidence: 98,
+      }),
+    );
+  }
+
+  if (context.detectedLocales.length > 1) {
+    if (sitemap.localizedUrls.length === 0) {
+      score -= 40;
+      findings.push(
+        creditFinding({
+          id: "sitemap-missing-locales",
+          creditId: "sitemap",
+          category: "technical",
+          severity: "medium",
+          title: "Sitemap is missing localized URLs",
+          summary: "A sitemap was found, but sampled entries do not include locale-prefixed URLs.",
+          where: formatFindingWhere({ section: "Sitemap", tag: "sitemap.xml" }),
+          url: sitemap.sitemapUrls[0],
+          evidence: sitemap.sitemapUrls[0]
+            ? `Sitemap ${sitemap.sitemapUrls[0]} has no locale-prefixed URLs in the sample`
+            : "A sitemap was found, but sampled entries have no locale-prefixed URLs.",
+          advice: "Include localized URLs in the sitemap for every published locale.",
+          confidence: 90,
+        }),
+      );
+    } else {
+      const pathLanguagesOnSite = new Set(
+        context.pages.flatMap((page) => {
+          const pathLocale = pathLocaleFromUrl(page.url);
+          return pathLocale ? [languageOf(pathLocale)] : [];
+        }),
+      );
+      const languagesInSitemap = new Set(
+        sitemap.localizedUrls.flatMap((url) => {
+          const pathLocale = pathLocaleFromUrl(url);
+          return pathLocale ? [languageOf(pathLocale)] : [];
+        }),
+      );
+      const missingLanguages = [...pathLanguagesOnSite].filter(
+        (language) => !languagesInSitemap.has(language),
+      );
+      if (missingLanguages.length > 0) {
+        score -= Math.min(30, missingLanguages.length * 12);
+        findings.push(
+          creditFinding({
+            id: "sitemap-incomplete-locales",
+            creditId: "sitemap",
+            category: "technical",
+            severity: "medium",
+            title: "Sitemap omits some published locales",
+            summary: `Locale-prefixed pages for ${missingLanguages.join(", ")} do not appear in sampled sitemap URLs.`,
+            where: formatFindingWhere({ section: "Sitemap", tag: "sitemap.xml" }),
+            url: sitemap.sitemapUrls[0],
+            evidence: `Sitemap locales in sample: ${[...languagesInSitemap].join(", ") || "none"}; missing: ${missingLanguages.join(", ")}`,
+            advice: "Include URLs for every published locale prefix in the sitemap.",
+            confidence: 88,
+          }),
+        );
+      }
+    }
+  }
+
+  return scored(score, findings);
 };
 
 const scoreStructuredData: HeuristicScorer = (context) => {
@@ -711,11 +843,64 @@ const scoreInternationalFormatting: HeuristicScorer = (context) => {
         }),
       );
     }
+
+    if (language === "ar") {
+      if (textHasEasternArabicDigits(text)) {
+        sawPattern = true;
+        mismatches += 1;
+        findings.push(
+          creditFinding({
+            id: `formatting-arabic-numerals-${findings.length}`,
+            creditId: "international-formatting",
+            category: "technical",
+            severity: "medium",
+            title: "Arabic page uses Eastern Arabic-Indic numerals",
+            summary:
+              "Sampled copy uses Eastern Arabic-Indic digits; Western digits (0-9) are preferred for most product UIs.",
+            where: formatFindingWhere({ section: "Page body", tag: "sampled copy" }),
+            url: page.url,
+            evidence: clipFindingEvidence(
+              text.match(/[\u0660-\u0669\u06F0-\u06F9][\u0660-\u0669\u06F0-\u06F9\s.,/-]*/)?.[0] ??
+                "Eastern Arabic-Indic digits",
+            ),
+            advice:
+              "Use Western digits (0-9) on Arabic pages unless the market explicitly requires Eastern numerals.",
+            confidence: 90,
+          }),
+        );
+      } else if (textHasWesternDigits(text)) {
+        sawPattern = true;
+      }
+
+      if (textHasHijriCalendarSignals(text) && !textHasGregorianCalendarSignals(text)) {
+        sawPattern = true;
+        mismatches += 1;
+        findings.push(
+          creditFinding({
+            id: `formatting-hijri-calendar-${findings.length}`,
+            creditId: "international-formatting",
+            category: "technical",
+            severity: "medium",
+            title: "Arabic page appears to use Hijri calendar dates",
+            summary:
+              "Hijri month names were found without clear Gregorian date signals; product UIs usually keep Gregorian calendars.",
+            where: formatFindingWhere({ section: "Page body", tag: "sampled copy" }),
+            url: page.url,
+            evidence: clipFindingEvidence(text.slice(0, 220)),
+            advice:
+              "Show Gregorian calendar dates on Arabic product pages (optionally offer Hijri as a secondary format).",
+            confidence: 82,
+          }),
+        );
+      } else if (textHasGregorianCalendarSignals(text)) {
+        sawPattern = true;
+      }
+    }
   }
   if (!sawPattern) {
     return { status: "inconclusive", evidence: { reason: "no_formatting_examples" } };
   }
-  return scored(mismatches > 0 ? 48 : 90, findings);
+  return scored(mismatches > 0 ? Math.max(40, 90 - mismatches * 14) : 90, findings);
 };
 
 const scoreAccessibilityLocalisation: HeuristicScorer = (context) => {

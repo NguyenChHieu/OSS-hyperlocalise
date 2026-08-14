@@ -47,6 +47,60 @@ describe("technical heuristic credits", () => {
     if (outcome.status !== "scored") return;
     expect(outcome.score).toBeLessThan(100);
     expect(outcome.findings.some((finding) => finding.id.includes("mismatch"))).toBe(true);
+    expect(outcome.findings.find((finding) => finding.id.includes("mismatch"))?.advice).toContain(
+      'html lang="fr"',
+    );
+  });
+
+  it("maps region path prefixes to BCP 47 html lang suggestions", () => {
+    const outcome = technicalHeuristicScorers["locale-detection"]!(
+      context([
+        emptyCrawledPage({
+          url: "https://example.com/au/services",
+          htmlLang: "fr",
+        }),
+      ]),
+    );
+
+    expect(outcome.status).toBe("scored");
+    if (outcome.status !== "scored") return;
+    const mismatch = outcome.findings.find((finding) => finding.id.includes("mismatch"));
+    expect(mismatch?.advice).toBe('Set html lang="en-AU" so it matches this page’s URL locale.');
+    expect(mismatch?.advice).not.toContain('html lang="au"');
+  });
+
+  it("does not flag en html lang on an /au/ path as a mismatch", () => {
+    const outcome = technicalHeuristicScorers["locale-detection"]!(
+      context([
+        emptyCrawledPage({
+          url: "https://example.com/au/services",
+          htmlLang: "en",
+        }),
+      ]),
+    );
+
+    expect(outcome.status).toBe("scored");
+    if (outcome.status !== "scored") return;
+    expect(outcome.findings.some((finding) => finding.id.includes("mismatch"))).toBe(false);
+    expect(outcome.score).toBe(100);
+  });
+
+  it("emits one missing-language finding for many pages", () => {
+    const outcome = technicalHeuristicScorers["locale-detection"]!(
+      context([
+        emptyCrawledPage({ url: "https://example.com/", htmlLang: null }),
+        emptyCrawledPage({ url: "https://example.com/about", htmlLang: null }),
+        emptyCrawledPage({ url: "https://example.com/pricing", htmlLang: null }),
+      ]),
+    );
+
+    expect(outcome.status).toBe("scored");
+    if (outcome.status !== "scored") return;
+    const missing = outcome.findings.filter(
+      (finding) => finding.title === "Missing language declaration",
+    );
+    expect(missing).toHaveLength(1);
+    expect(missing[0]?.summary).toContain("3 sampled pages");
   });
 
   it("scores missing hreflang as high severity when multiple locales exist", () => {
@@ -118,33 +172,75 @@ describe("technical heuristic credits", () => {
     expect(outcome.score).toBeLessThan(80);
   });
 
-  it("marks sitemap N/A when none was found", () => {
+  it("does not flag same-region canonical URLs as cross-locale", () => {
+    const outcome = technicalHeuristicScorers["canonical-urls"]!(
+      context([
+        emptyCrawledPage({
+          url: "https://example.com/au/pricing",
+          htmlLang: "en-AU",
+          canonical: "https://example.com/au/pricing",
+        }),
+      ]),
+    );
+
+    expect(outcome.status).toBe("scored");
+    if (outcome.status !== "scored") return;
+    expect(outcome.findings.some((finding) => finding.id.startsWith("canonical-locale-"))).toBe(
+      false,
+    );
+    expect(outcome.score).toBe(100);
+  });
+
+  it("does not treat same-region nav links as language switchers", () => {
+    const outcome = technicalHeuristicScorers["language-switcher"]!(
+      context([
+        emptyCrawledPage({
+          url: "https://example.com/au/pricing",
+          htmlLang: "en-AU",
+          anchors: [
+            { href: "/au/", text: "Home" },
+            { href: "/au/about", text: "About" },
+            { href: "/fr/pricing", text: "Français" },
+          ],
+        }),
+        emptyCrawledPage({
+          url: "https://example.com/fr/pricing",
+          htmlLang: "fr",
+          anchors: [
+            { href: "/fr/", text: "Accueil" },
+            { href: "/au/pricing", text: "English" },
+          ],
+        }),
+      ]),
+    );
+
+    expect(outcome.status).toBe("scored");
+    if (outcome.status !== "scored") return;
+    expect(outcome.score).toBeGreaterThanOrEqual(75);
+    expect(outcome.findings.some((finding) => finding.id === "language-switcher-homepage")).toBe(
+      false,
+    );
+  });
+
+  it("fails like Lighthouse when no valid sitemap is discoverable", () => {
     const outcome = technicalHeuristicScorers.sitemap!(
       context([emptyCrawledPage({ url: "https://example.com/", htmlLang: "en" })]),
     );
-    expect(outcome.status).toBe("na");
-  });
-
-  it("marks sitemap N/A when none was fetched, even if robots.txt exists", () => {
-    const outcome = technicalHeuristicScorers.sitemap!(
-      context(
-        [
-          emptyCrawledPage({ url: "https://example.com/", htmlLang: "en" }),
-          emptyCrawledPage({ url: "https://example.com/fr/", htmlLang: "fr" }),
+    expect(outcome).toEqual(
+      expect.objectContaining({
+        status: "scored",
+        score: 18,
+        findings: [
+          expect.objectContaining({
+            id: "sitemap-missing",
+            severity: "high",
+          }),
         ],
-        {
-          sitemap: {
-            robotsFound: true,
-            sitemapUrls: [],
-            localizedUrls: [],
-          },
-        },
-      ),
+      }),
     );
-    expect(outcome.status).toBe("na");
   });
 
-  it("scores a sitemap that lists locale URLs", () => {
+  it("flags a reachable sitemap that robots.txt does not reference", () => {
     const outcome = technicalHeuristicScorers.sitemap!(
       context(
         [
@@ -154,13 +250,96 @@ describe("technical heuristic credits", () => {
         {
           sitemap: {
             robotsFound: true,
+            robotsSitemapDirectives: [],
+            robotsHasRelativeSitemapDirective: false,
             sitemapUrls: ["https://example.com/sitemap.xml"],
             localizedUrls: ["https://example.com/fr/pricing"],
           },
         },
       ),
     );
-    expect(outcome).toEqual({ status: "scored", score: 92, findings: [] });
+    expect(outcome.status).toBe("scored");
+    if (outcome.status !== "scored") return;
+    expect(outcome.findings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "sitemap-robots-unreferenced",
+          severity: "high",
+        }),
+      ]),
+    );
+    expect(outcome.score).toBeLessThan(80);
+  });
+
+  it("flags missing localized URLs when robots.txt references the sitemap", () => {
+    const outcome = technicalHeuristicScorers.sitemap!(
+      context(
+        [
+          emptyCrawledPage({ url: "https://example.com/", htmlLang: "en" }),
+          emptyCrawledPage({ url: "https://example.com/fr/", htmlLang: "fr" }),
+        ],
+        {
+          sitemap: {
+            robotsFound: true,
+            robotsSitemapDirectives: ["https://example.com/sitemap.xml"],
+            robotsHasRelativeSitemapDirective: false,
+            sitemapUrls: ["https://example.com/sitemap.xml"],
+            localizedUrls: [],
+          },
+        },
+      ),
+    );
+    expect(outcome.status).toBe("scored");
+    if (outcome.status !== "scored") return;
+    expect(outcome.findings.some((finding) => finding.id === "sitemap-missing-locales")).toBe(true);
+    expect(outcome.score).toBeLessThan(70);
+  });
+
+  it("scores a sitemap that lists locale URLs and is referenced from robots.txt", () => {
+    const outcome = technicalHeuristicScorers.sitemap!(
+      context(
+        [
+          emptyCrawledPage({ url: "https://example.com/", htmlLang: "en" }),
+          emptyCrawledPage({ url: "https://example.com/fr/", htmlLang: "fr" }),
+        ],
+        {
+          sitemap: {
+            robotsFound: true,
+            robotsSitemapDirectives: ["https://example.com/sitemap.xml"],
+            robotsHasRelativeSitemapDirective: false,
+            sitemapUrls: ["https://example.com/sitemap.xml"],
+            localizedUrls: ["https://example.com/fr/pricing"],
+          },
+        },
+      ),
+    );
+    expect(outcome).toEqual({ status: "scored", score: 100, findings: [] });
+  });
+
+  it("flags relative Sitemap directives and incomplete locale coverage", () => {
+    const outcome = technicalHeuristicScorers.sitemap!(
+      context(
+        [
+          emptyCrawledPage({ url: "https://example.com/en/", htmlLang: "en" }),
+          emptyCrawledPage({ url: "https://example.com/fr/", htmlLang: "fr" }),
+        ],
+        {
+          sitemap: {
+            robotsFound: true,
+            robotsSitemapDirectives: ["https://example.com/sitemap.xml"],
+            robotsHasRelativeSitemapDirective: true,
+            sitemapUrls: ["https://example.com/sitemap.xml"],
+            localizedUrls: ["https://example.com/fr/pricing"],
+          },
+        },
+      ),
+    );
+    expect(outcome.status).toBe("scored");
+    if (outcome.status !== "scored") return;
+    expect(outcome.findings.map((finding) => finding.id).toSorted()).toEqual([
+      "sitemap-incomplete-locales",
+      "sitemap-robots-relative",
+    ]);
   });
 
   it("detects subdomain locale signals and normalizes underscore locale tags", () => {
@@ -174,9 +353,94 @@ describe("technical heuristic credits", () => {
       ],
       ["pt_BR"],
     );
-    expect(locales.map((entry) => entry.locale).toSorted()).toEqual(["fr", "fr-fr", "pt-br"]);
-    expect(locales.find((entry) => entry.locale === "fr")?.source).toBe("url_subdomain");
+    expect(locales.map((entry) => entry.locale).toSorted()).toEqual(["fr-fr", "pt-br"]);
+    expect(locales.find((entry) => entry.locale === "fr-fr")?.source).toBe("html_lang");
     expect(locales.some((entry) => entry.locale === "x-default")).toBe(false);
+  });
+
+  it("keeps subdomain language when html lang is absent", () => {
+    const locales = detectLocales(
+      [emptyCrawledPage({ url: "https://fr.example.com/", htmlLang: null })],
+      [],
+    );
+    expect(locales.map((entry) => entry.locale)).toEqual(["fr"]);
+    expect(locales[0]?.source).toBe("url_subdomain");
+  });
+
+  it("maps region URL prefixes to language-region locale signals", () => {
+    const locales = detectLocales(
+      [emptyCrawledPage({ url: "https://example.com/au/pricing", htmlLang: "en" })],
+      [],
+    );
+    expect(locales.map((entry) => entry.locale)).toEqual(["en-au"]);
+    expect(locales[0]?.source).toBe("url_prefix");
+  });
+
+  it("keeps bare language and region markets as distinct locales", () => {
+    const locales = detectLocales(
+      [
+        emptyCrawledPage({ url: "https://example.com/en/pricing", htmlLang: "en" }),
+        emptyCrawledPage({ url: "https://example.com/au/pricing", htmlLang: "en" }),
+      ],
+      [],
+    );
+    expect(locales.map((entry) => entry.locale).toSorted()).toEqual(["en", "en-au"]);
+  });
+
+  it("marks cross-page consistency N/A so noisy nav labels are skipped", () => {
+    const outcome = linguisticHeuristicScorers["cross-page-consistency"]!(
+      context([
+        emptyCrawledPage({
+          url: "https://example.com/en/a",
+          htmlLang: "en",
+          anchors: [{ href: "/intl-en/digital-gov", text: "Digital gov" }],
+        }),
+        emptyCrawledPage({
+          url: "https://example.com/en/b",
+          htmlLang: "en",
+          anchors: [{ href: "/intl-en/digital-gov", text: "Digital GOV" }],
+        }),
+      ]),
+    );
+    expect(outcome.status).toBe("na");
+  });
+
+  it("flags Eastern Arabic-Indic numerals and Hijri-only dates on Arabic pages", () => {
+    const outcome = technicalHeuristicScorers["international-formatting"]!(
+      context([
+        emptyCrawledPage({
+          url: "https://example.com/ar/pricing",
+          htmlLang: "ar",
+          textSample: "السعر ١٢٣ ر.س. تاريخ الإطلاق: ١٥ رمضان ١٤٤٦",
+        }),
+      ]),
+    );
+
+    expect(outcome.status).toBe("scored");
+    if (outcome.status !== "scored") return;
+    expect(outcome.findings.map((finding) => finding.id)).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^formatting-arabic-numerals-/),
+        expect.stringMatching(/^formatting-hijri-calendar-/),
+      ]),
+    );
+  });
+
+  it("accepts Western digits and Gregorian Arabic month names", () => {
+    const outcome = technicalHeuristicScorers["international-formatting"]!(
+      context([
+        emptyCrawledPage({
+          url: "https://example.com/ar/blog",
+          htmlLang: "ar",
+          textSample: "نشر في 14 أغسطس 2026 بسعر 99 ر.س.",
+        }),
+      ]),
+    );
+
+    expect(outcome.status).toBe("scored");
+    if (outcome.status !== "scored") return;
+    expect(outcome.score).toBeGreaterThanOrEqual(90);
+    expect(outcome.findings).toHaveLength(0);
   });
 });
 
@@ -240,8 +504,32 @@ describe("visual heuristic credits", () => {
 
     expect(outcome.status).toBe("scored");
     if (outcome.status !== "scored") return;
-    expect(outcome.score).toBe(28);
+    expect(outcome.score).toBeLessThan(60);
     expect(outcome.findings[0]?.severity).toBe("critical");
+    expect(outcome.findings[0]?.id).toBe("rtl-missing-dir");
+  });
+
+  it("flags RTL CSS direction:ltr and physical left/right properties", () => {
+    const outcome = visualHeuristicScorers["rtl-support"]!(
+      context([
+        emptyCrawledPage({
+          url: "https://example.com/ar",
+          htmlLang: "ar",
+          dir: "rtl",
+          directionValues: ["ltr"],
+          physicalHorizontalCss: ["float: left", "margin-left: 16px"],
+          logicalHorizontalCss: [],
+        }),
+      ]),
+    );
+    expect(outcome.status).toBe("scored");
+    if (outcome.status !== "scored") return;
+    expect(outcome.findings.map((finding) => finding.id)).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^rtl-css-direction-ltr-/),
+        expect.stringMatching(/^rtl-css-physical-/),
+      ]),
+    );
   });
 
   it("marks RTL support N/A when no RTL locale is present", () => {
@@ -249,5 +537,59 @@ describe("visual heuristic credits", () => {
       context([emptyCrawledPage({ url: "https://example.com/fr", htmlLang: "fr", dir: "ltr" })]),
     );
     expect(outcome.status).toBe("na");
+  });
+
+  it("flags Korean break-all, Western name fields, and tofu glyphs", () => {
+    const wordBreak = visualHeuristicScorers["cjk-typography"]!(
+      context([
+        emptyCrawledPage({
+          url: "https://example.com/ko",
+          htmlLang: "ko",
+          textSample: "한국어 본문 예시입니다. 더 많은 한글 텍스트가 필요합니다.",
+          wordBreakValues: ["break-all"],
+          formFieldLabels: ["First name", "last_name"],
+          fontFamilies: ["Arial"],
+        }),
+      ]),
+    );
+    expect(wordBreak.status).toBe("scored");
+    if (wordBreak.status !== "scored") return;
+    expect(wordBreak.findings.map((finding) => finding.id)).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^cjk-wordbreak-breakall-/),
+        expect.stringMatching(/^cjk-naming-/),
+      ]),
+    );
+
+    const fonts = visualHeuristicScorers["font-and-script"]!(
+      context([
+        emptyCrawledPage({
+          url: "https://example.com/ko",
+          htmlLang: "ko",
+          textSample: "한글과 tofu □ 가 함께 있습니다.",
+          fontFamilies: ["Arial", "sans-serif"],
+        }),
+      ]),
+    );
+    expect(fonts.status).toBe("scored");
+    if (fonts.status !== "scored") return;
+    expect(fonts.findings.some((finding) => finding.id.startsWith("font-tofu-"))).toBe(true);
+    expect(fonts.findings.some((finding) => finding.title.includes("CJK-capable"))).toBe(true);
+  });
+
+  it("passes Korean pages with keep-all and a CJK font", () => {
+    const outcome = visualHeuristicScorers["cjk-typography"]!(
+      context([
+        emptyCrawledPage({
+          url: "https://example.com/ko",
+          htmlLang: "ko",
+          textSample: "한국어 본문 예시입니다. 더 많은 한글 텍스트가 필요합니다.",
+          wordBreakValues: ["keep-all"],
+          formFieldLabels: ["성", "이름"],
+          fontFamilies: ["Noto Sans KR"],
+        }),
+      ]),
+    );
+    expect(outcome).toEqual({ status: "scored", score: 92, findings: [] });
   });
 });

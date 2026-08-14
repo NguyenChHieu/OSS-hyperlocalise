@@ -23,6 +23,26 @@ export const LOCALE_CODE = /^[a-z]{2}(?:-[a-z]{2})?$/i;
 const RTL_LANGUAGES = new Set(["ar", "he", "fa", "ur", "ps", "yi"]);
 const CJK_LANGUAGES = new Set(["zh", "ja", "ko"]);
 
+/**
+ * URL path prefixes that are market/region codes, not ISO 639 language tags.
+ * Mapped to the BCP 47 html lang value sites should declare.
+ */
+const PATH_REGION_TO_HTML_LANG: Record<string, string> = {
+  au: "en-AU",
+  us: "en-US",
+  nz: "en-NZ",
+  gb: "en-GB",
+  jp: "ja-JP",
+  kr: "ko-KR",
+  cn: "zh-CN",
+  tw: "zh-TW",
+  hk: "zh-HK",
+  mx: "es-MX",
+  in: "en-IN",
+  za: "en-ZA",
+  ph: "en-PH",
+};
+
 export function normalizeLocale(value: string): string {
   return value.trim().replaceAll("_", "-").toLowerCase();
 }
@@ -31,12 +51,120 @@ export function languageOf(locale: string): string {
   return normalizeLocale(locale).split("-")[0] ?? "";
 }
 
+/** Format a normalized locale as a conventional BCP 47 tag (e.g. en-AU). */
+export function formatBcp47Locale(locale: string): string {
+  const normalized = normalizeLocale(locale);
+  const [language, region] = normalized.split("-");
+  if (!language) return normalized;
+  if (!region) return language;
+  return `${language}-${region.toUpperCase()}`;
+}
+
+/**
+ * Path locale token → suggested `html lang` value.
+ * Region-only prefixes like `au` map to `en-AU`, not the invalid tag `au`.
+ */
+export function htmlLangSuggestionForPathLocale(pathLocale: string): string {
+  const normalized = normalizeLocale(pathLocale);
+  if (normalized.includes("-")) {
+    return formatBcp47Locale(normalized);
+  }
+  const regionMapped = PATH_REGION_TO_HTML_LANG[normalized];
+  if (regionMapped) return regionMapped;
+  return normalized;
+}
+
+/** Canonical locale signal for a URL path prefix (region paths become language-region tags). */
+export function canonicalPathLocale(pathLocale: string): string {
+  return normalizeLocale(htmlLangSuggestionForPathLocale(pathLocale));
+}
+
+/**
+ * Whether declared html lang agrees with the URL path locale.
+ * `en` matches path `/au/` (suggested `en-AU`); `fr` on `/au/` does not.
+ */
+export function htmlLangMatchesPathLocale(htmlLang: string, pathLocale: string): boolean {
+  const html = normalizeLocale(htmlLang);
+  const suggested = normalizeLocale(htmlLangSuggestionForPathLocale(pathLocale));
+  if (html === suggested) return true;
+  if (languageOf(html) !== languageOf(suggested)) return false;
+  // Bare language tag matches a language-region suggestion for the same language.
+  if (!html.includes("-") && suggested.includes("-")) return true;
+  // Language-region path matches a bare html lang for the same language.
+  if (html.includes("-") && !suggested.includes("-") && languageOf(html) === suggested) {
+    return true;
+  }
+  // Same language-region family (en-AU vs en-au already normalized; en-GB vs en-AU disagree on region)
+  return html === suggested;
+}
+
 export function isRtlLanguage(locale: string): boolean {
   return RTL_LANGUAGES.has(languageOf(locale));
 }
 
 export function isCjkLanguage(locale: string): boolean {
   return CJK_LANGUAGES.has(languageOf(locale));
+}
+
+/** Replacement / empty-box glyphs that often indicate missing font coverage ("tofu"). */
+export const TOFU_GLYPH_RE = /[\uFFFD\u25A1\u25A0\u25AF□�]/u;
+export const HANGUL_RE = /[\uAC00-\uD7AF]/u;
+export const CJK_IDEOGRAPH_RE = /[\u4E00-\u9FFF]/u;
+export const KANA_RE = /[\u3040-\u30FF]/u;
+
+const CJK_FONT_HINT_RE =
+  /noto\s*sans\s*cjk|noto\s*serif\s*cjk|source\s*han|malgun|gulim|batang|dotum|nanum|apple\s*sd\s*gothic|apple\s*gothic|hiragino|yu\s*gothic|yu\s*mincho|meiryo|ms\s*p?gothic|ms\s*p?mincho|pingfang|heiti|songti|stsong|microsoft\s*yahei|simsun|simhei|dengxian|wenquanyi|sarasa|ibm\s*plex\s*sans\s*(jp|kr|sc|tc)|pretendard|spoqa|kopub|apple\s*myungjo|noto\s*sans\s*kr|noto\s*sans\s*jp|noto\s*sans\s*sc|noto\s*sans\s*tc/i;
+
+const WESTERN_NAME_FIELD_RE =
+  /\b(first[\s_-]?name|last[\s_-]?name|given[\s_-]?name|family[\s_-]?name|surname|forename)\b/i;
+
+export function textHasHangul(text: string): boolean {
+  return HANGUL_RE.test(text);
+}
+
+export function textHasCjkScript(text: string): boolean {
+  return HANGUL_RE.test(text) || CJK_IDEOGRAPH_RE.test(text) || KANA_RE.test(text);
+}
+
+export function findTofuGlyphs(text: string): string[] {
+  return [...new Set(text.match(new RegExp(TOFU_GLYPH_RE.source, "gu")) ?? [])];
+}
+
+export function fontStackLooksCjkCapable(fontFamilies: string[]): boolean {
+  return fontFamilies.some((family) => CJK_FONT_HINT_RE.test(family));
+}
+
+export function westernNameFields(labels: string[]): string[] {
+  return labels.filter((label) => WESTERN_NAME_FIELD_RE.test(label));
+}
+
+/** Eastern Arabic-Indic (U+0660–U+0669) and Extended Arabic-Indic / Persian (U+06F0–U+06F9). */
+export const EASTERN_ARABIC_DIGIT_RE = /[\u0660-\u0669\u06F0-\u06F9]/u;
+export const WESTERN_DIGIT_RE = /[0-9]/u;
+
+const HIJRI_MONTH_RE =
+  /محرم|صفر|ربيع(?:\s*الأول|\s*الثاني)?|جمادى(?:\s*الأولى|\s*الآخرة)?|رجب|شعبان|رمضان|شوال|ذو\s*القعدة|ذو\s*الحجة|muharram|safar|rabi[a']?\s*(?:al-?)?awwal|rabi[a']?\s*(?:al-?)?thani|jumada|rajab|sha'?ban|ramadan|shawwal|dhul[-\s]?qi'?dah|dhul[-\s]?hijjah/iu;
+
+const GREGORIAN_ARABIC_MONTH_RE =
+  /يناير|فبراير|مارس|أبريل|ابريل|مايو|يونيو|يوليو|أغسطس|اغسطس|سبتمبر|أكتوبر|اكتوبر|نوفمبر|ديسمبر/u;
+
+const GREGORIAN_LATIN_DATE_RE =
+  /\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b|\b(?:20\d{2}|19\d{2})\b/i;
+
+export function textHasEasternArabicDigits(text: string): boolean {
+  return EASTERN_ARABIC_DIGIT_RE.test(text);
+}
+
+export function textHasWesternDigits(text: string): boolean {
+  return WESTERN_DIGIT_RE.test(text);
+}
+
+export function textHasHijriCalendarSignals(text: string): boolean {
+  return HIJRI_MONTH_RE.test(text);
+}
+
+export function textHasGregorianCalendarSignals(text: string): boolean {
+  return GREGORIAN_ARABIC_MONTH_RE.test(text) || GREGORIAN_LATIN_DATE_RE.test(text);
 }
 
 export function isLatinScriptLanguage(locale: string): boolean {
@@ -66,7 +194,9 @@ export function pathLocaleFromUrl(url: string): string | null {
 }
 
 export function pageLocale(page: LocalisationAuditCrawledPage): string | null {
-  return pathLocaleFromUrl(page.url) ?? (page.htmlLang ? normalizeLocale(page.htmlLang) : null);
+  const pathLocale = pathLocaleFromUrl(page.url);
+  if (pathLocale) return canonicalPathLocale(pathLocale);
+  return page.htmlLang ? normalizeLocale(page.htmlLang) : null;
 }
 
 export function pathWithoutLocale(url: string): string | null {
@@ -143,6 +273,10 @@ export function detectLocales(
   focusLocales: string[],
 ): LocalisationAuditLocaleSignal[] {
   const byLocale = new Map<string, LocalisationAuditLocaleSignal>();
+  /** Bare language tags that appear as their own URL/subdomain market prefixes. */
+  const bareLanguagesFromRouting = new Set<string>();
+  /** Languages that have a language-region tag from URL/subdomain routing. */
+  const languagesWithRegionFromRouting = new Set<string>();
 
   const add = (
     locale: string,
@@ -153,6 +287,14 @@ export function detectLocales(
     if (!key || key === "x-default" || !LOCALE_CODE.test(key)) return;
     if (!byLocale.has(key)) {
       byLocale.set(key, { locale: key, source, sampleUrl });
+    }
+  };
+
+  const noteRoutingLocale = (canonical: string) => {
+    if (canonical.includes("-")) {
+      languagesWithRegionFromRouting.add(languageOf(canonical));
+    } else {
+      bareLanguagesFromRouting.add(canonical);
     }
   };
 
@@ -169,20 +311,50 @@ export function detectLocales(
     }
     const pathLocale = pathLocaleFromUrl(page.url);
     if (pathLocale) {
-      add(pathLocale, "url_prefix", page.url);
+      const canonical = canonicalPathLocale(pathLocale);
+      add(canonical, "url_prefix", page.url);
+      noteRoutingLocale(canonical);
     }
     try {
       const host = new URL(page.url).hostname;
       const hostMatch = host.match(/^([a-z]{2}(?:-[a-z]{2})?)\./i);
       if (hostMatch?.[1] && hostMatch[1].toLowerCase() !== "www") {
-        add(hostMatch[1], "url_subdomain", page.url);
+        const hostLocale = canonicalPathLocale(hostMatch[1]);
+        add(hostLocale, "url_subdomain", page.url);
+        noteRoutingLocale(hostLocale);
       }
     } catch {
       // ignore bad URLs
     }
   }
 
-  return [...byLocale.values()].toSorted((a, b) => a.locale.localeCompare(b.locale));
+  return collapseLanguageRegionSignals(
+    [...byLocale.values()],
+    bareLanguagesFromRouting,
+    languagesWithRegionFromRouting,
+  ).toSorted((a, b) => a.locale.localeCompare(b.locale));
+}
+
+/**
+ * Prefer `en-au` over bare `en` when the bare tag is only a redundant html/hreflang
+ * annotation. Keep bare `en` when URL routing also has both `/en/` and a region
+ * market like `/au/` (distinct markets, same language).
+ */
+function collapseLanguageRegionSignals(
+  signals: LocalisationAuditLocaleSignal[],
+  bareLanguagesFromRouting: Set<string>,
+  languagesWithRegionFromRouting: Set<string>,
+): LocalisationAuditLocaleSignal[] {
+  const languagesWithRegion = new Set(
+    signals.filter((entry) => entry.locale.includes("-")).map((entry) => languageOf(entry.locale)),
+  );
+  return signals.filter((entry) => {
+    if (entry.locale.includes("-")) return true;
+    if (!languagesWithRegion.has(entry.locale)) return true;
+    return (
+      bareLanguagesFromRouting.has(entry.locale) && languagesWithRegionFromRouting.has(entry.locale)
+    );
+  });
 }
 
 export function groupPagesByLanguage(

@@ -86,6 +86,54 @@ describe("parsePageSignals", () => {
     expect(signals.fontFamilies).toContain("Noto Sans");
   });
 
+  it("extracts word-break CSS and Western name form fields", () => {
+    const signals = parsePageSignals(`
+      <html lang="ko">
+        <head>
+          <style>
+            body { font-family: "Malgun Gothic", sans-serif; word-break: break-all; }
+            p { line-break: strict; }
+          </style>
+        </head>
+        <body>
+          <label>First name</label>
+          <input name="last_name" placeholder="Last name" autocomplete="family-name" />
+          <p>한국어 본문 □</p>
+        </body>
+      </html>
+    `);
+
+    expect(signals.wordBreakValues).toContain("break-all");
+    expect(signals.lineBreakValues).toContain("strict");
+    expect(signals.fontFamilies).toContain("Malgun Gothic");
+    expect(signals.formFieldLabels).toEqual(
+      expect.arrayContaining(["First name", "last_name", "Last name", "family-name"]),
+    );
+    expect(signals.textSample).toContain("한국어");
+    expect(signals.textSample).toContain("□");
+  });
+
+  it("extracts RTL direction and physical horizontal CSS", () => {
+    const signals = parsePageSignals(`
+      <html lang="ar" dir="rtl">
+        <head>
+          <style>
+            .nav { direction: rtl; }
+            .bad { direction: ltr; float: left; margin-left: 12px; text-align: left; }
+            .ok { margin-inline-start: 12px; text-align: start; }
+          </style>
+        </head>
+        <body><p>مرحبا</p></body>
+      </html>
+    `);
+
+    expect(signals.directionValues).toEqual(expect.arrayContaining(["rtl", "ltr"]));
+    expect(signals.physicalHorizontalCss.some((value) => value.includes("float: left"))).toBe(true);
+    expect(
+      signals.logicalHorizontalCss.some((value) => value.includes("margin-inline-start")),
+    ).toBe(true);
+  });
+
   it("truncates long text samples with an ellipsis", () => {
     const longText = "word ".repeat(1_200);
     const signals = parsePageSignals(`<html><body><p>${longText}</p></body></html>`);

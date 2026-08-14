@@ -87,11 +87,28 @@ export type LocalisationAuditCrawledPage = {
   buttons: string[];
   headings: string[];
   fontFamilies: string[];
+  /** word-break values from inline/embedded CSS. */
+  wordBreakValues: string[];
+  /** line-break values from inline/embedded CSS. */
+  lineBreakValues: string[];
+  /** direction values from inline/embedded CSS. */
+  directionValues: string[];
+  /** Physical horizontal CSS snippets (float/margin/padding/left/right/text-align). */
+  physicalHorizontalCss: string[];
+  /** Logical horizontal CSS snippets (margin-inline, inset-inline, text-align: start/end). */
+  logicalHorizontalCss: string[];
+  /** Form label / placeholder / name / autocomplete samples for naming checks. */
+  formFieldLabels: string[];
   anchors: Array<{ href: string; text: string }>;
 };
 
 export type LocalisationAuditSitemapSignal = {
   robotsFound: boolean;
+  /** Absolute Sitemap: URLs declared in robots.txt (relative refs are resolved). */
+  robotsSitemapDirectives: string[];
+  /** True when robots.txt used a relative Sitemap: URL (Lighthouse expects absolute). */
+  robotsHasRelativeSitemapDirective: boolean;
+  /** Successfully fetched sitemap documents that contained <loc> entries. */
   sitemapUrls: string[];
   localizedUrls: string[];
 };
@@ -182,6 +199,8 @@ export const LOCALISATION_AUDIT_REPORT_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
 export const EMPTY_SITEMAP_SIGNAL: LocalisationAuditSitemapSignal = {
   robotsFound: false,
+  robotsSitemapDirectives: [],
+  robotsHasRelativeSitemapDirective: false,
   sitemapUrls: [],
   localizedUrls: [],
 };
@@ -207,6 +226,12 @@ export function emptyCrawledPage(
     buttons: [],
     headings: [],
     fontFamilies: [],
+    wordBreakValues: [],
+    lineBreakValues: [],
+    directionValues: [],
+    physicalHorizontalCss: [],
+    logicalHorizontalCss: [],
+    formFieldLabels: [],
     anchors: [],
     ...partial,
   };

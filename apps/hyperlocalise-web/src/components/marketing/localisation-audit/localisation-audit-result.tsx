@@ -14,7 +14,7 @@
  */
 import Link from "next/link";
 import { CheckIcon } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
 import { REQUEST_DEMO_URL } from "@/components/marketing/request-demo";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,7 @@ import { Label } from "@/components/ui/label";
 import { TypographyH1, TypographyH2, TypographyP } from "@/components/ui/typography";
 import { clientAnalytics } from "@/lib/analytics/client";
 import { LOCALISATION_AUDIT_ANALYTICS_EVENTS, scoreBand } from "@/lib/analytics/events";
+import { sanitizeLocalisationAuditFindingUrl } from "@/lib/localisation-audit/finding-url";
 import {
   formatDimensionScore,
   scoreTone,
@@ -59,6 +60,8 @@ type AuditPayload = {
   report: LocalisationAuditReport | null;
   unlocked: boolean;
   retryable?: boolean;
+  rerunnable?: boolean;
+  rerunAvailableAt?: string | null;
   errorCode: string | null;
   errorMessage?: string | null;
   completedAt?: string | null;
@@ -138,7 +141,30 @@ function DimensionScoreCircle({ label, score }: { label: string; score: number |
   );
 }
 
-function FindingList({ findings }: { findings: LocalisationAuditFinding[] }) {
+function looksLikeMarkup(value: string) {
+  return value.includes("<") && value.includes(">");
+}
+
+function FindingDetail({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="mt-3">
+      <p className="text-xs font-medium tracking-[0.14em] text-muted-foreground uppercase">
+        {label}
+      </p>
+      <div className="mt-1">{children}</div>
+    </div>
+  );
+}
+
+function FindingList({
+  findings,
+  copy,
+  domainKey,
+}: {
+  findings: LocalisationAuditFinding[];
+  copy: ReturnType<typeof getLocalisationAuditResultCopy>;
+  domainKey: string;
+}) {
   if (findings.length === 0) {
     return <p className="text-muted-foreground">No findings in this section.</p>;
   }
@@ -147,6 +173,9 @@ function FindingList({ findings }: { findings: LocalisationAuditFinding[] }) {
     <ul className="space-y-6">
       {findings.map((finding) => {
         const tone = severityTone(finding.severity);
+        const evidenceLooksLikeMarkup =
+          finding.evidence != null && looksLikeMarkup(finding.evidence);
+        const findingHref = sanitizeLocalisationAuditFindingUrl(finding.url, domainKey);
         return (
           <li key={finding.id} className="border-t border-border pt-6 first:border-t-0 first:pt-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -160,11 +189,37 @@ function FindingList({ findings }: { findings: LocalisationAuditFinding[] }) {
             </div>
             <p className="mt-2 text-lg font-medium">{finding.title}</p>
             <p className="mt-1 text-pretty text-muted-foreground">{finding.summary}</p>
-            {finding.url ? (
-              <p className="mt-2 break-all text-sm text-muted-foreground">{finding.url}</p>
+            {finding.where || findingHref ? (
+              <FindingDetail label={copy.findingWhereLabel}>
+                {finding.where ? <p className="text-sm">{finding.where}</p> : null}
+                {findingHref ? (
+                  <a
+                    href={findingHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 block break-all text-sm text-muted-foreground underline underline-offset-2"
+                  >
+                    {findingHref}
+                  </a>
+                ) : null}
+              </FindingDetail>
             ) : null}
             {finding.evidence ? (
-              <p className="mt-2 text-sm text-muted-foreground italic">“{finding.evidence}”</p>
+              <FindingDetail label={copy.findingEvidenceLabel}>
+                <p
+                  className={cn(
+                    "whitespace-pre-wrap text-sm text-muted-foreground",
+                    evidenceLooksLikeMarkup ? "font-mono" : "italic",
+                  )}
+                >
+                  {evidenceLooksLikeMarkup ? finding.evidence : `“${finding.evidence}”`}
+                </p>
+              </FindingDetail>
+            ) : null}
+            {finding.advice ? (
+              <FindingDetail label={copy.findingAdviceLabel}>
+                <p className="text-pretty text-sm">{finding.advice}</p>
+              </FindingDetail>
             ) : null}
           </li>
         );
@@ -299,7 +354,7 @@ export function LocalisationAuditResult({
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
-  const [retryPending, setRetryPending] = useState(false);
+  const [rerunPending, setRerunPending] = useState(false);
   const [deliveryMessage, setDeliveryMessage] = useState<string | null>(null);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const teaserTracked = useRef(false);
@@ -364,9 +419,9 @@ export function LocalisationAuditResult({
     }
   }
 
-  async function onRetry() {
+  async function restartAudit(failureMessage: string) {
     setError(null);
-    setRetryPending(true);
+    setRerunPending(true);
     try {
       const response = await fetch("/api/localisation-audit", {
         method: "POST",
@@ -378,14 +433,14 @@ export function LocalisationAuditResult({
         message?: string;
       } | null;
       if (!response.ok || !body?.audit) {
-        setError(body?.message ?? "Could not retry the audit.");
+        setError(body?.message ?? failureMessage);
         return;
       }
       setAudit(body.audit);
     } catch {
-      setError("Could not retry the audit.");
+      setError(failureMessage);
     } finally {
-      setRetryPending(false);
+      setRerunPending(false);
     }
   }
 
@@ -416,8 +471,12 @@ export function LocalisationAuditResult({
         </TypographyP>
         <p className="mt-6 text-sm text-muted-foreground">{audit.domainKey}</p>
         {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
-        <Button className="mt-8" onClick={onRetry} disabled={retryPending}>
-          {retryPending ? copy.retrying : copy.retry}
+        <Button
+          className="mt-8"
+          onClick={() => restartAudit("Could not retry the audit.")}
+          disabled={rerunPending}
+        >
+          {rerunPending ? copy.retrying : copy.retry}
         </Button>
       </section>
     );
@@ -478,8 +537,12 @@ export function LocalisationAuditResult({
           {audit.errorMessage ?? audit.errorCode ?? "The audit could not finish for this domain."}
         </TypographyP>
         {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
-        <Button className="mt-8" onClick={onRetry} disabled={retryPending}>
-          {retryPending ? copy.retrying : copy.retry}
+        <Button
+          className="mt-8"
+          onClick={() => restartAudit("Could not retry the audit.")}
+          disabled={rerunPending}
+        >
+          {rerunPending ? copy.retrying : copy.retry}
         </Button>
       </section>
     );
@@ -620,7 +683,7 @@ export function LocalisationAuditResult({
       <section className="border-t border-border px-5 py-16 sm:px-8 lg:px-10">
         <TypographyH2 className="pb-0">{copy.fixFirstHeading}</TypographyH2>
         <div className="mt-8">
-          <FindingList findings={fixFirst} />
+          <FindingList findings={fixFirst} copy={copy} domainKey={audit.domainKey} />
         </div>
       </section>
 
@@ -639,7 +702,7 @@ export function LocalisationAuditResult({
       <section className="border-t border-border px-5 py-16 sm:px-8 lg:px-10">
         <TypographyH2 className="pb-0">{copy.findingsHeading}</TypographyH2>
         <div className="mt-8">
-          <FindingList findings={headlineFindings} />
+          <FindingList findings={headlineFindings} copy={copy} domainKey={audit.domainKey} />
         </div>
       </section>
 
@@ -694,7 +757,7 @@ export function LocalisationAuditResult({
           <section className="border-t border-border px-5 py-16 sm:px-8 lg:px-10">
             <TypographyH2 className="pb-0">{copy.fullFindingsHeading}</TypographyH2>
             <div className="mt-8">
-              <FindingList findings={report.findings} />
+              <FindingList findings={report.findings} copy={copy} domainKey={audit.domainKey} />
             </div>
           </section>
 
@@ -767,6 +830,14 @@ export function LocalisationAuditResult({
         <TypographyH2 className="pb-0">{copy.reauditHeading}</TypographyH2>
         <TypographyP className="mt-4 max-w-2xl text-muted-foreground">{ctaBody}</TypographyP>
         <div className="mt-6 flex flex-wrap gap-3">
+          {audit.rerunnable ? (
+            <Button
+              onClick={() => restartAudit("Could not re-run the audit.")}
+              disabled={rerunPending}
+            >
+              {rerunPending ? copy.rerunning : copy.rerun}
+            </Button>
+          ) : null}
           <Button
             nativeButton={false}
             render={<Link href="/auth/sign-in" onClick={() => trackCta("create_workspace")} />}
@@ -788,6 +859,16 @@ export function LocalisationAuditResult({
             {copy.bookReview}
           </Button>
         </div>
+        {!audit.rerunnable && audit.rerunAvailableAt ? (
+          <p className="mt-4 text-sm text-muted-foreground">
+            {formatCopy(copy.rerunCooldown, {
+              when: new Date(audit.rerunAvailableAt).toLocaleString(locale, {
+                dateStyle: "medium",
+                timeStyle: "short",
+              }),
+            })}
+          </p>
+        ) : null}
       </section>
     </>
   );

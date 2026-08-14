@@ -24,6 +24,7 @@ import { LOCALISATION_AUDIT_ANALYTICS_EVENTS, scoreBand } from "@/lib/analytics/
 import { serverAnalytics } from "@/lib/analytics/server";
 import { DEFAULT_APP_LOCALE, normalizeAppLocale } from "@/lib/app-i18n/locales";
 import { rejectLocalisationAuditBot } from "@/lib/localisation-audit/bot-protection";
+import { LocalisationAuditDailyQuotaExceededError } from "@/lib/localisation-audit/daily-quota";
 import { resolveDomainIdentity, isValidDomainSlug } from "@/lib/localisation-audit/domain-slug";
 import {
   localisationAuditUnlockCookieName,
@@ -36,6 +37,8 @@ import {
   failLocalisationAudit,
   findLocalisationAuditBySlug,
   isLocalisationAuditRetryable,
+  isLocalisationAuditRerunnable,
+  localisationAuditRerunAvailableAt,
   markLocalisationAuditLeadEmailFailed,
   markLocalisationAuditLeadEmailQueued,
   upsertLocalisationAuditLeadForDelivery,
@@ -80,6 +83,8 @@ function publicAuditView(audit: LocalisationAuditRow) {
     errorCode: audit.errorCode,
     errorMessage: audit.errorMessage,
     retryable,
+    rerunnable: isLocalisationAuditRerunnable(audit),
+    rerunAvailableAt: localisationAuditRerunAvailableAt(audit)?.toISOString() ?? null,
     createdAt: audit.createdAt.toISOString(),
     completedAt: audit.completedAt?.toISOString() ?? null,
     statusUpdatedAt: audit.statusUpdatedAt?.toISOString() ?? null,
@@ -138,7 +143,10 @@ export function createLocalisationAuditRoutes(options: LocalisationAuditRouteOpt
           sourceUrl: identity.value.sourceUrl,
           focusLocales,
         });
-      } catch {
+      } catch (error) {
+        if (error instanceof LocalisationAuditDailyQuotaExceededError) {
+          return tooManyRequestsResponse(c, error.code, error.message);
+        }
         return conflictResponse(c, "localisation_audit_create_failed", "Could not create audit");
       }
 

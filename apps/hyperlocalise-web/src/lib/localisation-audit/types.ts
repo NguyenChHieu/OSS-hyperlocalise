@@ -41,8 +41,12 @@ export type LocalisationAuditFinding = {
   severity: LocalisationAuditFindingSeverity;
   title: string;
   summary: string;
+  /** Page section and HTML tag, e.g. "Document head · <html lang>". */
+  where?: string;
   url?: string;
   evidence?: string;
+  /** Concrete fix for this finding; not a restatement of the summary. */
+  advice?: string;
   confidence?: number;
   creditId?: string;
 };
@@ -170,6 +174,9 @@ export type LocalisationAuditLeadDeliveryStatus =
   | "verified";
 
 export const LOCALISATION_AUDIT_STALE_MS = 15 * 60 * 1000;
+export const LOCALISATION_AUDIT_RERUN_MS = 24 * 60 * 60 * 1000;
+/** Rolling 24h cap on new runs and daily re-runs across every domain. */
+export const LOCALISATION_AUDIT_DAILY_RUN_LIMIT = 10;
 export const LOCALISATION_AUDIT_EMAIL_RESEND_COOLDOWN_MS = 60 * 1000;
 export const LOCALISATION_AUDIT_REPORT_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 

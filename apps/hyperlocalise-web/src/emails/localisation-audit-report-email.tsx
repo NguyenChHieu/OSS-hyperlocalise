@@ -26,7 +26,11 @@ import {
   Text,
 } from "react-email";
 
-import { getLocalisationAuditGuideHref } from "@/components/marketing/localisation-audit/localisation-audit-page-content";
+import {
+  getLocalisationAuditGuideHref,
+  getLocalisationAuditResultCopy,
+} from "@/components/marketing/localisation-audit/localisation-audit-page-content";
+import { sanitizeLocalisationAuditFindingUrl } from "@/lib/localisation-audit/finding-url";
 import {
   emailAuditToneColor,
   emailAuditToneFill,
@@ -49,11 +53,38 @@ export type LocalisationAuditReportEmailProps = {
   dimensionScores?: LocalisationAuditDimensionScores;
 };
 
+const reportCopy = getLocalisationAuditResultCopy("en");
+
+function formatFindingPlainText(
+  finding: LocalisationAuditFinding,
+  index: number,
+  domainKey: string,
+) {
+  const lines = [`${index + 1}. [${finding.severity}] ${finding.title}`];
+  if (finding.summary) {
+    lines.push(finding.summary);
+  }
+  if (finding.where) {
+    lines.push(`${reportCopy.findingWhereLabel}: ${finding.where}`);
+  }
+  const findingHref = sanitizeLocalisationAuditFindingUrl(finding.url, domainKey);
+  if (findingHref) {
+    lines.push(findingHref);
+  }
+  if (finding.evidence) {
+    lines.push(`${reportCopy.findingEvidenceLabel}: ${finding.evidence}`);
+  }
+  if (finding.advice) {
+    lines.push(`${reportCopy.findingAdviceLabel}: ${finding.advice}`);
+  }
+  return lines.join("\n");
+}
+
 export function localisationAuditReportEmailText(props: LocalisationAuditReportEmailProps) {
   const findings = props.findings
     .slice(0, 3)
-    .map((finding, index) => `${index + 1}. [${finding.severity}] ${finding.title}`)
-    .join("\n");
+    .map((finding, index) => formatFindingPlainText(finding, index, props.domainKey))
+    .join("\n\n");
 
   const dimensions = props.dimensionScores
     ? [
@@ -132,6 +163,7 @@ export function LocalisationAuditReportEmail(props: LocalisationAuditReportEmail
           </Heading>
           {props.findings.slice(0, 3).map((finding) => {
             const toneColor = emailAuditToneColor(severityTone(finding.severity));
+            const findingHref = sanitizeLocalisationAuditFindingUrl(finding.url, props.domainKey);
             return (
               <Section
                 key={finding.id}
@@ -147,6 +179,29 @@ export function LocalisationAuditReportEmail(props: LocalisationAuditReportEmail
                   {finding.title}
                 </Text>
                 <Text style={muted}>{finding.summary}</Text>
+                {finding.where || findingHref ? (
+                  <>
+                    <Text style={detailLabel}>{reportCopy.findingWhereLabel}</Text>
+                    {finding.where ? <Text style={detailBody}>{finding.where}</Text> : null}
+                    {findingHref ? (
+                      <Link href={findingHref} style={findingUrl}>
+                        {findingHref}
+                      </Link>
+                    ) : null}
+                  </>
+                ) : null}
+                {finding.evidence ? (
+                  <>
+                    <Text style={detailLabel}>{reportCopy.findingEvidenceLabel}</Text>
+                    <Text style={evidenceBody}>{finding.evidence}</Text>
+                  </>
+                ) : null}
+                {finding.advice ? (
+                  <>
+                    <Text style={detailLabel}>{reportCopy.findingAdviceLabel}</Text>
+                    <Text style={detailBody}>{finding.advice}</Text>
+                  </>
+                ) : null}
               </Section>
             );
           })}
@@ -293,6 +348,37 @@ const findingTitle = {
   fontWeight: 600,
   color: "#111827",
   margin: "0 0 4px",
+};
+
+const detailLabel = {
+  fontSize: "11px",
+  lineHeight: "16px",
+  fontWeight: 600,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase" as const,
+  color: "#6b7280",
+  margin: "8px 0 2px",
+};
+
+const detailBody = {
+  fontSize: "13px",
+  lineHeight: "20px",
+  color: "#374151",
+  margin: "0 0 4px",
+};
+
+const evidenceBody = {
+  ...detailBody,
+  fontFamily:
+    'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  whiteSpace: "pre-wrap" as const,
+};
+
+const findingUrl = {
+  color: "#006bff",
+  fontSize: "13px",
+  lineHeight: "20px",
+  wordBreak: "break-all" as const,
 };
 
 const ctaSection = {

@@ -35,7 +35,7 @@ export function getLocalisationAuditPageCopy(_locale: string) {
     submit: "Run free audit",
     submitting: "Starting audit…",
     onePerDomain:
-      "One free audit per domain. If we already audited it, you will see the public teaser report.",
+      "One free audit per domain, and 10 audits a day across all sites. If we already audited it, you will see the public teaser report.",
     methodologyHeading: "What we check",
     technicalChecks: [
       "Locale detection, routing, language switcher, hreflang, and canonicals",
@@ -94,6 +94,9 @@ export function getLocalisationAuditResultCopy(_locale: string) {
     failedBody: "Something went wrong while auditing this domain. You can retry safely.",
     retry: "Retry audit",
     retrying: "Retrying…",
+    rerun: "Re-run audit",
+    rerunning: "Re-running…",
+    rerunCooldown: "You can re-run this audit once a day. Next run {when}.",
     scoreLabel: "Localisation score",
     scoreOutOf: "/100",
     scoreRatingExcellent: "Excellent",
@@ -132,6 +135,9 @@ export function getLocalisationAuditResultCopy(_locale: string) {
     unlockSubmit: "Email me the report",
     unlocking: "Sending…",
     unlockQueued: "Check your inbox for a verified link to unlock the full report.",
+    findingWhereLabel: "Found here",
+    findingEvidenceLabel: "What we saw",
+    findingAdviceLabel: "How to fix it",
     fullFindingsHeading: "Full findings",
     creditsHeading: "Credit scores",
     linguisticHeading: "Linguistic notes",

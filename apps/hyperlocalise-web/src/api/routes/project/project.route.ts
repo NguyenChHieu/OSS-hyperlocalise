@@ -36,6 +36,8 @@ import {
 import { db, schema, type DatabaseClient } from "@/lib/database";
 import type { Project } from "@/lib/database/types";
 import { getFileStorageAdapter, type FileStorageAdapter } from "@/lib/file-storage";
+import { PRODUCT_USAGE_ANALYTICS_EVENTS } from "@/lib/analytics/events";
+import { serverAnalytics } from "@/lib/analytics/server";
 import { isReleaseCatAllFilesEnabled } from "@/lib/flags/release-flags";
 import { createLogger } from "@/lib/log";
 import {
@@ -1113,6 +1115,16 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             return badRequestResponse(c, "translation_key_not_found", "Translation key not found");
           }
 
+          serverAnalytics.track(
+            body.approve
+              ? PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentApproved
+              : PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentDraftSaved,
+            {
+              source: "native",
+              status: body.approve ? "approved" : "draft",
+            },
+          );
+
           return c.json({ translation }, 200);
         }
 
@@ -1132,6 +1144,16 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           if (!translation) {
             return projectNotFoundResponse(c);
           }
+
+          serverAnalytics.track(
+            translation.isApproved
+              ? PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentApproved
+              : PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentDraftSaved,
+            {
+              source: "external_tms",
+              status: translation.isApproved ? "approved" : "draft",
+            },
+          );
 
           return c.json({ translation }, 200);
         } catch (error) {
@@ -1188,6 +1210,11 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             );
           }
 
+          serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.catCommentCreated, {
+            source: "native",
+            feature: "comment",
+          });
+
           return c.json({ comment }, 200);
         }
 
@@ -1209,6 +1236,11 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           if (!comment) {
             return projectNotFoundResponse(c);
           }
+
+          serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.catCommentCreated, {
+            source: "external_tms",
+            feature: body.type === "issue" ? "issue" : "comment",
+          });
 
           return c.json({ comment }, 200);
         } catch (error) {
@@ -1410,6 +1442,10 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           return badRequestResponse(c, result.error.code, result.error.message);
         }
 
+        serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.catAiRecommendationRequested, {
+          source: target.kind === "provider" ? "external_tms" : "native",
+        });
+
         return c.json({ recommendation: result.value }, 200);
       },
     )
@@ -1453,6 +1489,13 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
 
         if (!translation) {
           return badRequestResponse(c, "translation_not_found", "Translation not found");
+        }
+
+        if (body.status === "approved") {
+          serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentApproved, {
+            source: "native",
+            status: "approved",
+          });
         }
 
         return c.json({ translation }, 200);

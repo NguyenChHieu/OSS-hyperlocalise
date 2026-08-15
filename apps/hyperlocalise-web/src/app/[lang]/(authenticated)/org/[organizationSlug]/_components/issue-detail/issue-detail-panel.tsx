@@ -63,9 +63,10 @@ import {
   buildIssueCatHref,
   isExternalHttpUrl,
   isHttpOrHttpsUrl,
+  issueDetailLegalDropdownStatuses,
   issuePriorityValues,
+  issueResolutionReasonLabel,
   issueStatusLabel,
-  issueStatusValues,
   issueTypeLabel,
   issueTypeValues,
   linkKindLabel,
@@ -73,6 +74,9 @@ import {
 } from "./issue-detail-utils";
 import { IssueLocalePicker } from "./issue-locale-picker";
 import { IssuePriorityIcon } from "./issue-priority-icon";
+import { IssueReopenControl } from "./issue-reopen-control";
+import { issueResolveDialogMessages } from "./issue-resolve-dialog.messages";
+import { IssueResolveDialog, type IssueResolveSubmitInput } from "./issue-resolve-dialog";
 import { IssueStatusIcon } from "./issue-status-icon";
 import {
   areCustomColumnDraftsDirty,
@@ -195,6 +199,12 @@ function IssueDetailSkeleton() {
 
 const ghostSelectTriggerClassName =
   "h-8 max-w-full justify-end border-transparent bg-transparent px-1.5 shadow-none hover:bg-muted/60 focus-visible:border-ring";
+
+// The verifier field reuses the assignee picker; only its copy differs.
+const verifierFieldLabels = {
+  unassigned: issueResolveDialogMessages.verifierUnassigned,
+  triggerAria: issueResolveDialogMessages.verifierTrigger,
+};
 
 const iconRailSelectTriggerClassName =
   "size-8 justify-center border-transparent bg-transparent p-0 shadow-none hover:bg-muted/60 focus-visible:border-ring";
@@ -470,14 +480,44 @@ export const IssueDetailPanel = forwardRef<
     },
   }));
 
+  const [resolveDialogOpen, setResolveDialogOpen] = useState(false);
+
   const statusItems = useMemo(
     () =>
-      issueStatusValues.map((value) => ({
+      issueDetailLegalDropdownStatuses(issue?.status ?? "open").map((value) => ({
         value,
         label: issueStatusLabel(intl, value),
       })),
-    [intl],
+    [intl, issue?.status],
   );
+
+  // "resolved"/"wont_fix" only ever appear as dropdown options when leaving open/in_progress
+  // (see issueDetailLegalDropdownStatuses), so selecting either always means "close this issue"
+  // and must collect a reason via the dialog rather than firing the mutation directly.
+  const handleStatusSelect = (value: string) => {
+    if (value === "resolved" || value === "wont_fix") {
+      setResolveDialogOpen(true);
+      return;
+    }
+    updateIssue.mutate({ status: value });
+  };
+
+  const handleResolveSubmit = (input: IssueResolveSubmitInput) => {
+    updateIssue.mutate(
+      input.status === "resolved"
+        ? {
+            status: "resolved",
+            resolutionReason: input.resolutionReason,
+            verifierUserId: input.verifierUserId,
+          }
+        : { status: "wont_fix", verifierUserId: input.verifierUserId },
+      { onSuccess: () => setResolveDialogOpen(false) },
+    );
+  };
+
+  const handleReopen = (comment: string | null) => {
+    updateIssue.mutate({ status: "open", reopenComment: comment });
+  };
 
   const priorityItems = useMemo(
     () => issuePriorityValues.map((value) => ({ value, label: value })),
@@ -880,7 +920,7 @@ export const IssueDetailPanel = forwardRef<
                   items={statusItems}
                   onValueChange={(value) => {
                     if (value) {
-                      updateIssue.mutate({ status: value });
+                      handleStatusSelect(value);
                     }
                   }}
                   disabled={isSaving}
@@ -908,6 +948,50 @@ export const IssueDetailPanel = forwardRef<
                   </SelectContent>
                 </Select>
               </PropertyRow>
+
+              <PropertyRow
+                icon={User02Icon}
+                label={<FormattedMessage {...messages.fieldVerifier} />}
+              >
+                <IssueAssigneePicker
+                  value={issue.verifierUserId}
+                  members={assignableMembersQuery.data?.members ?? []}
+                  isLoading={assignableMembersQuery.isLoading}
+                  disabled={isSaving}
+                  size="ghost"
+                  triggerClassName={ghostSelectTriggerClassName}
+                  labels={verifierFieldLabels}
+                  onChange={(verifierUserId) => {
+                    updateIssue.mutate({ verifierUserId });
+                  }}
+                />
+              </PropertyRow>
+
+              {issue.resolutionReason ? (
+                <PropertyRow
+                  icon={CheckmarkCircle02Icon}
+                  label={<FormattedMessage {...messages.fieldResolutionReason} />}
+                >
+                  <ReadOnlyValue
+                    value={issueResolutionReasonLabel(intl, issue.resolutionReason)}
+                    empty={emptyValue}
+                    className="truncate"
+                  />
+                </PropertyRow>
+              ) : null}
+
+              {issue.verifiedAt ? (
+                <PropertyRow
+                  icon={CheckmarkCircle02Icon}
+                  label={<FormattedMessage {...messages.fieldVerifiedAt} />}
+                >
+                  <ReadOnlyValue
+                    value={formatRelativeTimestamp(issue.verifiedAt)}
+                    empty={emptyValue}
+                    className="truncate"
+                  />
+                </PropertyRow>
+              ) : null}
 
               <PropertyRow icon={Tag01Icon} label={<FormattedMessage {...messages.fieldType} />}>
                 <IssueTypePicker
@@ -1043,6 +1127,16 @@ export const IssueDetailPanel = forwardRef<
                   ))
                 : null}
             </dl>
+
+            {issue.status !== "open" && issue.status !== "in_progress" ? (
+              <div className="mt-2 flex justify-end">
+                <IssueReopenControl
+                  disabled={isSaving}
+                  isSubmitting={updateIssue.isPending}
+                  onReopen={handleReopen}
+                />
+              </div>
+            ) : null}
           </div>
 
           {!sidebarOpen ? (
@@ -1112,7 +1206,7 @@ export const IssueDetailPanel = forwardRef<
                 items={statusItems}
                 onValueChange={(value) => {
                   if (value) {
-                    updateIssue.mutate({ status: value });
+                    handleStatusSelect(value);
                   }
                 }}
                 disabled={isSaving}
@@ -1206,6 +1300,14 @@ export const IssueDetailPanel = forwardRef<
           ) : null}
         </aside>
       </Collapsible>
+      <IssueResolveDialog
+        open={resolveDialogOpen}
+        onOpenChange={setResolveDialogOpen}
+        members={assignableMembersQuery.data?.members ?? []}
+        membersLoading={assignableMembersQuery.isLoading}
+        isSubmitting={updateIssue.isPending}
+        onSubmit={handleResolveSubmit}
+      />
     </div>
   );
 });

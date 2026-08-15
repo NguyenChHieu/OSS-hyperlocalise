@@ -100,7 +100,14 @@ export function useIssueDetailMutations({
       queryClient.invalidateQueries({ queryKey: ["issue-sheet", organizationSlug, projectId] }),
       queryClient.invalidateQueries({ queryKey: ["organization-issues", organizationSlug] }),
     ];
-    if (body && (Object.hasOwn(body, "assigneeUserId") || Object.hasOwn(body, "status"))) {
+    if (
+      body &&
+      (Object.hasOwn(body, "assigneeUserId") ||
+        Object.hasOwn(body, "status") ||
+        Object.hasOwn(body, "resolutionReason") ||
+        Object.hasOwn(body, "verifierUserId") ||
+        Object.hasOwn(body, "reopenComment"))
+    ) {
       tasks.push(
         queryClient.invalidateQueries({
           queryKey: issueFeedQueryKey(organizationSlug, projectId, issueId),

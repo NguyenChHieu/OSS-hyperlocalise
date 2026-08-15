@@ -50,6 +50,46 @@ export const issueCommentMessages = defineMessages({
     id: "mWmRyMvedC",
     description: "Activity line when an issue status changes",
   },
+  resolvedWithReason: {
+    defaultMessage: "{actor} closed as {nextStatus}: {reason}",
+    id: "p0U9DPG7gh",
+    description: "Activity line when an issue is closed with a resolution reason",
+  },
+  resolvedWithoutReason: {
+    defaultMessage: "{actor} closed as {nextStatus}",
+    id: "a77AB4c/gF",
+    description: "Activity line when an issue is closed with no reason (e.g. won't fix)",
+  },
+  verified: {
+    defaultMessage: "{actor} verified the resolution",
+    id: "LIAT4eubz8",
+    description: "Activity line when a verifier confirms a resolution",
+  },
+  reopened: {
+    defaultMessage: "{actor} reopened the issue: {comment}",
+    id: "d1iFTsK82S",
+    description: "Activity line when a closed issue is reopened with a comment",
+  },
+  reopenedWithoutComment: {
+    defaultMessage: "{actor} reopened the issue",
+    id: "wo+l2CMScC",
+    description: "Activity line when a closed issue is reopened with no comment",
+  },
+  verifierDesignated: {
+    defaultMessage: "{actor} requested verification from {verifier}",
+    id: "4mqkBkL7ha",
+    description: "Activity line when a verifier is newly designated",
+  },
+  verifierCleared: {
+    defaultMessage: "{actor} cleared the designated verifier",
+    id: "qQUxxSUAMI",
+    description: "Activity line when a designated verifier is removed with no replacement",
+  },
+  verifierChanged: {
+    defaultMessage: "{actor} changed the verifier to {verifier}",
+    id: "hXbeLIeI+y",
+    description: "Activity line when the designated verifier is reassigned",
+  },
   unknownActor: {
     defaultMessage: "Someone",
     id: "hFzuwtEzyB",

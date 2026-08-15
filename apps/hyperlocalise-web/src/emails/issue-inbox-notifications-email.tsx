@@ -83,6 +83,24 @@ export function actionVerb(type: IssueNotificationType): string {
       return "changed the assignee on";
     case "status_changed":
       return "changed the status of";
+    case "verification_requested":
+      return "asked you to verify";
+    default:
+      return assertNever(type);
+  }
+}
+
+/** Notification types whose action verb links to the issue itself rather than the comment. */
+function showsIssueLinkSuffix(type: IssueNotificationType): boolean {
+  switch (type) {
+    case "assigned":
+    case "assignee_changed":
+    case "status_changed":
+    case "verification_requested":
+      return true;
+    case "comment":
+    case "mentioned":
+      return false;
     default:
       return assertNever(type);
   }
@@ -170,8 +188,7 @@ function Avatar({
 
 function NotificationRow({ item }: { item: EmailNotificationItem }) {
   const verb = actionVerb(item.type);
-  const showIssueLinkSuffix =
-    item.type === "assigned" || item.type === "assignee_changed" || item.type === "status_changed";
+  const showIssueLinkSuffix = showsIssueLinkSuffix(item.type);
 
   return (
     <Section style={{ marginBottom: 16 }}>

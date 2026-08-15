@@ -47,6 +47,11 @@ const issue: IssueDetailIssue = {
   createdAt: "2026-07-21T00:00:00.000Z",
   updatedAt: "2026-07-21T00:00:00.000Z",
   resolvedAt: null,
+  resolutionReason: null,
+  resolvedByUserId: null,
+  verifierUserId: null,
+  verifiedAt: null,
+  verifiedByUserId: null,
   values: {},
   isWatching: false,
 };

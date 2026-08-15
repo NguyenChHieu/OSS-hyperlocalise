@@ -42,11 +42,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TypographyP } from "@/components/ui/typography";
 import { cn } from "@/lib/primitives/cn";
 
+import { assertNever } from "@/lib/primitives/assert-never/assert-never";
+
 import { formatRelativeTimestamp } from "../workspace-files-shared";
 import { IssueCommentComposer } from "./issue-comment-composer";
 import { issueCommentMessages as messages } from "./issue-comment.messages";
 import { useIssueDetailGuardedNavigate } from "./issue-detail-navigation-guard";
-import { buildIssueDetailHref, issueStatusLabel } from "./issue-detail-utils";
+import {
+  buildIssueDetailHref,
+  issueResolutionReasonLabel,
+  issueStatusLabel,
+} from "./issue-detail-utils";
 import { useIssueCommentMutations, type IssueComment } from "./use-issue-comments";
 import { useIssueFeedQuery } from "./use-issue-feed";
 import type { IssueActivity } from "./use-issue-activities";
@@ -381,6 +387,50 @@ function IssueActivityRow({
         }}
       />
     );
+  } else if (activity.type === "resolved") {
+    copy = activity.reason ? (
+      <FormattedMessage
+        {...messages.resolvedWithReason}
+        values={{
+          actor,
+          nextStatus: activityName(issueStatusLabel(intl, activity.nextStatus)),
+          reason: issueResolutionReasonLabel(intl, activity.reason),
+        }}
+      />
+    ) : (
+      <FormattedMessage
+        {...messages.resolvedWithoutReason}
+        values={{ actor, nextStatus: activityName(issueStatusLabel(intl, activity.nextStatus)) }}
+      />
+    );
+  } else if (activity.type === "verified") {
+    copy = <FormattedMessage {...messages.verified} values={{ actor }} />;
+  } else if (activity.type === "reopened") {
+    copy = activity.comment ? (
+      <FormattedMessage {...messages.reopened} values={{ actor, comment: activity.comment }} />
+    ) : (
+      <FormattedMessage {...messages.reopenedWithoutComment} values={{ actor }} />
+    );
+  } else if (activity.type === "verifier_changed") {
+    if (!activity.nextVerifier) {
+      copy = <FormattedMessage {...messages.verifierCleared} values={{ actor }} />;
+    } else if (!activity.previousVerifier) {
+      copy = (
+        <FormattedMessage
+          {...messages.verifierDesignated}
+          values={{ actor, verifier: activityName(activity.nextVerifier.displayName) }}
+        />
+      );
+    } else {
+      copy = (
+        <FormattedMessage
+          {...messages.verifierChanged}
+          values={{ actor, verifier: activityName(activity.nextVerifier.displayName) }}
+        />
+      );
+    }
+  } else if (activity.type !== "assignee_changed") {
+    return assertNever(activity);
   } else if (!activity.nextAssignee) {
     copy = <FormattedMessage {...messages.unassigned} values={{ actor }} />;
   } else if (activity.actor?.userId && activity.nextAssignee.userId === activity.actor.userId) {

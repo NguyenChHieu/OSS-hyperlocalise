@@ -11,14 +11,27 @@
  * Version 2.0 or later.
  */
 
-export const ISSUE_LIST_STATUS_ORDER = ["open", "in_progress", "resolved", "wont_fix"] as const;
+import { assertNever } from "@/lib/primitives/assert-never/assert-never";
+
+// Awaiting-verification sits ahead of resolved/verified: it still needs someone's attention.
+// Keep in lockstep with statusRankExpression in issue-list-query.ts.
+export const ISSUE_LIST_STATUS_ORDER = [
+  "open",
+  "in_progress",
+  "awaiting_verification",
+  "resolved",
+  "verified",
+  "wont_fix",
+] as const;
 
 export type IssueListStatus = (typeof ISSUE_LIST_STATUS_ORDER)[number];
 
 export type IssueListSummaryCounts = {
   open: number;
   inProgress: number;
+  awaitingVerification: number;
   resolved: number;
+  verified: number;
   wontFix: number;
 };
 
@@ -40,10 +53,16 @@ function summaryCountForStatus(
       return summary.open;
     case "in_progress":
       return summary.inProgress;
+    case "awaiting_verification":
+      return summary.awaitingVerification;
     case "resolved":
       return summary.resolved;
+    case "verified":
+      return summary.verified;
     case "wont_fix":
       return summary.wontFix;
+    default:
+      return assertNever(status);
   }
 }
 

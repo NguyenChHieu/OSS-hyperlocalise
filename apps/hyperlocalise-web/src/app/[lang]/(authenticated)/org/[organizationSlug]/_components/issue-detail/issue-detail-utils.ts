@@ -18,8 +18,23 @@ import {
   type IssueTypeValue,
 } from "../../projects/[projectId]/issue-sheet/_components/issue-sheet-constants";
 
-export const issueStatusValues = ["open", "in_progress", "resolved", "wont_fix"] as const;
+export const issueStatusValues = [
+  "open",
+  "in_progress",
+  "awaiting_verification",
+  "resolved",
+  "verified",
+  "wont_fix",
+] as const;
 export type IssueStatusValue = (typeof issueStatusValues)[number];
+
+export const issueResolutionReasonValues = [
+  "fixed",
+  "source_updated",
+  "duplicate",
+  "not_reproducible",
+] as const;
+export type IssueResolutionReasonValue = (typeof issueResolutionReasonValues)[number];
 
 export const issuePriorityValues = ["P0", "P1", "P2"] as const;
 export type IssuePriorityValue = (typeof issuePriorityValues)[number];
@@ -57,6 +72,11 @@ export type IssueDetailIssue = {
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
+  resolutionReason: string | null;
+  resolvedByUserId: string | null;
+  verifierUserId: string | null;
+  verifiedAt: string | null;
+  verifiedByUserId: string | null;
   values: Record<string, unknown>;
   isWatching: boolean;
 };
@@ -65,19 +85,43 @@ function formatUnknownLabel(value: string) {
   return value.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+// Record<IssueStatusValue, ...> makes this compile-enforced: adding a status to
+// issueStatusValues without adding it here is a type error, not a silent fallback.
+const STATUS_MESSAGE: Record<IssueStatusValue, keyof typeof sharedMessages> = {
+  open: "statusOpen",
+  in_progress: "statusInProgress",
+  awaiting_verification: "statusAwaitingVerification",
+  resolved: "statusResolved",
+  verified: "statusVerified",
+  wont_fix: "statusWontFix",
+};
+
 export function issueStatusLabel(intl: IntlShape, status: string) {
-  switch (status as IssueStatusValue) {
-    case "open":
-      return intl.formatMessage(sharedMessages.statusOpen);
-    case "in_progress":
-      return intl.formatMessage(sharedMessages.statusInProgress);
-    case "resolved":
-      return intl.formatMessage(sharedMessages.statusResolved);
-    case "wont_fix":
-      return intl.formatMessage(sharedMessages.statusWontFix);
-    default:
-      return formatUnknownLabel(status);
+  const key = STATUS_MESSAGE[status as IssueStatusValue];
+  if (!key) {
+    return formatUnknownLabel(status);
   }
+  return intl.formatMessage(sharedMessages[key]);
+}
+
+// wont_fix has no reason value of its own; the status itself is self-describing.
+const RESOLUTION_REASON_MESSAGE: Record<
+  IssueResolutionReasonValue | "unspecified",
+  keyof typeof sharedMessages
+> = {
+  fixed: "resolutionReasonFixed",
+  source_updated: "resolutionReasonSourceUpdated",
+  duplicate: "resolutionReasonDuplicate",
+  not_reproducible: "resolutionReasonNotReproducible",
+  unspecified: "resolutionReasonUnspecified",
+};
+
+export function issueResolutionReasonLabel(intl: IntlShape, reason: string) {
+  const key = RESOLUTION_REASON_MESSAGE[reason as IssueResolutionReasonValue | "unspecified"];
+  if (!key) {
+    return formatUnknownLabel(reason);
+  }
+  return intl.formatMessage(sharedMessages[key]);
 }
 
 export function issueTypeLabel(intl: IntlShape, value: string) {
@@ -99,11 +143,36 @@ export function issueTypeLabel(intl: IntlShape, value: string) {
   }
 }
 
+const STATUS_VARIANT: Record<IssueStatusValue, "success" | "outline" | "warning" | "secondary"> = {
+  open: "secondary",
+  in_progress: "warning",
+  awaiting_verification: "warning",
+  resolved: "success",
+  verified: "success",
+  wont_fix: "outline",
+};
+
 export function issueStatusVariant(status: string) {
-  if (status === "resolved") return "success" as const;
-  if (status === "wont_fix") return "outline" as const;
-  if (status === "in_progress") return "warning" as const;
-  return "secondary" as const;
+  return STATUS_VARIANT[status as IssueStatusValue] ?? "secondary";
+}
+
+/**
+ * Legal values for the plain status dropdown, given the current status. Closing
+ * (resolved/wont_fix) and verifying stay reachable from the dropdown, but selecting a closing
+ * value must route through the resolve dialog rather than firing the mutation directly (see
+ * issue-detail-panel.tsx) — the dialog is what actually collects the required reason. Once
+ * closed, only the dedicated Reopen control can move an issue, not this dropdown, since reopen
+ * takes an optional comment the dropdown has no room for. `awaiting_verification` is never a
+ * directly selectable value; it's a consequence of closing with a verifier designated.
+ */
+export function issueDetailLegalDropdownStatuses(current: string): IssueStatusValue[] {
+  if (current === "open" || current === "in_progress") {
+    return ["open", "in_progress", "resolved", "wont_fix"];
+  }
+  if (current === "awaiting_verification") {
+    return ["awaiting_verification", "verified"];
+  }
+  return [current as IssueStatusValue];
 }
 
 export function issuePriorityVariant(priority: string) {

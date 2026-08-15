@@ -105,6 +105,21 @@ export const issueDetailPanelMessages = defineMessages({
     id: "HmDnokfJEK",
     description: "Label for issue resolved timestamp",
   },
+  fieldVerifier: {
+    defaultMessage: "Verifier",
+    id: "5M3Yuj17gU",
+    description: "Label for the designated issue verifier field",
+  },
+  fieldResolutionReason: {
+    defaultMessage: "Resolution reason",
+    id: "9My3nYUrno",
+    description: "Label for the issue resolution reason field",
+  },
+  fieldVerifiedAt: {
+    defaultMessage: "Verified",
+    id: "dIk3lAhJ+/",
+    description: "Label for the issue verified timestamp field",
+  },
   linkedContext: {
     defaultMessage: "Linked string",
     id: "CPX3MSYhG+",

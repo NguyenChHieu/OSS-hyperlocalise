@@ -22,6 +22,8 @@ import { TypographyMuted, TypographySmall } from "@/components/ui/typography";
 import { stripMarkdown } from "@/lib/markdown/strip-markdown";
 import { cn } from "@/lib/primitives/cn";
 
+import { assertNever } from "@/lib/primitives/assert-never/assert-never";
+
 import { inboxListMessages } from "./inbox-list.messages";
 import type { InboxIssueNotification } from "./inbox-notifications-api";
 import { inboxNotificationsMessages } from "./inbox-notifications.messages";
@@ -88,8 +90,10 @@ function notificationPreviewMessage(type: InboxIssueNotification["type"]): Messa
       return inboxNotificationsMessages.statusChanged;
     case "assignee_changed":
       return inboxNotificationsMessages.assigneeChanged;
+    case "verification_requested":
+      return inboxNotificationsMessages.verificationRequested;
     default:
-      return inboxNotificationsMessages.comment;
+      return assertNever(type);
   }
 }
 

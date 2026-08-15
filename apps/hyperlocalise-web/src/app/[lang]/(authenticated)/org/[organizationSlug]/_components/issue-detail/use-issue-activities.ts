@@ -39,4 +39,25 @@ export type IssueActivity =
       type: "status_changed";
       previousStatus: string;
       nextStatus: string;
+    })
+  | (IssueActivityBase & {
+      type: "resolved";
+      reason: string | null;
+      previousStatus: string;
+      nextStatus: string;
+    })
+  | (IssueActivityBase & {
+      type: "verified";
+      reason: string | null;
+    })
+  | (IssueActivityBase & {
+      type: "reopened";
+      clearedReason: string | null;
+      previousStatus: string;
+      comment: string | null;
+    })
+  | (IssueActivityBase & {
+      type: "verifier_changed";
+      previousVerifier: IssueActivityUser | null;
+      nextVerifier: IssueActivityUser | null;
     });

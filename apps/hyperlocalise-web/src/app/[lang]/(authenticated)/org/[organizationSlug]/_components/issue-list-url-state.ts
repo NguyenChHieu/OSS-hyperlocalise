@@ -21,7 +21,14 @@ import {
   type IssuePriority,
 } from "@/lib/projects/issue-sheet/issue-list-constants";
 
-export const ISSUE_STATUS_FILTERS = ["open", "in_progress", "resolved", "wont_fix"] as const;
+export const ISSUE_STATUS_FILTERS = [
+  "open",
+  "in_progress",
+  "awaiting_verification",
+  "resolved",
+  "verified",
+  "wont_fix",
+] as const;
 
 export const ISSUE_TYPE_FILTERS = [
   "general_question",

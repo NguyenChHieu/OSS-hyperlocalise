@@ -24,7 +24,9 @@ export const issuesSummaryFixture = {
   total: 4,
   open: 2,
   inProgress: 1,
+  awaitingVerification: 0,
   resolved: 1,
+  verified: 0,
   wontFix: 0,
 };
 

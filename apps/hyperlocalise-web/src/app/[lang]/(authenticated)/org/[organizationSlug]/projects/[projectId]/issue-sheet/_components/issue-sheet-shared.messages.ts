@@ -75,15 +75,50 @@ export const issueSheetSharedMessages = defineMessages({
     id: "/KZjaB2GIT",
     description: "Issue Sheet status option when an issue is in progress",
   },
+  statusAwaitingVerification: {
+    defaultMessage: "Awaiting verification",
+    id: "4EekeJ60Cp",
+    description: "Issue Sheet status option when an issue is closed and awaiting verifier review",
+  },
   statusResolved: {
     defaultMessage: "Resolved",
     id: "ad1N8PatES",
     description: "Issue Sheet status option when an issue is resolved",
   },
+  statusVerified: {
+    defaultMessage: "Verified",
+    id: "X+viu2pnAd",
+    description: "Issue Sheet status option when a verifier has confirmed the resolution",
+  },
   statusWontFix: {
     defaultMessage: "Won’t fix",
     id: "G0DAu7HpBC",
     description: "Issue Sheet status option when an issue will not be fixed",
+  },
+  resolutionReasonFixed: {
+    defaultMessage: "Fixed",
+    id: "q0zsly/sRY",
+    description: "Resolution reason: the underlying issue was fixed",
+  },
+  resolutionReasonSourceUpdated: {
+    defaultMessage: "Source updated",
+    id: "2xc9kv6ogM",
+    description: "Resolution reason: the source content was updated",
+  },
+  resolutionReasonDuplicate: {
+    defaultMessage: "Duplicate",
+    id: "aMk8Dz/iNA",
+    description: "Resolution reason: duplicate of another issue",
+  },
+  resolutionReasonNotReproducible: {
+    defaultMessage: "Not reproducible",
+    id: "iRB4kR/GnM",
+    description: "Resolution reason: could not reproduce the issue",
+  },
+  resolutionReasonUnspecified: {
+    defaultMessage: "No reason recorded",
+    id: "1kk3GLt7sx",
+    description: "Resolution reason placeholder for legacy or imported issues with none set",
   },
   linkKindCatSegment: {
     defaultMessage: "CAT segment",

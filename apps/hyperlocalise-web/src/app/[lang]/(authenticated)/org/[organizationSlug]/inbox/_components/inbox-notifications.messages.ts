@@ -55,6 +55,11 @@ export const inboxNotificationsMessages = defineMessages({
     id: "H/zIVmChfF",
     description: "Inbox notification preview for an assignee change",
   },
+  verificationRequested: {
+    defaultMessage: "{actor} asked you to verify {issueTitle}",
+    id: "pj/t160LFn",
+    description: "Inbox notification preview when a verifier is designated on a closed issue",
+  },
   someone: {
     defaultMessage: "Someone",
     id: "6N3tTQGcSO",

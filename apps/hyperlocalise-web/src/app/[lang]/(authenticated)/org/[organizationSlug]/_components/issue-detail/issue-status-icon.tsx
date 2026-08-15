@@ -33,6 +33,21 @@ function InProgressStatusIcon({ className }: { className?: string }) {
   );
 }
 
+function AwaitingVerificationStatusIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden>
+      <circle cx="8" cy="8" r="6" className="stroke-sky-500" strokeWidth="1.75" />
+      <path
+        d="M8 4.5V8l2.5 1.5"
+        className="stroke-sky-500"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function ResolvedStatusIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden>
@@ -41,6 +56,21 @@ function ResolvedStatusIcon({ className }: { className?: string }) {
         d="M5 8.2 7 10.2 11 6"
         stroke="white"
         strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function VerifiedStatusIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" className={className} aria-hidden>
+      <circle cx="8" cy="8" r="7" className="fill-indigo-500" />
+      <path
+        d="M4.7 8.2 6.7 10.2 8.7 8.2M7.3 8.2 9.3 10.2 11.3 6.2"
+        stroke="white"
+        strokeWidth="1.6"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -65,7 +95,9 @@ function WontFixStatusIcon({ className }: { className?: string }) {
 const STATUS_ICON: Record<IssueStatusValue, (props: { className?: string }) => JSX.Element> = {
   open: OpenStatusIcon,
   in_progress: InProgressStatusIcon,
+  awaiting_verification: AwaitingVerificationStatusIcon,
   resolved: ResolvedStatusIcon,
+  verified: VerifiedStatusIcon,
   wont_fix: WontFixStatusIcon,
 };
 

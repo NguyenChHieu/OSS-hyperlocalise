@@ -112,6 +112,11 @@ export const issueListFiltersBarMessages = defineMessages({
     id: "p8Xes8vaYS",
     description: "Issue list view preset for source and context issues",
   },
+  viewMyVerification: {
+    defaultMessage: "My verification",
+    id: "tzBt4mFFTs",
+    description: "Issue list view preset showing issues awaiting verification by the current user",
+  },
   sortUpdated: {
     defaultMessage: "Updated",
     id: "VM6KwDP12J",
@@ -187,10 +192,20 @@ export const issueListFiltersBarMessages = defineMessages({
     id: "n8LjMOVBA2",
     description: "Issue status filter option when an issue is in progress",
   },
+  statusAwaitingVerification: {
+    defaultMessage: "Awaiting verification",
+    id: "7tu2U9r6p6",
+    description: "Issue status filter option when an issue is closed and awaiting verifier review",
+  },
   statusResolved: {
     defaultMessage: "Resolved",
     id: "YsUGw6nQKk",
     description: "Issue status filter option when an issue is resolved",
+  },
+  statusVerified: {
+    defaultMessage: "Verified",
+    id: "U96A/QVpPa",
+    description: "Issue status filter option when a verifier has confirmed the resolution",
   },
   statusWontFix: {
     defaultMessage: "Won’t fix",
@@ -299,6 +314,7 @@ const viewMessages = {
   my_work: issueListFiltersBarMessages.viewMyWork,
   qa_triage: issueListFiltersBarMessages.viewQaTriage,
   source_context: issueListFiltersBarMessages.viewSourceContext,
+  my_verification: issueListFiltersBarMessages.viewMyVerification,
 } as const satisfies Record<IssueListView, MessageDescriptor>;
 
 const sortMessages = {
@@ -316,7 +332,9 @@ const sortDirMessages = {
 const statusMessages = {
   open: issueListFiltersBarMessages.statusOpen,
   in_progress: issueListFiltersBarMessages.statusInProgress,
+  awaiting_verification: issueListFiltersBarMessages.statusAwaitingVerification,
   resolved: issueListFiltersBarMessages.statusResolved,
+  verified: issueListFiltersBarMessages.statusVerified,
   wont_fix: issueListFiltersBarMessages.statusWontFix,
 } as const satisfies Record<IssueStatusFilter, MessageDescriptor>;
 

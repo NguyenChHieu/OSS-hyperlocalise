@@ -31,8 +31,10 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/primitives/cn";
 
-import { issueAssigneePickerMessages as messages } from "./issue-assignee-picker.messages";
+import { issueAssigneePickerMessages as defaultLabels } from "./issue-assignee-picker.messages";
 import type { AssignableIssueMember } from "./use-assignable-issue-members";
+
+export type IssueAssigneePickerLabels = typeof defaultLabels;
 
 const UNASSIGNED_VALUE = "__unassigned__";
 const ASSIGN_TO_ME_VALUE = "__assign_to_me__";
@@ -130,6 +132,9 @@ export type IssueAssigneePickerProps = {
   triggerClassName?: string;
   align?: "start" | "center" | "end";
   size?: "default" | "sm" | "ghost";
+  /** Overrides for a subset of the default assignee-picker copy, e.g. to reuse this component
+   * as a verifier picker. Unset keys fall back to the assignee defaults. */
+  labels?: Partial<IssueAssigneePickerLabels>;
 };
 
 export function IssueAssigneePicker({
@@ -143,10 +148,12 @@ export function IssueAssigneePicker({
   triggerClassName,
   align = "start",
   size = "default",
+  labels: labelsProp,
 }: IssueAssigneePickerProps) {
   const intl = useIntl();
   const [open, setOpen] = useState(false);
   const isCompact = size === "sm";
+  const labels = { ...defaultLabels, ...labelsProp };
 
   const selectedMember = useMemo(
     () => members.find((member) => member.userId === value) ?? null,
@@ -160,8 +167,8 @@ export function IssueAssigneePicker({
   const triggerLabel = selectedMember
     ? memberPrimaryLabel(selectedMember)
     : value
-      ? (currentLabel ?? intl.formatMessage(messages.unassigned))
-      : intl.formatMessage(messages.unassigned);
+      ? (currentLabel ?? intl.formatMessage(labels.unassigned))
+      : intl.formatMessage(labels.unassigned);
 
   const triggerAvatar =
     value == null ? (
@@ -185,8 +192,8 @@ export function IssueAssigneePicker({
             disabled={disabled || isLoading}
             aria-label={
               isCompact
-                ? `${intl.formatMessage(messages.triggerAria)}: ${triggerLabel}`
-                : intl.formatMessage(messages.triggerAria)
+                ? `${intl.formatMessage(labels.triggerAria)}: ${triggerLabel}`
+                : intl.formatMessage(labels.triggerAria)
             }
             title={isCompact ? triggerLabel : undefined}
             className={cn(
@@ -217,13 +224,13 @@ export function IssueAssigneePicker({
       </PopoverTrigger>
       <PopoverContent align={align} className="w-80 p-0" sideOffset={4}>
         <Command>
-          <CommandInput placeholder={intl.formatMessage(messages.searchPlaceholder)} />
+          <CommandInput placeholder={intl.formatMessage(labels.searchPlaceholder)} />
           <CommandList>
             <CommandEmpty>
               {isLoading ? (
-                <FormattedMessage {...messages.loading} />
+                <FormattedMessage {...labels.loading} />
               ) : (
-                <FormattedMessage {...messages.empty} />
+                <FormattedMessage {...labels.empty} />
               )}
             </CommandEmpty>
             <CommandGroup>
@@ -236,7 +243,7 @@ export function IssueAssigneePicker({
                 }}
               >
                 <UnassignedAvatar />
-                <FormattedMessage {...messages.unassigned} />
+                <FormattedMessage {...labels.unassigned} />
               </CommandItem>
               {currentUser ? (
                 <CommandItem
@@ -252,12 +259,12 @@ export function IssueAssigneePicker({
                     avatarUrl={currentUser.avatarUrl}
                     seed={currentUser.userId}
                   />
-                  <FormattedMessage {...messages.assignToMe} />
+                  <FormattedMessage {...labels.assignToMe} />
                 </CommandItem>
               ) : null}
             </CommandGroup>
             <CommandSeparator />
-            <CommandGroup heading={intl.formatMessage(messages.membersGroup)}>
+            <CommandGroup heading={intl.formatMessage(labels.membersGroup)}>
               {members.map((member) => {
                 const primaryLabel = memberPrimaryLabel(member);
                 return (

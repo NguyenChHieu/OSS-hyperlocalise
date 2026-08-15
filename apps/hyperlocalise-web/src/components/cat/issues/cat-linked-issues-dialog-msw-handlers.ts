@@ -31,7 +31,9 @@ function listResponse(issues: CatLinkedIssueListItemFixture[]) {
       total: issues.length,
       open: issues.filter((issue) => issue.status === "open").length,
       inProgress: issues.filter((issue) => issue.status === "in_progress").length,
+      awaitingVerification: 0,
       resolved: issues.filter((issue) => issue.status === "resolved").length,
+      verified: 0,
       wontFix: 0,
     },
   });

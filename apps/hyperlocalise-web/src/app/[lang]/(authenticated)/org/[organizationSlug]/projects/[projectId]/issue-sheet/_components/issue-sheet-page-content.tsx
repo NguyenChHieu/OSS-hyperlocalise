@@ -93,7 +93,9 @@ type IssueSheetResponse = {
     total: number;
     open: number;
     inProgress: number;
+    awaitingVerification: number;
     resolved: number;
+    verified: number;
     wontFix: number;
   };
 };

@@ -73,7 +73,9 @@ export const SingleStatus: Story = {
     summary: {
       open: 0,
       inProgress: 0,
+      awaitingVerification: 0,
       resolved: 1,
+      verified: 0,
       wontFix: 0,
     },
   },
@@ -90,7 +92,9 @@ export const CollapsedThenSingleStatus: Story = {
     summary: {
       open: 2,
       inProgress: 0,
+      awaitingVerification: 0,
       resolved: 0,
+      verified: 0,
       wontFix: 0,
     },
   },
@@ -109,7 +113,9 @@ export const Empty: Story = {
     summary: {
       open: 0,
       inProgress: 0,
+      awaitingVerification: 0,
       resolved: 0,
+      verified: 0,
       wontFix: 0,
     },
   },
@@ -159,7 +165,9 @@ export const NarrowRow: Story = {
     summary: {
       open: 1,
       inProgress: 0,
+      awaitingVerification: 0,
       resolved: 0,
+      verified: 0,
       wontFix: 0,
     },
   },

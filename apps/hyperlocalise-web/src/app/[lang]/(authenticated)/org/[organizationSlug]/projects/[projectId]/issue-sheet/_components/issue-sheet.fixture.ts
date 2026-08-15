@@ -25,7 +25,9 @@ export const issueSheetSummaryFixture = {
   total: 3,
   open: 1,
   inProgress: 1,
+  awaitingVerification: 0,
   resolved: 1,
+  verified: 0,
   wontFix: 0,
 };
 

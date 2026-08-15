@@ -185,6 +185,7 @@ describe("Organization issues routes", () => {
         title: "Resolved QA",
         issueType: "qa_failure",
         status: "resolved",
+        resolutionReason: "fixed",
         targetLocale: "es-ES",
         priority: "P1",
       },

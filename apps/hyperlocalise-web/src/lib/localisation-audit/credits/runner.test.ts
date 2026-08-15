@@ -169,4 +169,73 @@ describe("runLocalisationAuditCredits", () => {
     expect(result.findings.some((finding) => finding.title === "Awkward phrasing")).toBe(true);
     expect(result.linguisticNotes).toHaveLength(1);
   });
+
+  it("marks credits N/A when the sample has nothing to measure", async () => {
+    generateTextMock.mockResolvedValue({ output: { credits: [], notes: [] } });
+
+    const result = await runLocalisationAuditCredits({
+      pages: [
+        emptyCrawledPage({
+          url: "https://www.dropbox.com/es/",
+          htmlLang: "es-419",
+          headings: ["Almacena y comparte archivos"],
+          textSample: "Almacena fotos, documentos y videos. Comparte carpetas con tu equipo.",
+        }),
+        emptyCrawledPage({
+          url: "https://www.dropbox.com/de/",
+          htmlLang: "de",
+          headings: ["Dateien speichern und teilen"],
+          textSample: "Speichere Fotos, Dokumente und Videos. Teile Ordner mit deinem Team.",
+        }),
+      ],
+      focusLocales: [],
+    });
+
+    const formatting = result.credits.find((credit) => credit.id === "international-formatting");
+    expect(formatting).toEqual({
+      id: "international-formatting",
+      dimension: "technical",
+      score: null,
+      method: "na",
+    });
+    expect(result.credits.find((credit) => credit.id === "cultural-adaptation")).toEqual({
+      id: "cultural-adaptation",
+      dimension: "contextual",
+      score: null,
+      method: "na",
+    });
+    expect(result.credits.find((credit) => credit.id === "accessibility-localisation")).toEqual({
+      id: "accessibility-localisation",
+      dimension: "technical",
+      score: null,
+      method: "na",
+    });
+    expect(result.credits.find((credit) => credit.id === "visual-hierarchy")).toEqual({
+      id: "visual-hierarchy",
+      dimension: "visual",
+      score: null,
+      method: "na",
+    });
+    expect(result.credits.find((credit) => credit.id === "component-consistency")).toEqual({
+      id: "component-consistency",
+      dimension: "visual",
+      score: null,
+      method: "na",
+    });
+    expect(result.findings.some((finding) => finding.creditId === "international-formatting")).toBe(
+      false,
+    );
+    expect(result.findings.some((finding) => finding.creditId === "cultural-adaptation")).toBe(
+      false,
+    );
+
+    if (generateTextMock.mock.calls.length > 0) {
+      const prompt = String(generateTextMock.mock.calls[0]?.[0]?.prompt ?? "");
+      expect(prompt).not.toContain('"id":"international-formatting"');
+      expect(prompt).not.toContain('"id":"cultural-adaptation"');
+      expect(prompt).not.toContain('"id":"accessibility-localisation"');
+      expect(prompt).not.toContain('"id":"visual-hierarchy"');
+      expect(prompt).not.toContain('"id":"component-consistency"');
+    }
+  });
 });

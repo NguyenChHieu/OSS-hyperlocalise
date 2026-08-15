@@ -179,6 +179,79 @@ describe("IssueSheetCreateIssueDialog", () => {
     expect(await screen.findByLabelText("Source path")).toHaveValue("marketing/home.json");
   });
 
+  it("shows no template selected by default", () => {
+    renderDialog();
+    expect(screen.getByLabelText("Set template")).toHaveTextContent("No template");
+  });
+
+  it("does not auto-assign via a project default template that resolves after the user already started typing", async () => {
+    // Reproduces the race: templateConfigQuery can resolve after descriptionDirty is already
+    // true. The template itself correctly never applies (asserted via the template chip staying
+    // "No template"), and the assignee binding must not slip through either — same
+    // all-or-nothing guarantee, no exceptions.
+    const user = userEvent.setup();
+    let resolveTemplateConfig!: (response: Response) => void;
+    let templateConfigRequested = false;
+    const templateConfigPromise = new Promise<Response>((resolve) => {
+      resolveTemplateConfig = resolve;
+    });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+      if (url.includes("/template-config")) {
+        templateConfigRequested = true;
+        return templateConfigPromise;
+      }
+      if (url.includes("/assignable-members")) {
+        return new Response(JSON.stringify({ members: issueSheetAssignableMembersFixture }), {
+          status: 200,
+        });
+      }
+      if (url.includes("/columns")) {
+        return new Response(JSON.stringify({ columns: issueSheetColumnsFixture }), {
+          status: 200,
+        });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderDialog();
+    await user.type(screen.getByLabelText("Description"), "Already writing before it resolves");
+
+    resolveTemplateConfig(
+      new Response(
+        JSON.stringify({
+          templateConfig: {
+            defaultTemplateKey: "tpl_qa_failure",
+            assigneeByTemplate: [
+              { templateKey: "tpl_qa_failure", userId: "user_mina", assignable: true },
+            ],
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await waitFor(() => {
+      expect(templateConfigRequested).toBe(true);
+    });
+    // Give the resolved query a tick to flow through the resolution effect.
+    await waitFor(() => {
+      expect(screen.getByLabelText("Set template")).toHaveTextContent("No template");
+    });
+    expect(screen.getByRole("button", { name: "Select assignee" })).toHaveTextContent("Unassigned");
+  });
+
+  it("composes the CAT segment source into the description below the (absent) skeleton", () => {
+    // No initialTemplateKey is passed here, so this exercises "stringLink present, no template" —
+    // the source text is still quoted into the description rather than dropped, since it is the
+    // only place source survives for segments without a translationKeyId.
+    renderDialog({ segmentId: "segment-1" });
+
+    const description = screen.getByLabelText("Description") as HTMLTextAreaElement;
+    expect(description.value).toBe("> Source:\n>\n> Source text\n");
+  });
+
   it("keeps in-progress edits when the caller rerenders with a new string link object", async () => {
     const user = userEvent.setup();
     const { rerenderWith } = renderDialog({ segmentId: "segment-1" });

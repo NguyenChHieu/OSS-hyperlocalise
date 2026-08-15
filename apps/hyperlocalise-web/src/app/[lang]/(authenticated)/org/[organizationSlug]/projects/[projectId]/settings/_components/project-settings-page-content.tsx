@@ -50,6 +50,7 @@ import {
   ProjectSectionTitle,
   useProjectPageQuery,
 } from "../../_components/project-page-shell";
+import { ProjectIssueTemplatesPanel } from "./project-issue-templates-panel";
 import { ProjectNativeConnectCliPanel } from "./project-native-connect-cli-panel";
 import { ProjectIssueColumnsSettings } from "./project-issue-columns-settings";
 import { projectSettingsPageContentMessages } from "./project-settings-page-content.messages";
@@ -417,6 +418,8 @@ export function ProjectSettingsPageContent({
         </section>
 
         <ProjectSourceDetails project={project} />
+
+        <ProjectIssueTemplatesPanel organizationSlug={organizationSlug} projectId={projectId} />
 
         {project.source === "native" ? (
           <ProjectNativeConnectCliPanel organizationSlug={organizationSlug} projectId={projectId} />

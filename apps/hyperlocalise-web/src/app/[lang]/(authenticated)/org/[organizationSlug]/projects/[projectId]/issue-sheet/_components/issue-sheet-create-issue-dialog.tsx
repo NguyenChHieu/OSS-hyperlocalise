@@ -34,6 +34,13 @@ import { toast } from "sonner";
 
 import { IssueColumnIcon } from "@/components/issue-column-icon/issue-column-icon";
 import { MarkdownEditor } from "@/components/markdown-editor/markdown-editor";
+import {
+  findIssueSheetTemplate,
+  issueSheetTemplateLabel,
+  issueSheetTemplateSkeleton,
+  issueSheetTemplates,
+} from "@/lib/projects/issue-sheet/issue-sheet-templates";
+import { issueSheetTemplateMessages } from "@/lib/projects/issue-sheet/issue-sheet-templates.messages";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -84,12 +91,20 @@ import type { IssueSheetColumn } from "../../../../_components/issue-detail/issu
 import { isIssueSheetColumnVisible } from "../../../../_components/issue-detail/issue-sheet-column-utils";
 import { useAssignableIssueMembersQuery } from "../../../../_components/issue-detail/use-assignable-issue-members";
 import { useIssueSheetColumnsQuery } from "../../../../_components/issue-detail/use-issue-sheet-columns-query";
+import { useIssueSheetTemplateConfigQuery } from "../../../../_components/issue-detail/use-issue-sheet-template-config-query";
 import { useProjectPageQuery } from "../../_components/project-page-shell";
 import { issueTypeValues, type IssueTypeValue } from "./issue-sheet-constants";
 import { issueSheetCreateIssueDialogMessages as messages } from "./issue-sheet-create-issue-dialog.messages";
+import {
+  composeIssueDescription,
+  resolveDescriptionOnTemplateChange,
+  stripEmptySections,
+  type IssueSheetTemplateChangeOrigin,
+} from "./issue-sheet-template-description";
 
 const CREATE_COMPACT_COLUMN_TYPES = new Set(["select", "user", "text"]);
 const CREATE_EXCLUDED_COLUMN_KEYS = new Set(["priority", "owner_note"]);
+const NO_TEMPLATE_VALUE = "__no_template__";
 
 const propertyTriggerClassName =
   "h-7 gap-1.5 rounded-md border-0 bg-transparent px-1.5 text-xs font-normal text-muted-foreground shadow-none hover:bg-muted/60 hover:text-foreground";
@@ -154,6 +169,10 @@ export type IssueSheetCreateStringLink = {
   sourcePath: string;
   targetLocale: string;
   defaultTitle?: string;
+  // CAT segment source text. Quoted as a blockquote below the applied template's description
+  // skeleton (or alone, if no template is applied) — not used as the literal description. This
+  // is the only place the source survives once a template takes over, for segments without a
+  // translationKeyId.
   defaultDescription?: string;
   linkUrl?: string;
   linkLabel?: string;
@@ -168,6 +187,7 @@ export function IssueSheetCreateIssueDialog({
   stringLink,
   onCreated,
   defaultCreateMore = false,
+  initialTemplateKey = null,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -177,6 +197,10 @@ export function IssueSheetCreateIssueDialog({
   stringLink?: IssueSheetCreateStringLink;
   onCreated: () => Promise<void>;
   defaultCreateMore?: boolean;
+  // A fixed starting template that outranks the project's configured default (e.g. CAT always
+  // preselects "tpl_context_request"). Still swappable/removable like any other template pick;
+  // this only sets what the dialog opens with.
+  initialTemplateKey?: string | null;
 }) {
   const intl = useIntl();
   const [selectedProjectId, setSelectedProjectId] = useState(projectId ?? "");
@@ -192,6 +216,17 @@ export function IssueSheetCreateIssueDialog({
   const [assigneeUserId, setAssigneeUserId] = useState<string | null>(null);
   const [customValues, setCustomValues] = useState<Record<string, string>>({});
   const [createMore, setCreateMore] = useState(defaultCreateMore);
+  const [templateKey, setTemplateKeyRaw] = useState<string | null>(null);
+  // Set true only by the MarkdownEditor's onChange (genuine user input); never by our own
+  // programmatic setDescription calls below. MarkdownEditor syncs external `value` changes via
+  // setContent(..., { emitUpdate: false }), which provably cannot fire onChange, so this flag is
+  // exact rather than a fragile description-string comparison (markdown round-trips through
+  // TipTap and can normalize whitespace).
+  const [descriptionDirty, setDescriptionDirty] = useState(false);
+  // True once the user has explicitly picked or cleared a template this session. Blocks the
+  // project-default resolution effect below from overriding that choice, including across a
+  // project switch in the org-scoped dialog.
+  const [templateUserOverridden, setTemplateUserOverridden] = useState(false);
 
   const {
     segmentId: linkSegmentId = null,
@@ -203,6 +238,76 @@ export function IssueSheetCreateIssueDialog({
     linkUrl: linkDefaultLinkUrl = null,
   } = stringLink ?? {};
   const onlyProjectId = projects?.length === 1 ? projects[0].id : null;
+
+  // Applies (or clears) a template's type/priority/description skeleton. `origin` controls the
+  // clobber rule (see IssueSheetTemplateChangeOrigin): an explicit pick always wins, an explicit
+  // clear only drops the skeleton while pristine and never touches type/priority, and an
+  // automatic application (project default, or re-resolving after a project switch) is
+  // all-or-nothing — it applies nothing at all, including the template tag, while the
+  // description is dirty.
+  // Returns whether the template (type/priority/tag) actually applied — false only for the
+  // "automatic && dirty" no-op. Callers that also want to apply an assignee binding for the
+  // template must check this first: the binding is part of the same all-or-nothing guarantee,
+  // not something that should slip through when the template itself was skipped.
+  function applyTemplateChange(
+    nextKey: string | null,
+    origin: IssueSheetTemplateChangeOrigin,
+  ): boolean {
+    const template = findIssueSheetTemplate(nextKey);
+    const rawSkeleton = template ? issueSheetTemplateSkeleton(intl, template.key) : null;
+    // CAT segment source text has no other home once a template's skeleton takes over the
+    // description: for file-backed segments without a translationKeyId, this copy is the only
+    // place the source survives.
+    const nextSkeleton = linkSegmentId
+      ? composeIssueDescription({
+          skeleton: rawSkeleton,
+          sourceText: linkDefaultDescription,
+          sourceLabel: intl.formatMessage(messages.sourceLabel),
+        })
+      : rawSkeleton;
+
+    const wasDirty = descriptionDirty;
+    setDescription((current) =>
+      resolveDescriptionOnTemplateChange({
+        currentDescription: current,
+        isDirty: wasDirty,
+        nextSkeleton,
+        origin,
+      }),
+    );
+    // Once we've (possibly) overwritten the description, it is pristine relative to what we just
+    // wrote — the MarkdownEditor sync effect that applies it back cannot fire onChange, so this
+    // is safe even when the write was a no-op.
+    if (origin === "explicit_pick" || !wasDirty) {
+      setDescriptionDirty(false);
+    }
+
+    if (origin === "explicit_clear") {
+      setTemplateKeyRaw(null);
+      return true;
+    }
+    if (origin === "automatic" && wasDirty) {
+      return false;
+    }
+    setTemplateKeyRaw(nextKey);
+    if (template) {
+      setPriority(template.defaultPriority);
+      if (template.issueType) {
+        setIssueType(template.issueType);
+      }
+    }
+    return true;
+  }
+
+  function selectTemplate(nextKey: string) {
+    setTemplateUserOverridden(true);
+    applyTemplateChange(nextKey, "explicit_pick");
+  }
+
+  function clearTemplate() {
+    setTemplateUserOverridden(true);
+    applyTemplateChange(null, "explicit_clear");
+  }
 
   useEffect(() => {
     if (!open) {
@@ -219,13 +324,13 @@ export function IssueSheetCreateIssueDialog({
       setAssigneeUserId(null);
       setCustomValues({});
       setCreateMore(defaultCreateMore);
+      setTemplateKeyRaw(null);
+      setDescriptionDirty(false);
+      setTemplateUserOverridden(false);
       return;
     }
     if (linkSegmentId) {
       setTitle(linkDefaultTitle ?? "");
-      setDescription(linkDefaultDescription ?? "");
-      setIssueType("context_request");
-      setPriority("P2");
       setStatus("open");
       setTargetLocale(linkTargetLocale ?? "");
       setSourcePath(linkSourcePath ?? "");
@@ -233,6 +338,12 @@ export function IssueSheetCreateIssueDialog({
       setLinkUrl(linkDefaultLinkUrl ?? "");
       setCustomValues({});
     }
+    // Starting template: initialTemplateKey (e.g. CAT's fixed "tpl_context_request") outranks
+    // the project's configured default. The project-default resolution effect below only adopts
+    // a default when there is no initialTemplateKey and no in-session override yet, so it will
+    // not fight with this. Origin "automatic" is safe here even for an explicit caller default —
+    // the description was just reset to empty above, so it is trivially pristine.
+    applyTemplateChange(initialTemplateKey, "automatic");
     if (projectId) {
       setSelectedProjectId(projectId);
       return;
@@ -240,8 +351,13 @@ export function IssueSheetCreateIssueDialog({
     if (onlyProjectId) {
       setSelectedProjectId(onlyProjectId);
     }
+    // applyTemplateChange, selectTemplate, and clearTemplate close over component state each
+    // render and are intentionally omitted from deps (they are not stable references); the
+    // effect keys strictly off open/link/project inputs, matching the reset semantics above.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     defaultCreateMore,
+    initialTemplateKey,
     linkDefaultDescription,
     linkDefaultLinkLabel,
     linkDefaultLinkUrl,
@@ -265,6 +381,11 @@ export function IssueSheetCreateIssueDialog({
   const columnsQuery = useIssueSheetColumnsQuery({
     organizationSlug,
     projectId: resolvedProjectId || "",
+    enabled: open && Boolean(resolvedProjectId),
+  });
+  const templateConfigQuery = useIssueSheetTemplateConfigQuery({
+    organizationSlug,
+    projectId: resolvedProjectId || undefined,
     enabled: open && Boolean(resolvedProjectId),
   });
   const isOrganizationScoped = !projectId;
@@ -325,6 +446,67 @@ export function IssueSheetCreateIssueDialog({
     resolvedProjectId,
   ]);
 
+  // Resolves the project's default template (and its assignee binding) once the config loads or
+  // the selected project changes — precedence: in-session pick > initialTemplateKey > project
+  // default > none. Runs after the effect above, which already reset assigneeUserId to null on
+  // this same project change, so "assignee still unset" naturally holds when a binding should
+  // apply. A loading or errored config means no template applies (correct failure direction: an
+  // admin's misconfiguration should never block issue creation).
+  useEffect(() => {
+    if (!open || !resolvedProjectId) {
+      return;
+    }
+
+    function applyBindingIfUnset(key: string | null) {
+      if (!key) {
+        return;
+      }
+      const binding = templateConfigQuery.data?.assigneeByTemplate.find(
+        (entry) => entry.templateKey === key && entry.assignable,
+      );
+      if (!binding) {
+        return;
+      }
+      setAssigneeUserId((current) => current ?? binding.userId);
+    }
+
+    // An in-session pick or initialTemplateKey outranks the project default: nothing to resolve
+    // for the template itself, but a newly selected project's binding for that template can
+    // still apply.
+    if (templateUserOverridden) {
+      applyBindingIfUnset(templateKey);
+      return;
+    }
+    if (initialTemplateKey) {
+      applyBindingIfUnset(initialTemplateKey);
+      return;
+    }
+    if (templateConfigQuery.isLoading || templateConfigQuery.isError) {
+      return;
+    }
+
+    const defaultKey = templateConfigQuery.data?.defaultTemplateKey ?? null;
+    // Same all-or-nothing guarantee applies to the binding: if the template itself didn't apply
+    // (dirty description), the binding must not apply either, or the issue ends up silently
+    // assigned via a template that was never actually applied.
+    const applied = defaultKey === templateKey || applyTemplateChange(defaultKey, "automatic");
+    if (applied) {
+      applyBindingIfUnset(defaultKey);
+    }
+    // applyTemplateChange closes over component state each render and is not a stable
+    // reference; the effect keys off the resolved template config and project instead.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    open,
+    resolvedProjectId,
+    templateConfigQuery.data,
+    templateConfigQuery.isLoading,
+    templateConfigQuery.isError,
+    templateUserOverridden,
+    initialTemplateKey,
+    templateKey,
+  ]);
+
   const compactCustomColumns = useMemo(
     () => (columnsQuery.data ?? []).filter(isCreateCompactCustomColumn),
     [columnsQuery.data],
@@ -343,6 +525,19 @@ export function IssueSheetCreateIssueDialog({
     () => issuePriorityValues.map((value) => ({ value, label: value })),
     [],
   );
+  const templateItems = useMemo(
+    () => [
+      {
+        value: NO_TEMPLATE_VALUE,
+        label: intl.formatMessage(issueSheetTemplateMessages.noTemplateLabel),
+      },
+      ...issueSheetTemplates.map((template) => ({
+        value: template.key,
+        label: issueSheetTemplateLabel(intl, template.key),
+      })),
+    ],
+    [intl],
+  );
   const projectItems =
     projects?.map((project) => ({ value: project.id, label: project.name })) ?? [];
   const selectedProjectName =
@@ -351,9 +546,23 @@ export function IssueSheetCreateIssueDialog({
 
   function resetAfterCreateMore() {
     setTitle("");
-    setDescription("");
     setAssigneeUserId(null);
     setCustomValues({});
+    // Re-derive the skeleton for the still-selected template (issueType/priority chips
+    // deliberately persist across "create more", matching prior behavior; only the skeleton is
+    // reapplied here so issue #2 isn't tagged with a template but no prompts).
+    const template = findIssueSheetTemplate(templateKey);
+    const rawSkeleton = template ? issueSheetTemplateSkeleton(intl, template.key) : null;
+    setDescription(
+      linkSegmentId
+        ? composeIssueDescription({
+            skeleton: rawSkeleton,
+            sourceText: linkDefaultDescription,
+            sourceLabel: intl.formatMessage(messages.sourceLabel),
+          })
+        : (rawSkeleton ?? ""),
+    );
+    setDescriptionDirty(false);
     if (linkSegmentId) {
       setTargetLocale(linkTargetLocale ?? "");
       setSourcePath(linkSourcePath ?? "");
@@ -377,6 +586,11 @@ export function IssueSheetCreateIssueDialog({
         throw new Error(intl.formatMessage(messages.titleRequired));
       }
       const values = buildValuesPayload(customValues);
+      // Structural, not a diff against the original skeleton (markdown normalizes through
+      // TipTap): drops any heading with nothing under it. A template's own headings are never
+      // parsed back out of the body afterward — templateKey is the only machine-readable
+      // provenance.
+      const submittedDescription = stripEmptySections(description);
       const response = await fetch(issueSheetPath(organizationSlug, resolvedProjectId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -384,7 +598,7 @@ export function IssueSheetCreateIssueDialog({
           stringLink
             ? {
                 title: trimmedTitle,
-                description,
+                description: submittedDescription,
                 issueType,
                 status,
                 targetLocale: stringLink.targetLocale,
@@ -397,10 +611,11 @@ export function IssueSheetCreateIssueDialog({
                 priority,
                 ...(assigneeUserId ? { assigneeUserId } : {}),
                 ...(values ? { values } : {}),
+                ...(templateKey ? { templateKey } : {}),
               }
             : {
                 title: trimmedTitle,
-                description,
+                description: submittedDescription,
                 issueType,
                 status,
                 targetLocale: targetLocale.trim() || undefined,
@@ -411,6 +626,7 @@ export function IssueSheetCreateIssueDialog({
                 priority,
                 ...(assigneeUserId ? { assigneeUserId } : {}),
                 ...(values ? { values } : {}),
+                ...(templateKey ? { templateKey } : {}),
               },
         ),
       });
@@ -486,7 +702,10 @@ export function IssueSheetCreateIssueDialog({
 
             <MarkdownEditor
               value={description}
-              onChange={setDescription}
+              onChange={(value) => {
+                setDescription(value);
+                setDescriptionDirty(true);
+              }}
               disabled={createIssue.isPending}
               placeholder={intl.formatMessage(messages.descriptionPlaceholder)}
               ariaLabel={intl.formatMessage(messages.descriptionLabel)}
@@ -564,6 +783,39 @@ export function IssueSheetCreateIssueDialog({
                   </SelectContent>
                 </Select>
               ) : null}
+
+              <Select
+                value={templateKey ?? NO_TEMPLATE_VALUE}
+                items={templateItems}
+                onValueChange={(value) => {
+                  if (!value || value === NO_TEMPLATE_VALUE) {
+                    clearTemplate();
+                    return;
+                  }
+                  selectTemplate(value);
+                }}
+                disabled={createIssue.isPending}
+              >
+                <SelectTrigger
+                  aria-label={intl.formatMessage(messages.setTemplate)}
+                  showIcon={false}
+                  className={propertyTriggerClassName}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <HugeiconsIcon icon={Tag01Icon} strokeWidth={1.8} className="size-3.5" />
+                    {templateKey
+                      ? issueSheetTemplateLabel(intl, templateKey)
+                      : intl.formatMessage(issueSheetTemplateMessages.noTemplateLabel)}
+                  </span>
+                </SelectTrigger>
+                <SelectContent>
+                  {templateItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value} label={item.label}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
 
               {resolvedProjectId ? (
                 <IssueAssigneePicker

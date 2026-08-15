@@ -50,7 +50,9 @@ export type IssueResolveSubmitInput =
       resolutionReason: IssueResolutionReasonValue;
       verifierUserId: string | null;
     }
-  | { status: "wont_fix"; verifierUserId: string | null };
+  // wont_fix is terminal and never verified (see issue-status-transitions.ts), so it carries no
+  // verifier field at all — the caller clears any pre-existing one instead of forwarding a value.
+  | { status: "wont_fix" };
 
 export type IssueResolveDialogProps = {
   open: boolean;
@@ -58,6 +60,9 @@ export type IssueResolveDialogProps = {
   members: AssignableIssueMember[];
   membersLoading: boolean;
   isSubmitting: boolean;
+  /** The issue's currently-designated verifier, if any, used to seed this field — resolving an
+   * issue that already has a verifier assigned must not silently clear it. */
+  currentVerifierUserId: string | null;
   onSubmit: (input: IssueResolveSubmitInput) => void;
 };
 
@@ -72,6 +77,7 @@ export function IssueResolveDialog({
   members,
   membersLoading,
   isSubmitting,
+  currentVerifierUserId,
   onSubmit,
 }: IssueResolveDialogProps) {
   const intl = useIntl();
@@ -80,7 +86,11 @@ export function IssueResolveDialog({
   const [showValidation, setShowValidation] = useState(false);
 
   useEffect(() => {
-    if (!open) {
+    if (open) {
+      // Seed from whatever verifier is already designated on the issue — opening the dialog
+      // must not default to "unassigned" and silently clear an existing one on submit.
+      setVerifierUserId(currentVerifierUserId);
+    } else {
       // Reset once the close animation finishes, not immediately, so the dialog doesn't visibly
       // blank out while it's still closing.
       const timeout = setTimeout(() => {
@@ -91,7 +101,7 @@ export function IssueResolveDialog({
       return () => clearTimeout(timeout);
     }
     return undefined;
-  }, [open]);
+  }, [open, currentVerifierUserId]);
 
   const handleSubmit = () => {
     if (!choice) {
@@ -100,7 +110,7 @@ export function IssueResolveDialog({
     }
     onSubmit(
       choice === "wont_fix"
-        ? { status: "wont_fix", verifierUserId }
+        ? { status: "wont_fix" }
         : { status: "resolved", resolutionReason: choice, verifierUserId },
     );
   };
@@ -156,22 +166,24 @@ export function IssueResolveDialog({
           </TypographyMuted>
         ) : null}
 
-        <div className="grid gap-1.5">
-          <Label>
-            <FormattedMessage {...messages.verifierLabel} />
-          </Label>
-          <IssueAssigneePicker
-            value={verifierUserId}
-            onChange={setVerifierUserId}
-            members={members}
-            isLoading={membersLoading}
-            disabled={isSubmitting}
-            labels={verifierPickerLabels}
-          />
-          <TypographyMuted>
-            <FormattedMessage {...messages.verifierHint} />
-          </TypographyMuted>
-        </div>
+        {choice !== "wont_fix" ? (
+          <div className="grid gap-1.5">
+            <Label>
+              <FormattedMessage {...messages.verifierLabel} />
+            </Label>
+            <IssueAssigneePicker
+              value={verifierUserId}
+              onChange={setVerifierUserId}
+              members={members}
+              isLoading={membersLoading}
+              disabled={isSubmitting}
+              labels={verifierPickerLabels}
+            />
+            <TypographyMuted>
+              <FormattedMessage {...messages.verifierHint} />
+            </TypographyMuted>
+          </div>
+        ) : null}
 
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

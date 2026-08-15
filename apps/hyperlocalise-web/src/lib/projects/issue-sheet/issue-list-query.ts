@@ -63,7 +63,10 @@ export type IssueListFilterQuery = {
   sortDir?: IssueListSortDirection;
 };
 
-const OPEN_STATUSES = ["open", "in_progress"] as const;
+// "Open work" for the my_work/qa_triage/source_context/all_open view defaults: not yet closed.
+// awaiting_verification still needs someone's attention (the verifier), so it counts as open here
+// even though it also has its own dedicated my_verification view/queue.
+const OPEN_STATUSES = ["open", "in_progress", "awaiting_verification"] as const;
 const SOURCE_CONTEXT_TYPES = ["source_mistake", "context_request", "general_question"] as const;
 
 export const priorityColumns = alias(schema.issueSheetColumns, "issue_priority_columns");

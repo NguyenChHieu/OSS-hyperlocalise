@@ -1049,6 +1049,10 @@ export class IssueSheetService {
       if (isErr(reasonCheck)) {
         throw new Error(reasonCheck.error.code);
       }
+    } else if (requestedReason !== undefined) {
+      // A reason only applies to a create that closes the issue; one sent alongside an
+      // open/in_progress create would otherwise be silently dropped instead of rejected.
+      throw new Error("resolution_reason_not_allowed");
     }
     const entersClosed =
       targetStatus === "resolved" ||
@@ -1339,7 +1343,8 @@ export class IssueSheetService {
       // awaiting_verification when a verifier ends up designated by this same request. Clients
       // never author "awaiting_verification" directly. A verifier newly designated on an
       // already-resolved issue with no explicit status field in the body triggers the same
-      // promotion.
+      // promotion; symmetrically, clearing the verifier on an awaiting_verification issue demotes
+      // it back to resolved instead of stranding it waiting on a verifier who no longer exists.
       let targetStatus: IssueStatus = currentStatus;
       if (clientStatusRequested) {
         const requestedStatus = input.body.status as IssueStatus;
@@ -1353,8 +1358,21 @@ export class IssueSheetService {
         nextVerifierUserId != null
       ) {
         targetStatus = "awaiting_verification";
+      } else if (
+        verifierActuallyChanged &&
+        currentStatus === "awaiting_verification" &&
+        nextVerifierUserId == null
+      ) {
+        targetStatus = "resolved";
       }
       const statusChanging = targetStatus !== currentStatus;
+
+      // A resolution reason only ever applies alongside an actual close transition (validated
+      // below via assertIssueStatusTransition); a reason sent with no status change at all would
+      // otherwise be silently ignored instead of rejected.
+      if (!statusChanging && requestedReason !== undefined) {
+        throw new Error("resolution_reason_not_allowed");
+      }
 
       if (statusChanging) {
         const transition = assertIssueStatusTransition({
@@ -1378,9 +1396,19 @@ export class IssueSheetService {
           targetStatus === "wont_fix");
       const promotingToAwaitingVerification =
         statusChanging && currentStatus === "resolved" && targetStatus === "awaiting_verification";
+      const demotingToResolved =
+        statusChanging && currentStatus === "awaiting_verification" && targetStatus === "resolved";
       const enteringVerifiedFromAwaiting =
         statusChanging && currentStatus === "awaiting_verification" && targetStatus === "verified";
-      const reopening = statusChanging && targetStatus === "open" && currentStatus !== "open";
+      // Only a transition out of an actually-closed status is a "reopen"; in_progress -> open is
+      // a plain status change (the issue was never closed).
+      const reopening =
+        statusChanging &&
+        targetStatus === "open" &&
+        (currentStatus === "resolved" ||
+          currentStatus === "awaiting_verification" ||
+          currentStatus === "verified" ||
+          currentStatus === "wont_fix");
 
       const resolutionFieldsPatch = reopening
         ? {
@@ -1442,7 +1470,7 @@ export class IssueSheetService {
             previousStatus: currentStatus,
             nextStatus: targetStatus,
           });
-        } else if (promotingToAwaitingVerification) {
+        } else if (promotingToAwaitingVerification || demotingToResolved) {
           await this.insertVerifierChangedActivity({
             database: tx,
             organizationId: input.organizationId,

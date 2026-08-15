@@ -253,7 +253,8 @@ export type IssueSheetActivityStatusChangedPayload = {
 };
 
 export type IssueSheetActivityIssueResolvedPayload = {
-  reason: string;
+  // null for wont_fix, which has no reason value of its own (see issue-status-transitions.ts).
+  reason: string | null;
   previousStatus: string;
   nextStatus: string;
 };

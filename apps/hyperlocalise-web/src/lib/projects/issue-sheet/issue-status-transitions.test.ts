@@ -52,9 +52,10 @@ const ALLOWED: Record<string, EdgeExpectation> = {
   "in_progress->wont_fix": {},
   "awaiting_verification->verified": { verifierGated: true },
   "awaiting_verification->open": { verifierGated: true },
+  "awaiting_verification->resolved": {},
   "resolved->awaiting_verification": {},
   "resolved->open": {},
-  "verified->open": {},
+  "verified->open": { verifierGated: true },
   "wont_fix->open": {},
 };
 

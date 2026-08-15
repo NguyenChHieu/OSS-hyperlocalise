@@ -43,7 +43,7 @@ describe("buildIssueListFilterConditions", () => {
       }),
     ).toEqual([
       eq(schema.issueSheetIssues.assigneeUserId, actorUserId),
-      inArray(schema.issueSheetIssues.status, ["open", "in_progress"]),
+      inArray(schema.issueSheetIssues.status, ["open", "in_progress", "awaiting_verification"]),
     ]);
 
     expect(
@@ -68,7 +68,7 @@ describe("buildIssueListFilterConditions", () => {
         "context_request",
         "general_question",
       ]),
-      inArray(schema.issueSheetIssues.status, ["open", "in_progress"]),
+      inArray(schema.issueSheetIssues.status, ["open", "in_progress", "awaiting_verification"]),
     ]);
 
     expect(
@@ -76,7 +76,9 @@ describe("buildIssueListFilterConditions", () => {
         actorUserId,
         query: { view: "all_open" },
       }),
-    ).toEqual([inArray(schema.issueSheetIssues.status, ["open", "in_progress"])]);
+    ).toEqual([
+      inArray(schema.issueSheetIssues.status, ["open", "in_progress", "awaiting_verification"]),
+    ]);
 
     expect(
       buildIssueListFilterConditions({

@@ -22,8 +22,8 @@ import { err, ok, type Result } from "@/lib/primitives/result/results";
  *                        ├─ close, no verifier ───► resolved
  *                        │                              │ designate verifier
  *                        └─ close, verifier set ─► awaiting_verification ◄┘
- *                                                       │ verify
- *                                                       ▼
+ *                                                       │ ▲ verify      │ clear verifier
+ *                                                       ▼ └─────────────┘
  *                                                    verified
  *
  *   any closed state ──reopen──► open
@@ -66,7 +66,10 @@ const ALLOWED_EDGES: Record<IssueStatus, ReadonlySet<IssueStatus>> = {
   // client-authored status transition, see the service-level derivation in
   // issue-sheet-service.ts.
   resolved: new Set(["awaiting_verification", "open"]),
-  awaiting_verification: new Set(["verified", "open"]),
+  // "resolved" here is the symmetric counterpart to resolved→awaiting_verification: clearing the
+  // designated verifier demotes back down instead of stranding the issue awaiting a verifier who
+  // no longer exists (see the demotion branch in issue-sheet-service.ts).
+  awaiting_verification: new Set(["verified", "open", "resolved"]),
   verified: new Set(["open"]),
   wont_fix: new Set(["open"]),
 };
@@ -125,8 +128,11 @@ export function assertIssueStatusTransition(input: {
     return err({ code: "resolution_reason_not_allowed" });
   }
 
+  // Reopening a verified issue undoes a verification decision, so it needs the same permission
+  // as making one; reopening from resolved/wont_fix does not, since no verification ever happened.
   const needsVerifierPermission =
-    input.to === "verified" || (input.to === "open" && input.from === "awaiting_verification");
+    input.to === "verified" ||
+    (input.to === "open" && (input.from === "awaiting_verification" || input.from === "verified"));
   if (
     needsVerifierPermission &&
     !isVerifierOrManager({

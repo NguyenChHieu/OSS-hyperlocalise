@@ -510,7 +510,9 @@ export const IssueDetailPanel = forwardRef<
             resolutionReason: input.resolutionReason,
             verifierUserId: input.verifierUserId,
           }
-        : { status: "wont_fix", verifierUserId: input.verifierUserId },
+        // wont_fix is terminal and never verified: always clear any pre-existing verifier rather
+        // than leaving a stale one on a status that will never reach awaiting_verification.
+        : { status: "wont_fix", verifierUserId: null },
       { onSuccess: () => setResolveDialogOpen(false) },
     );
   };
@@ -1306,6 +1308,7 @@ export const IssueDetailPanel = forwardRef<
         members={assignableMembersQuery.data?.members ?? []}
         membersLoading={assignableMembersQuery.isLoading}
         isSubmitting={updateIssue.isPending}
+        currentVerifierUserId={issue.verifierUserId}
         onSubmit={handleResolveSubmit}
       />
     </div>

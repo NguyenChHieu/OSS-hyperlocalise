@@ -13,6 +13,7 @@
  * Version 2.0 or later.
  */
 import Link from "next/link";
+import { useAuth } from "@workos-inc/authkit-nextjs/components";
 import { CheckIcon, ChevronDownIcon, Share2Icon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 
@@ -26,6 +27,7 @@ import { Label } from "@/components/ui/label";
 import { TypographyH1, TypographyH2, TypographyP } from "@/components/ui/typography";
 import { clientAnalytics } from "@/lib/analytics/client";
 import { LOCALISATION_AUDIT_ANALYTICS_EVENTS, scoreBand } from "@/lib/analytics/events";
+import { isLocalisationAuditSignInCtaEnabled } from "@/lib/flags/localisation-audit-sign-in-ctas";
 import {
   buildLocalisationAuditCriteria,
   groupLocalisationAuditCriteria,
@@ -71,6 +73,7 @@ type AuditPayload = {
   retryable?: boolean;
   rerunnable?: boolean;
   rerunAvailableAt?: string | null;
+  claimed?: boolean;
   errorCode: string | null;
   errorMessage?: string | null;
   completedAt?: string | null;
@@ -81,6 +84,8 @@ type LocalisationAuditResultProps = {
   domainSlug: string;
   initialAudit: AuditPayload;
   standing: LocalisationAuditStanding | null;
+  /** Workspace embeds hide marketing unlock/share/claim chrome. */
+  variant?: "public" | "workspace";
 };
 
 const PROGRESS_STAGES = ["queued", "preparing", "crawling", "analyzing", "scoring"] as const;
@@ -608,9 +613,9 @@ function CompanyMark({
   );
 }
 
-function MeshWash({ children }: { children: ReactNode }) {
+function MeshWash({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <section className="px-5 pt-10 pb-16 sm:px-8 sm:pt-14 lg:px-10">
+    <section className={cn("px-5 pt-10 pb-16 sm:px-8 sm:pt-14 lg:px-10", className)}>
       <MeshStage meshSrc={SAGE_MESH_GRADIENT_SRC} contentClassName="p-0" priority>
         <div className="relative">
           <div
@@ -629,8 +634,19 @@ export function LocalisationAuditResult({
   domainSlug,
   initialAudit,
   standing,
+  variant = "public",
 }: LocalisationAuditResultProps) {
   const copy = getLocalisationAuditResultCopy(locale);
+  const { user, loading: authLoading, featureFlags } = useAuth();
+  const showSignInCtas = isLocalisationAuditSignInCtaEnabled({
+    loading: authLoading,
+    user,
+    featureFlags,
+  });
+  const isWorkspace = variant === "workspace";
+  const sectionClassName = isWorkspace
+    ? "border-t border-border px-0 py-10 first:border-t-0 first:pt-0"
+    : "border-t border-border px-5 py-16 sm:px-8 lg:px-10";
   const [audit, setAudit] = useState(initialAudit);
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -877,21 +893,23 @@ export function LocalisationAuditResult({
 
   return (
     <>
-      <MeshWash>
+      <MeshWash className={isWorkspace ? "px-0 pt-0 pb-8 sm:px-0 sm:pt-0 lg:px-0" : undefined}>
         <div className="flex flex-wrap items-start justify-between gap-4">
           <p className="text-xs font-medium tracking-[0.18em] text-white/70 uppercase">
             {copy.companyReportEyebrow}
           </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="border-white/25 bg-white/10 text-white hover:bg-white/15 hover:text-white"
-            onClick={copyShareLink}
-          >
-            <Share2Icon className="size-3.5" aria-hidden />
-            {copy.shareCopyLink}
-          </Button>
+          {isWorkspace ? null : (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-white/25 bg-white/10 text-white hover:bg-white/15 hover:text-white"
+              onClick={copyShareLink}
+            >
+              <Share2Icon className="size-3.5" aria-hidden />
+              {copy.shareCopyLink}
+            </Button>
+          )}
         </div>
 
         <div className="mt-8 flex flex-col gap-6 sm:flex-row sm:items-start">
@@ -1002,8 +1020,8 @@ export function LocalisationAuditResult({
         </div>
       </MeshWash>
 
-      {standing ? (
-        <section className="border-t border-border px-5 py-16 sm:px-8 lg:px-10">
+      {standing && !isWorkspace ? (
+        <section className={sectionClassName}>
           <TypographyH2 className="pb-0">{copy.standingHeading}</TypographyH2>
           <TypographyP className="mt-4 max-w-2xl text-lg text-muted-foreground">
             {formatCopy(copy.standingRank, { rank: standing.rank, total: standing.total })}
@@ -1026,7 +1044,7 @@ export function LocalisationAuditResult({
         </section>
       ) : null}
 
-      <section className="border-t border-border px-5 py-16 sm:px-8 lg:px-10">
+      <section className={sectionClassName}>
         <TypographyH2 className="pb-0">{copy.fixFirstHeading}</TypographyH2>
         <div className="mt-8">
           <FindingList findings={fixFirst} copy={copy} domainKey={audit.domainKey} />
@@ -1034,7 +1052,7 @@ export function LocalisationAuditResult({
       </section>
 
       {credits.length > 0 ? (
-        <section className="border-t border-border px-5 py-16 sm:px-8 lg:px-10">
+        <section className={sectionClassName}>
           <TypographyH2 className="pb-0">{copy.creditsHeading}</TypographyH2>
           <AuditCriteriaList
             credits={credits}
@@ -1046,7 +1064,7 @@ export function LocalisationAuditResult({
         </section>
       ) : null}
 
-      <section className="border-t border-border px-5 py-16 sm:px-8 lg:px-10">
+      <section className={sectionClassName}>
         <TypographyH2 className="pb-0">{copy.localesHeading}</TypographyH2>
         <div className="mt-6 flex flex-wrap gap-x-6 gap-y-2 text-sm text-muted-foreground">
           {detectedLocales.map((localeSignal) => (
@@ -1058,7 +1076,7 @@ export function LocalisationAuditResult({
         </div>
       </section>
 
-      <section className="border-t border-border px-5 py-16 sm:px-8 lg:px-10">
+      <section className={sectionClassName}>
         <TypographyH2 className="pb-0">{copy.fullFindingsHeading}</TypographyH2>
         <div className="mt-8">
           <FindingList findings={allFindings} copy={copy} domainKey={audit.domainKey} />
@@ -1066,7 +1084,7 @@ export function LocalisationAuditResult({
       </section>
 
       {report?.linguisticNotes && report.linguisticNotes.length > 0 ? (
-        <section className="border-t border-border px-5 py-16 sm:px-8 lg:px-10">
+        <section className={sectionClassName}>
           <TypographyH2 className="pb-0">{copy.linguisticHeading}</TypographyH2>
           <ul className="mt-8 space-y-8">
             {report.linguisticNotes.map((note) => (
@@ -1088,7 +1106,7 @@ export function LocalisationAuditResult({
       ) : null}
 
       {report?.pages && report.pages.length > 0 ? (
-        <section className="border-t border-border px-5 py-16 sm:px-8 lg:px-10">
+        <section className={sectionClassName}>
           <TypographyH2 className="pb-0">{copy.pagesHeading}</TypographyH2>
           <ul className="mt-8 space-y-3 text-sm text-muted-foreground">
             {report.pages.map((page) => (
@@ -1101,78 +1119,112 @@ export function LocalisationAuditResult({
         </section>
       ) : null}
 
-      <section className="border-t border-border px-5 py-16 sm:px-8 lg:px-10">
-        <TypographyH2 className="pb-0">{copy.unlockHeading}</TypographyH2>
-        <TypographyP className="mt-4 max-w-2xl text-muted-foreground">
-          {copy.unlockBody}
-        </TypographyP>
-        <form onSubmit={requestReportEmail} className="mt-8 max-w-md space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="localisation-audit-email">{copy.emailLabel}</Label>
-            <Input
-              id="localisation-audit-email"
-              type="email"
-              required
-              autoComplete="email"
-              placeholder={copy.emailPlaceholder}
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-            />
-          </div>
-          {error ? <p className="text-sm text-destructive">{error}</p> : null}
-          {deliveryMessage ? (
-            <p className="text-sm text-muted-foreground">{deliveryMessage}</p>
-          ) : null}
-          <Button type="submit" disabled={pending}>
-            {pending ? copy.unlocking : copy.unlockSubmit}
-          </Button>
-        </form>
-      </section>
-
-      <section className="border-t border-border px-5 py-16 sm:px-8 lg:px-10">
-        <TypographyH2 className="pb-0">{copy.reauditHeading}</TypographyH2>
-        <TypographyP className="mt-4 max-w-2xl text-muted-foreground">{ctaBody}</TypographyP>
-        <div className="mt-6 flex flex-wrap gap-3">
-          {audit.rerunnable ? (
-            <Button
-              onClick={() => restartAudit("Could not re-run the audit.")}
-              disabled={rerunPending}
-            >
-              {rerunPending ? copy.rerunning : copy.rerun}
-            </Button>
-          ) : null}
-          <Button
-            nativeButton={false}
-            render={<Link href="/auth/sign-in" onClick={() => trackCta("create_workspace")} />}
-          >
-            {band === "low" ? copy.createWorkspace : copy.deeperAudit}
-          </Button>
-          <Button
-            variant="outline"
-            nativeButton={false}
-            render={
-              <a
-                href={REQUEST_DEMO_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => trackCta("book_review")}
+      {isWorkspace ? null : (
+        <section className={sectionClassName}>
+          <TypographyH2 className="pb-0">{copy.unlockHeading}</TypographyH2>
+          <TypographyP className="mt-4 max-w-2xl text-muted-foreground">
+            {copy.unlockBody}
+          </TypographyP>
+          <form onSubmit={requestReportEmail} className="mt-8 max-w-md space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="localisation-audit-email">{copy.emailLabel}</Label>
+              <Input
+                id="localisation-audit-email"
+                type="email"
+                required
+                autoComplete="email"
+                placeholder={copy.emailPlaceholder}
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
               />
-            }
-          >
-            {copy.bookReview}
-          </Button>
-        </div>
-        {!audit.rerunnable && audit.rerunAvailableAt ? (
-          <p className="mt-4 text-sm text-muted-foreground">
-            {formatCopy(copy.rerunCooldown, {
-              when: new Date(audit.rerunAvailableAt).toLocaleString(locale, {
-                dateStyle: "medium",
-                timeStyle: "short",
-              }),
-            })}
-          </p>
-        ) : null}
-      </section>
+            </div>
+            {error ? <p className="text-sm text-destructive">{error}</p> : null}
+            {deliveryMessage ? (
+              <p className="text-sm text-muted-foreground">{deliveryMessage}</p>
+            ) : null}
+            <Button type="submit" disabled={pending}>
+              {pending ? copy.unlocking : copy.unlockSubmit}
+            </Button>
+          </form>
+        </section>
+      )}
+
+      {isWorkspace ? null : (
+        <section className={sectionClassName}>
+          <TypographyH2 className="pb-0">{copy.reauditHeading}</TypographyH2>
+          <TypographyP className="mt-4 max-w-2xl text-muted-foreground">{ctaBody}</TypographyP>
+          <div className="mt-6 flex flex-wrap gap-3">
+            {audit.rerunnable ? (
+              <Button
+                onClick={() => restartAudit("Could not re-run the audit.")}
+                disabled={rerunPending}
+              >
+                {rerunPending ? copy.rerunning : copy.rerun}
+              </Button>
+            ) : null}
+            {showSignInCtas ? (
+              audit.claimed ? (
+                <Button
+                  nativeButton={false}
+                  render={
+                    <Link
+                      href={`/claim-domain/${domainSlug}`}
+                      onClick={() => trackCta("open_claimed_domain")}
+                    />
+                  }
+                >
+                  {copy.openInWorkspace}
+                </Button>
+              ) : (
+                <Button
+                  nativeButton={false}
+                  render={
+                    <Link
+                      href={`/auth/sign-in?returnTo=${encodeURIComponent(`/claim-domain/${domainSlug}`)}`}
+                      onClick={() => trackCta("claim_domain")}
+                    />
+                  }
+                >
+                  {copy.claimDomain}
+                </Button>
+              )
+            ) : null}
+            {showSignInCtas ? (
+              <Button
+                variant="outline"
+                nativeButton={false}
+                render={<Link href="/auth/sign-in" onClick={() => trackCta("create_workspace")} />}
+              >
+                {band === "low" ? copy.createWorkspace : copy.deeperAudit}
+              </Button>
+            ) : null}
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={
+                <a
+                  href={REQUEST_DEMO_URL}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => trackCta("book_review")}
+                />
+              }
+            >
+              {copy.bookReview}
+            </Button>
+          </div>
+          {!audit.rerunnable && audit.rerunAvailableAt ? (
+            <p className="mt-4 text-sm text-muted-foreground">
+              {formatCopy(copy.rerunCooldown, {
+                when: new Date(audit.rerunAvailableAt).toLocaleString(locale, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                }),
+              })}
+            </p>
+          ) : null}
+        </section>
+      )}
     </>
   );
 }

@@ -118,8 +118,9 @@ export const ExcellentScore: Story = {
   play: async ({ canvas }) => {
     await expect(canvas.getByText("Excellent")).toBeInTheDocument();
     await expect(
-      canvas.getByRole("link", { name: "Run a deeper registered audit" }),
-    ).toBeInTheDocument();
+      canvas.queryByRole("link", { name: "Run a deeper registered audit" }),
+    ).not.toBeInTheDocument();
+    await expect(canvas.getByRole("link", { name: "Book an audit review" })).toBeInTheDocument();
   },
 };
 
@@ -130,7 +131,10 @@ export const CriticalScore: Story = {
   },
   play: async ({ canvas }) => {
     await expect(canvas.getAllByText("Critical").length).toBeGreaterThan(0);
-    await expect(canvas.getByRole("link", { name: "Create a workspace" })).toBeInTheDocument();
+    await expect(
+      canvas.queryByRole("link", { name: "Create a workspace" }),
+    ).not.toBeInTheDocument();
+    await expect(canvas.getByRole("link", { name: "Book an audit review" })).toBeInTheDocument();
   },
 };
 

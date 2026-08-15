@@ -65,6 +65,8 @@ type IssueResponse = {
     linkKind: string | null;
     key: string | null;
     sourceText: string | null;
+    resolutionReason: string | null;
+    verifierUserId: string | null;
     values: Record<string, unknown>;
     isWatching: boolean;
   };
@@ -2029,5 +2031,120 @@ Second import issue,Done,EXT-2,P2`;
     expect(reopenResponse.status).toBe(200);
     const reopened = (await reopenResponse.json()) as IssueResponse;
     expect(reopened.issue.status).toBe("open");
+  });
+
+  it("demotes to resolved when the verifier is cleared while awaiting verification, and rejects a reason sent without a close transition", async () => {
+    const { identity, project } = await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const organizationSlug = identity.organization.slug ?? "missing-slug";
+
+    const verifierIdentity = projectFixture.createWorkosIdentityForOrganization(
+      identity.organization,
+      "translator",
+    );
+    // authHeadersFor syncs the identity into the local users table; getLocalUserId needs that
+    // row to already exist even though this test never authenticates as the verifier.
+    await projectFixture.authHeadersFor(verifierIdentity);
+    const verifierUserId = await projectFixture.getLocalUserId(verifierIdentity.user.workosUserId);
+    await db.insert(schema.teamMemberships).values({
+      teamId: project.teamId!,
+      userId: verifierUserId,
+      role: "member",
+    });
+
+    const createResponse = await issueSheet().$post(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id },
+        json: { title: "Demotion lifecycle", issueType: "general_question" },
+      } as never,
+      { headers: headers },
+    );
+    expect(createResponse.status).toBe(201);
+    const issueId = ((await createResponse.json()) as IssueResponse).issue.id;
+
+    const closeResponse = await issueSheet()[":issueId"].$patch(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id, issueId: issueId },
+        json: { status: "resolved", resolutionReason: "fixed", verifierUserId: verifierUserId },
+      } as never,
+      { headers: headers },
+    );
+    expect(closeResponse.status).toBe(200);
+    expect(((await closeResponse.json()) as IssueResponse).issue.status).toBe(
+      "awaiting_verification",
+    );
+
+    // Clearing the verifier demotes the issue back to resolved instead of stranding it: both
+    // remaining edges out of awaiting_verification require a verifier that no longer exists.
+    const clearVerifier = await issueSheet()[":issueId"].$patch(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id, issueId: issueId },
+        json: { verifierUserId: null },
+      } as never,
+      { headers: headers },
+    );
+    expect(clearVerifier.status).toBe(200);
+    const demoted = (await clearVerifier.json()) as IssueResponse;
+    expect(demoted.issue.status).toBe("resolved");
+    expect(demoted.issue.verifierUserId).toBeNull();
+    // The original resolution is untouched by the demotion.
+    expect(demoted.issue.resolutionReason).toBe("fixed");
+
+    // A reason sent with no accompanying close transition is rejected, not silently dropped.
+    const strayReason = await issueSheet()[":issueId"].$patch(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id, issueId: issueId },
+        json: { resolutionReason: "duplicate" },
+      } as never,
+      { headers: headers },
+    );
+    expect(strayReason.status).toBe(400);
+    await expect(strayReason.json()).resolves.toMatchObject({
+      error: "resolution_reason_not_allowed",
+    });
+  });
+
+  it("routes in_progress -> open through a plain status_changed event, not reopened", async () => {
+    const { identity, project } = await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const organizationSlug = identity.organization.slug ?? "missing-slug";
+
+    const createResponse = await issueSheet().$post(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id },
+        json: {
+          title: "Never actually closed",
+          issueType: "general_question",
+          status: "in_progress",
+        },
+      } as never,
+      { headers: headers },
+    );
+    expect(createResponse.status).toBe(201);
+    const issueId = ((await createResponse.json()) as IssueResponse).issue.id;
+
+    const reopenResponse = await issueSheet()[":issueId"].$patch(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id, issueId: issueId },
+        json: { status: "open" },
+      } as never,
+      { headers: headers },
+    );
+    expect(reopenResponse.status).toBe(200);
+
+    const feedResponse = await issueSheet()[":issueId"].feed.$get(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id, issueId: issueId },
+      } as never,
+      { headers: headers },
+    );
+    expect(feedResponse.status).toBe(200);
+    const feed = (await feedResponse.json()) as {
+      items: { kind: string; activity?: { type: string } }[];
+    };
+    const transitionEvent = feed.items.find(
+      (item) => item.kind === "activity" && item.activity?.type !== "issue_created",
+    );
+    expect(transitionEvent?.activity?.type).toBe("status_changed");
   });
 });

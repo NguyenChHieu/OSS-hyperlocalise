@@ -519,9 +519,9 @@ export const IssueDetailPanel = forwardRef<
             resolutionReason: input.resolutionReason,
             verifierUserId: input.verifierUserId,
           }
-        // wont_fix is terminal and never verified: always clear any pre-existing verifier rather
-        // than leaving a stale one on a status that will never reach awaiting_verification.
-        : { status: "wont_fix", verifierUserId: null },
+        : // wont_fix is terminal and never verified: always clear any pre-existing verifier rather
+          // than leaving a stale one on a status that will never reach awaiting_verification.
+          { status: "wont_fix", verifierUserId: null },
       { onSuccess: () => setResolveDialogOpen(false) },
     );
   };

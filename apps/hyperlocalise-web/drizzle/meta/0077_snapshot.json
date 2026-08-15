@@ -1,5 +1,5 @@
 {
-  "id": "1ba399fe-0c71-41da-9572-3f4b04102930",
+  "id": "5928a968-3760-4e0c-8a36-ee6d1e3c01a7",
   "prevId": "d7640acc-76f8-4e07-8071-0d6f0ce70389",
   "version": "7",
   "dialect": "postgresql",
@@ -11636,6 +11636,128 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.interaction_repository_sessions": {
+      "name": "interaction_repository_sessions",
+      "schema": "",
+      "columns": {
+        "interaction_id": {
+          "name": "interaction_id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "session": {
+          "name": "session",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_interaction_repository_sessions_org_expires": {
+          "name": "idx_interaction_repository_sessions_org_expires",
+          "columns": [
+            {
+              "expression": "organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_interaction_repository_sessions_expires": {
+          "name": "idx_interaction_repository_sessions_expires",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "interaction_repository_sessions_interaction_id_interactions_id_fk": {
+          "name": "interaction_repository_sessions_interaction_id_interactions_id_fk",
+          "tableFrom": "interaction_repository_sessions",
+          "tableTo": "interactions",
+          "columnsFrom": [
+            "interaction_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "interaction_repository_sessions_organization_id_organizations_id_fk": {
+          "name": "interaction_repository_sessions_organization_id_organizations_id_fk",
+          "tableFrom": "interaction_repository_sessions",
+          "tableTo": "organizations",
+          "columnsFrom": [
+            "organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.interactions": {
       "name": "interactions",
       "schema": "",
@@ -15536,36 +15658,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "resolution_reason": {
-          "name": "resolution_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "resolved_by_user_id": {
-          "name": "resolved_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verifier_user_id": {
-          "name": "verifier_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verified_at": {
-          "name": "verified_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verified_by_user_id": {
-          "name": "verified_by_user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -15674,27 +15766,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "idx_issue_sheet_issues_verifier_status": {
-          "name": "idx_issue_sheet_issues_verifier_status",
-          "columns": [
-            {
-              "expression": "verifier_user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -15782,45 +15853,6 @@
           "tableTo": "users",
           "columnsFrom": [
             "assignee_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "issue_sheet_issues_resolved_by_user_id_users_id_fk": {
-          "name": "issue_sheet_issues_resolved_by_user_id_users_id_fk",
-          "tableFrom": "issue_sheet_issues",
-          "tableTo": "users",
-          "columnsFrom": [
-            "resolved_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "issue_sheet_issues_verifier_user_id_users_id_fk": {
-          "name": "issue_sheet_issues_verifier_user_id_users_id_fk",
-          "tableFrom": "issue_sheet_issues",
-          "tableTo": "users",
-          "columnsFrom": [
-            "verifier_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        },
-        "issue_sheet_issues_verified_by_user_id_users_id_fk": {
-          "name": "issue_sheet_issues_verified_by_user_id_users_id_fk",
-          "tableFrom": "issue_sheet_issues",
-          "tableTo": "users",
-          "columnsFrom": [
-            "verified_by_user_id"
           ],
           "columnsTo": [
             "id"

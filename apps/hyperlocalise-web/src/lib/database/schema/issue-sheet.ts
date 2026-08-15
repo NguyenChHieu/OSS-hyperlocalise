@@ -66,6 +66,10 @@ export const issueSheetIssues = pgTable(
     linkLabel: text("link_label"),
     linkUrl: text("link_url"),
     externalRef: text("external_ref"),
+    // Which static issue template (if any) prefilled this issue at creation time.
+    // Provenance only: no FK to a template table (definitions are static code, not rows), and
+    // deliberately not kept in sync with issueType if the two diverge after creation.
+    templateKey: text("template_key"),
     metadata: jsonb("metadata")
       .$type<Record<string, unknown>>()
       .notNull()
@@ -135,6 +139,8 @@ export const issueSheetColumns = pgTable(
       .notNull()
       .default(sql`'{}'::jsonb`),
     sortOrder: integer("sort_order").notNull().default(0),
+    hidden: boolean("hidden").notNull().default(false),
+    icon: text("icon"),
     createdByUserId: uuid("created_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),

@@ -48,6 +48,109 @@ describe("parsePageSignals", () => {
     expect(signals.textSample).not.toContain("color: red");
   });
 
+  it("extracts canonical, Open Graph, JSON-LD, dir, and accessibility samples", () => {
+    const signals = parsePageSignals(`
+      <html lang="fr-FR" dir="ltr">
+        <head>
+          <title>Tarifs</title>
+          <link rel="canonical" href="https://example.com/fr/pricing" />
+          <meta name="description" content="Plans en euros" />
+          <meta property="og:title" content="Tarifs Hyperlocalise" />
+          <meta property="og:description" content="Essayez gratuitement" />
+          <meta property="og:locale" content="fr_FR" />
+          <script type="application/ld+json">
+            {"@type":"WebPage","inLanguage":"fr-FR","name":"Tarifs"}
+          </script>
+          <style>body { font-family: "Noto Sans", sans-serif; }</style>
+        </head>
+        <body>
+          <h1>Nos tarifs</h1>
+          <button>Commencer</button>
+          <img src="/hero-fr.png" alt="Tableau de bord en français" />
+          <a href="/de/pricing" aria-label="Deutsch">DE</a>
+        </body>
+      </html>
+    `);
+
+    expect(signals.canonical).toBe("https://example.com/fr/pricing");
+    expect(signals.metaDescription).toBe("Plans en euros");
+    expect(signals.ogTitle).toBe("Tarifs Hyperlocalise");
+    expect(signals.ogDescription).toBe("Essayez gratuitement");
+    expect(signals.ogLocale).toBe("fr_FR");
+    expect(signals.dir).toBe("ltr");
+    expect(signals.jsonLd).toEqual([{ type: "WebPage", inLanguage: "fr-FR" }]);
+    expect(signals.headings).toEqual(["Nos tarifs"]);
+    expect(signals.buttons).toEqual(["Commencer"]);
+    expect(signals.altTexts).toEqual([{ alt: "Tableau de bord en français", src: "/hero-fr.png" }]);
+    expect(signals.ariaLabels).toEqual(["Deutsch"]);
+    expect(signals.fontFamilies).toContain("Noto Sans");
+  });
+
+  it("extracts favicon, apple-touch-icon, and og:image", () => {
+    const signals = parsePageSignals(`
+      <html lang="en">
+        <head>
+          <title>Acme</title>
+          <link rel="icon" href="/favicon.ico" />
+          <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+          <meta property="og:image" content="https://cdn.example/og.png" />
+        </head>
+        <body><h1>Hello</h1></body>
+      </html>
+    `);
+
+    expect(signals.iconHrefs).toEqual(["/favicon.ico", "/apple-touch-icon.png"]);
+    expect(signals.ogImage).toBe("https://cdn.example/og.png");
+  });
+
+  it("extracts word-break CSS and Western name form fields", () => {
+    const signals = parsePageSignals(`
+      <html lang="ko">
+        <head>
+          <style>
+            body { font-family: "Malgun Gothic", sans-serif; word-break: break-all; }
+            p { line-break: strict; }
+          </style>
+        </head>
+        <body>
+          <label>First name</label>
+          <input name="last_name" placeholder="Last name" autocomplete="family-name" />
+          <p>한국어 본문 □</p>
+        </body>
+      </html>
+    `);
+
+    expect(signals.wordBreakValues).toContain("break-all");
+    expect(signals.lineBreakValues).toContain("strict");
+    expect(signals.fontFamilies).toContain("Malgun Gothic");
+    expect(signals.formFieldLabels).toEqual(
+      expect.arrayContaining(["First name", "last_name", "Last name", "family-name"]),
+    );
+    expect(signals.textSample).toContain("한국어");
+    expect(signals.textSample).toContain("□");
+  });
+
+  it("extracts RTL direction and physical horizontal CSS", () => {
+    const signals = parsePageSignals(`
+      <html lang="ar" dir="rtl">
+        <head>
+          <style>
+            .nav { direction: rtl; }
+            .bad { direction: ltr; float: left; margin-left: 12px; text-align: left; }
+            .ok { margin-inline-start: 12px; text-align: start; }
+          </style>
+        </head>
+        <body><p>مرحبا</p></body>
+      </html>
+    `);
+
+    expect(signals.directionValues).toEqual(expect.arrayContaining(["rtl", "ltr"]));
+    expect(signals.physicalHorizontalCss.some((value) => value.includes("float: left"))).toBe(true);
+    expect(
+      signals.logicalHorizontalCss.some((value) => value.includes("margin-inline-start")),
+    ).toBe(true);
+  });
+
   it("truncates long text samples with an ellipsis", () => {
     const longText = "word ".repeat(1_200);
     const signals = parsePageSignals(`<html><body><p>${longText}</p></body></html>`);

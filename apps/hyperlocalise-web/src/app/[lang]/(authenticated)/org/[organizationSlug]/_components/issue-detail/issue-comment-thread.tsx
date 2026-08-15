@@ -152,6 +152,7 @@ function IssueCommentBody({
               compact
               mentionConfig={mentionConfig}
               onMentionNavigate={handleMentionNavigate}
+              imageUpload={{ organizationSlug, projectId }}
               placeholder={intl.formatMessage(messages.editPlaceholder)}
               disabled={updateComment.isPending}
             />

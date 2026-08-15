@@ -31,6 +31,7 @@ func TestRegisterBuiltinsRegistersExpectedProviders(t *testing.T) {
 		ProviderMistral,
 		ProviderOllama,
 		ProviderOpenAI,
+		ProviderOpenRouter,
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected registered providers: got %v want %v", got, want)

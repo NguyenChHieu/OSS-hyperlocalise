@@ -194,6 +194,14 @@ export const catSegmentStatusMessages = defineMessages({
   },
 });
 
+export const catHiddenStringMessages = defineMessages({
+  hidden: {
+    defaultMessage: "Hidden",
+    id: "/d/gbp0E4g",
+    description: "Badge shown when a TMS source string is hidden from translators",
+  },
+});
+
 export const catGlossaryChecksMessages = defineMessages({
   complianceLabel: {
     defaultMessage: "Glossary compliance",
@@ -537,6 +545,16 @@ export const catEditorPanelMessages = defineMessages({
     id: "vdOK0pRPUg",
     description: "Tooltip for the treat-as-image toggle in CAT",
   },
+  treatAsVideo: {
+    defaultMessage: "Treat as video",
+    id: "yxHGupHq+k",
+    description: "Button to treat a URL source string as a localizable video",
+  },
+  treatAsVideoTitle: {
+    defaultMessage: "Preview and localize this URL as a video",
+    id: "z0uvvDTD9z",
+    description: "Tooltip for the treat-as-video toggle in CAT",
+  },
   regenerateImage: {
     defaultMessage: "Regenerate image",
     id: "zA2ZC7UBbt",
@@ -571,6 +589,31 @@ export const catEditorPanelMessages = defineMessages({
     defaultMessage: "No image yet",
     id: "aMf9NbDyem",
     description: "Fallback empty state when a CAT image preview has no source URL",
+  },
+  regenerateVideo: {
+    defaultMessage: "Regenerate video",
+    id: "PgliwXORHi",
+    description: "Button to regenerate a localized video with the agent",
+  },
+  uploadVideo: {
+    defaultMessage: "Upload video",
+    id: "fCirHpiRXz",
+    description: "Button to upload a replacement localized video",
+  },
+  videoSourceEmpty: {
+    defaultMessage: "Source video unavailable",
+    id: "k6wO1BhuBw",
+    description: "Empty state when the CAT source video cannot be shown",
+  },
+  videoTargetEmpty: {
+    defaultMessage: "No localized video yet",
+    id: "24tcVtmHO9",
+    description: "Empty state when the CAT target video has not been created",
+  },
+  videoEmpty: {
+    defaultMessage: "No video yet",
+    id: "0Y2PNYvVoj",
+    description: "Fallback empty state when a CAT video preview has no source URL",
   },
   segmentPosition: {
     defaultMessage: "{position} / {total}",
@@ -894,6 +937,11 @@ export const catSideBySidePanelMessages = defineMessages({
     defaultMessage: "Click to localize image",
     id: "Ga0sjgCRoD",
     description: "Placeholder when a side-by-side image row has no localized image yet",
+  },
+  clickToLocalizeVideo: {
+    defaultMessage: "Click to localize video",
+    id: "mz+/0gx1Ho",
+    description: "Placeholder when a side-by-side video row has no localized video yet",
   },
   formatCheckFail: {
     defaultMessage: "Format & QA failed ({count, plural, one {# issue} other {# issues}})",

@@ -18,16 +18,22 @@ import {
   type IssueSheetCreateIssueBody,
   type IssueSheetQuery,
   type IssueSheetSetValueBody,
+  type IssueSheetTemplateConfig,
+  type IssueSheetTemplateConfigBody,
   type IssueSheetUpdateIssueBody,
 } from "@/api/routes/project/issue-sheet.schema";
 import type { IssueSheetImportBody } from "@/api/routes/project/issue-sheet.schema";
+import { PRODUCT_USAGE_ANALYTICS_EVENTS } from "@/lib/analytics/events";
+import { serverAnalytics } from "@/lib/analytics/server";
 import { db, schema, type DatabaseClient } from "@/lib/database";
+import type { IssueSheetColumnConfig } from "@/lib/database/schema/issue-sheet";
 import type { OrganizationMembershipRole } from "@/lib/database/types";
 
 import { isErr } from "@/lib/primitives/result/results";
 
 import {
   assertAssignableIssueAssignee,
+  filterAssignableAssigneeUserIds,
   listAssignableIssueMembers,
   type AssignableIssueMember,
 } from "./issue-sheet-assignee";
@@ -58,6 +64,17 @@ import {
   type IssueStatus,
 } from "./issue-status-transitions";
 import { issueSubscriptionService } from "./issue-subscription-service";
+import {
+  canDeleteIssueSheetColumn,
+  isIssueSheetProtectedColumnKey,
+  ISSUE_SHEET_PROTECTED_COLUMN_KEYS,
+} from "./issue-sheet-column-guards";
+
+export {
+  canDeleteIssueSheetColumn,
+  isIssueSheetProtectedColumnKey,
+  ISSUE_SHEET_PROTECTED_COLUMN_KEYS,
+};
 
 export const ISSUE_SHEET_ACTIVITY_ASSIGNEE_CHANGED = "assignee_changed" as const;
 export const ISSUE_SHEET_ACTIVITY_ISSUE_CREATED = "issue_created" as const;
@@ -195,7 +212,45 @@ export type IssueSheetColumn = {
   type: string;
   config: Record<string, unknown>;
   sortOrder: number;
+  hidden: boolean;
+  icon: string | null;
 };
+
+const columnSelect = {
+  id: schema.issueSheetColumns.id,
+  key: schema.issueSheetColumns.key,
+  label: schema.issueSheetColumns.label,
+  layer: schema.issueSheetColumns.layer,
+  type: schema.issueSheetColumns.type,
+  config: schema.issueSheetColumns.config,
+  sortOrder: schema.issueSheetColumns.sortOrder,
+  hidden: schema.issueSheetColumns.hidden,
+  icon: schema.issueSheetColumns.icon,
+} as const;
+
+function mapColumnRow(row: {
+  id: string;
+  key: string;
+  label: string;
+  layer: string;
+  type: string;
+  config: IssueSheetColumnConfig | null;
+  sortOrder: number;
+  hidden: boolean;
+  icon: string | null;
+}): IssueSheetColumn {
+  return {
+    id: row.id,
+    key: row.key,
+    label: row.label,
+    layer: row.layer,
+    type: row.type,
+    config: (row.config ?? {}) as Record<string, unknown>,
+    sortOrder: row.sortOrder,
+    hidden: row.hidden,
+    icon: row.icon,
+  };
+}
 
 export type IssueSheetIssue = {
   id: string;
@@ -213,6 +268,9 @@ export type IssueSheetIssue = {
   linkLabel: string | null;
   linkUrl: string | null;
   externalRef: string | null;
+  // Which static issue template (if any) prefilled this issue at creation. Provenance only; may
+  // reference a template key that no longer exists, or diverge from the current issueType.
+  templateKey: string | null;
   reporter: string | null;
   assignee: string | null;
   assigneeUserId: string | null;
@@ -296,6 +354,7 @@ type IssueRow = {
   linkLabel: string | null;
   linkUrl: string | null;
   externalRef: string | null;
+  templateKey: string | null;
   assigneeUserId: string | null;
   reporterFirstName: string | null;
   reporterLastName: string | null;
@@ -348,6 +407,7 @@ function mapIssueRow(
     linkLabel: row.linkLabel,
     linkUrl: row.linkUrl,
     externalRef: row.externalRef,
+    templateKey: row.templateKey,
     assigneeUserId: row.assigneeUserId,
     reporter: formatUser({
       firstName: row.reporterFirstName,
@@ -407,15 +467,7 @@ export class IssueSheetService {
   }): Promise<IssueSheetColumn[]> {
     await this.ensureStarterColumns(input);
     const rows = await this.database
-      .select({
-        id: schema.issueSheetColumns.id,
-        key: schema.issueSheetColumns.key,
-        label: schema.issueSheetColumns.label,
-        layer: schema.issueSheetColumns.layer,
-        type: schema.issueSheetColumns.type,
-        config: schema.issueSheetColumns.config,
-        sortOrder: schema.issueSheetColumns.sortOrder,
-      })
+      .select(columnSelect)
       .from(schema.issueSheetColumns)
       .where(
         and(
@@ -425,10 +477,7 @@ export class IssueSheetService {
       )
       .orderBy(asc(schema.issueSheetColumns.sortOrder), asc(schema.issueSheetColumns.createdAt));
 
-    return rows.map((row) => ({
-      ...row,
-      config: row.config as Record<string, unknown>,
-    }));
+    return rows.map(mapColumnRow);
   }
 
   async createColumn(input: {
@@ -461,26 +510,169 @@ export class IssueSheetService {
         type: input.body.type,
         config: input.body.config ?? {},
         sortOrder: (maxRow?.maxSortOrder ?? 0) + 10,
+        hidden: false,
+        icon: input.body.icon ?? null,
         createdByUserId: input.actorUserId ?? null,
       })
-      .returning({
-        id: schema.issueSheetColumns.id,
-        key: schema.issueSheetColumns.key,
-        label: schema.issueSheetColumns.label,
-        layer: schema.issueSheetColumns.layer,
-        type: schema.issueSheetColumns.type,
-        config: schema.issueSheetColumns.config,
-        sortOrder: schema.issueSheetColumns.sortOrder,
-      });
+      .returning(columnSelect);
 
     if (!column) {
       throw new Error("issue_sheet_column_create_failed");
     }
 
-    return {
-      ...column,
-      config: column.config as Record<string, unknown>,
+    return mapColumnRow(column);
+  }
+
+  async updateColumn(input: {
+    organizationId: string;
+    projectId: string;
+    columnId: string;
+    body: {
+      label?: string;
+      hidden?: boolean;
+      sortOrder?: number;
+      icon?: string | null;
+      config?: { options?: { id: string; label: string; color?: string }[] };
     };
+  }): Promise<IssueSheetColumn | null> {
+    const [existing] = await this.database
+      .select(columnSelect)
+      .from(schema.issueSheetColumns)
+      .where(
+        and(
+          eq(schema.issueSheetColumns.id, input.columnId),
+          eq(schema.issueSheetColumns.organizationId, input.organizationId),
+          eq(schema.issueSheetColumns.projectId, input.projectId),
+        ),
+      )
+      .limit(1);
+
+    if (!existing) {
+      return null;
+    }
+
+    const updates: {
+      label?: string;
+      hidden?: boolean;
+      sortOrder?: number;
+      icon?: string | null;
+      config?: IssueSheetColumnConfig;
+    } = {};
+
+    if (input.body.label !== undefined) {
+      updates.label = input.body.label;
+    }
+    if (input.body.hidden !== undefined) {
+      updates.hidden = input.body.hidden;
+    }
+    if (input.body.sortOrder !== undefined) {
+      updates.sortOrder = input.body.sortOrder;
+    }
+    if (input.body.icon !== undefined) {
+      if (!canDeleteIssueSheetColumn(existing)) {
+        throw new Error("issue_sheet_column_icon_not_editable");
+      }
+      updates.icon = input.body.icon;
+    }
+    if (input.body.config !== undefined) {
+      if (existing.type === "enrichment" || isIssueSheetProtectedColumnKey(existing.key)) {
+        throw new Error("issue_sheet_column_config_not_editable");
+      }
+      if (existing.type !== "select") {
+        throw new Error("issue_sheet_column_config_not_editable");
+      }
+      updates.config = {
+        ...existing.config,
+        options: input.body.config.options,
+      };
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return mapColumnRow(existing);
+    }
+
+    const [column] = await this.database
+      .update(schema.issueSheetColumns)
+      .set(updates)
+      .where(eq(schema.issueSheetColumns.id, existing.id))
+      .returning(columnSelect);
+
+    if (!column) {
+      throw new Error("issue_sheet_column_update_failed");
+    }
+
+    return mapColumnRow(column);
+  }
+
+  async reorderColumns(input: {
+    organizationId: string;
+    projectId: string;
+    columnIds: string[];
+  }): Promise<IssueSheetColumn[]> {
+    await this.ensureStarterColumns(input);
+    const existing = await this.listColumns(input);
+    const existingIds = new Set(existing.map((column) => column.id));
+
+    if (input.columnIds.length !== existing.length) {
+      throw new Error("issue_sheet_column_order_mismatch");
+    }
+    for (const columnId of input.columnIds) {
+      if (!existingIds.has(columnId)) {
+        throw new Error("issue_sheet_column_order_mismatch");
+      }
+    }
+    if (new Set(input.columnIds).size !== input.columnIds.length) {
+      throw new Error("issue_sheet_column_order_mismatch");
+    }
+
+    await this.database.transaction(async (tx) => {
+      for (const [index, columnId] of input.columnIds.entries()) {
+        await tx
+          .update(schema.issueSheetColumns)
+          .set({ sortOrder: (index + 1) * 10 })
+          .where(
+            and(
+              eq(schema.issueSheetColumns.id, columnId),
+              eq(schema.issueSheetColumns.organizationId, input.organizationId),
+              eq(schema.issueSheetColumns.projectId, input.projectId),
+            ),
+          );
+      }
+    });
+
+    return this.listColumns(input);
+  }
+
+  async deleteColumn(input: {
+    organizationId: string;
+    projectId: string;
+    columnId: string;
+  }): Promise<{ deleted: true } | null> {
+    const [existing] = await this.database
+      .select(columnSelect)
+      .from(schema.issueSheetColumns)
+      .where(
+        and(
+          eq(schema.issueSheetColumns.id, input.columnId),
+          eq(schema.issueSheetColumns.organizationId, input.organizationId),
+          eq(schema.issueSheetColumns.projectId, input.projectId),
+        ),
+      )
+      .limit(1);
+
+    if (!existing) {
+      return null;
+    }
+
+    if (!canDeleteIssueSheetColumn(existing)) {
+      throw new Error("issue_sheet_column_not_deletable");
+    }
+
+    await this.database
+      .delete(schema.issueSheetColumns)
+      .where(eq(schema.issueSheetColumns.id, existing.id));
+
+    return { deleted: true };
   }
 
   async listIssues(input: {
@@ -528,6 +720,95 @@ export class IssueSheetService {
       actorUserId: input.actorUserId,
       database: this.database,
     });
+  }
+
+  /**
+   * Reads the project's issue template config. `assigneeByTemplate` bindings are filtered against
+   * current assignability (departed members, teams:write role changes) rather than dropped: the
+   * `assignable` flag lets the settings panel show the admin *why* a binding no longer applies,
+   * instead of silently doing nothing. No extra capability gate — readable by translators and
+   * reviewers, the primary users of the default (see route).
+   */
+  async getTemplateConfig(input: {
+    organizationId: string;
+    projectId: string;
+  }): Promise<IssueSheetTemplateConfig> {
+    const [project] = await this.database
+      .select({ issueTemplateConfig: schema.projects.issueTemplateConfig })
+      .from(schema.projects)
+      .where(
+        and(
+          eq(schema.projects.organizationId, input.organizationId),
+          eq(schema.projects.id, input.projectId),
+        ),
+      )
+      .limit(1);
+
+    const config = project?.issueTemplateConfig ?? {};
+    const assigneeEntries = Object.entries(config.assigneeByTemplate ?? {});
+    const assignableUserIds = await filterAssignableAssigneeUserIds({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      userIds: assigneeEntries.map(([, userId]) => userId),
+      database: this.database,
+    });
+
+    return {
+      defaultTemplateKey: config.defaultTemplateKey ?? null,
+      assigneeByTemplate: assigneeEntries.map(([templateKey, userId]) => ({
+        templateKey,
+        userId,
+        assignable: assignableUserIds.has(userId),
+      })),
+    };
+  }
+
+  /**
+   * Full-object replace (see issueSheetTemplateConfigBodySchema): the caller must resend the
+   * complete config, or bindings it omits are cleared. Validates every bound assignee with the
+   * same check the create/update routes use, so a config saved here can never later hand a create
+   * route the `assignee_not_assignable` error for a value the user never chose.
+   */
+  async setTemplateConfig(input: {
+    organizationId: string;
+    projectId: string;
+    body: IssueSheetTemplateConfigBody;
+  }): Promise<IssueSheetTemplateConfig> {
+    // Batched, not one assertAssignableIssueAssignee call per template: that would be up to 5
+    // sequential round trips (each re-running its own project/membership/team lookups) to
+    // validate one settings save. filterAssignableAssigneeUserIds computes assignability for
+    // every requested user in a constant number of queries.
+    const assigneeUserIds = Object.values(input.body.assigneeByTemplate);
+    if (assigneeUserIds.length > 0) {
+      const assignableUserIds = await filterAssignableAssigneeUserIds({
+        organizationId: input.organizationId,
+        projectId: input.projectId,
+        userIds: assigneeUserIds,
+        database: this.database,
+      });
+      if (assigneeUserIds.some((userId) => !assignableUserIds.has(userId))) {
+        throw new Error("assignee_not_assignable");
+      }
+    }
+
+    await this.database
+      .update(schema.projects)
+      .set({
+        issueTemplateConfig: {
+          ...(input.body.defaultTemplateKey
+            ? { defaultTemplateKey: input.body.defaultTemplateKey }
+            : {}),
+          assigneeByTemplate: input.body.assigneeByTemplate,
+        },
+      })
+      .where(
+        and(
+          eq(schema.projects.organizationId, input.organizationId),
+          eq(schema.projects.id, input.projectId),
+        ),
+      );
+
+    return this.getTemplateConfig(input);
   }
 
   async listFeed(input: {
@@ -1079,6 +1360,7 @@ export class IssueSheetService {
           linkLabel: input.body.linkLabel ?? null,
           linkUrl: input.body.linkUrl ?? null,
           externalRef: input.body.externalRef ?? null,
+          templateKey: input.body.templateKey ?? null,
           reporterUserId: input.actorUserId,
           assigneeUserId,
           verifierUserId: requestedVerifierUserId,
@@ -1233,6 +1515,10 @@ export class IssueSheetService {
     if (!created) {
       throw new Error("issue_sheet_issue_load_failed");
     }
+    serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.issueCreated, {
+      status: "created",
+      source: "issue_sheet",
+    });
     return created;
   }
 
@@ -2140,6 +2426,7 @@ export class IssueSheetService {
         linkLabel: schema.issueSheetIssues.linkLabel,
         linkUrl: schema.issueSheetIssues.linkUrl,
         externalRef: schema.issueSheetIssues.externalRef,
+        templateKey: schema.issueSheetIssues.templateKey,
         assigneeUserId: schema.issueSheetIssues.assigneeUserId,
         reporterFirstName: schema.users.firstName,
         reporterLastName: schema.users.lastName,

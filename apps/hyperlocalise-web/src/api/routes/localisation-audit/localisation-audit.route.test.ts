@@ -13,6 +13,7 @@
 import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { createApp } from "@/api/app";
+import { LocalisationAuditDailyQuotaExceededError } from "@/lib/localisation-audit/daily-quota";
 import { ok } from "@/lib/primitives/result/results";
 
 const {
@@ -77,6 +78,8 @@ vi.mock("@/lib/localisation-audit/store", () => ({
   failLocalisationAudit: failAuditMock,
   findLocalisationAuditBySlug: findBySlugMock,
   isLocalisationAuditRetryable: (audit: { status: string }) => audit.status === "failed",
+  isLocalisationAuditRerunnable: () => false,
+  localisationAuditRerunAvailableAt: () => null,
   upsertLocalisationAuditLeadForDelivery: upsertLeadMock,
   markLocalisationAuditLeadEmailQueued: markLeadQueuedMock,
   markLocalisationAuditLeadEmailFailed: markLeadFailedMock,
@@ -216,6 +219,27 @@ describe("localisation audit routes", () => {
     expect(attachWorkflowMock).toHaveBeenCalled();
   });
 
+  it("rejects new runs when the daily quota is exhausted", async () => {
+    claimOrReuseMock.mockRejectedValue(new LocalisationAuditDailyQuotaExceededError(10));
+
+    const app = createApp({
+      localisationAuditQueue: {
+        enqueue: vi.fn(async () => ({ ids: ["run-1"] })),
+      },
+    });
+
+    const response = await app.request("/api/localisation-audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: "https://example.com" }),
+    });
+
+    expect(response.status).toBe(429);
+    const body = await response.json();
+    expect(body.error).toBe("localisation_audit_daily_quota");
+    expect(body.message).toContain("10 audits");
+  });
+
   it("marks enqueue failures as retryable failed audits", async () => {
     claimOrReuseMock.mockResolvedValue({
       audit: succeededAudit({
@@ -253,6 +277,18 @@ describe("localisation audit routes", () => {
     );
   });
 
+  it("returns the full report publicly for succeeded audits", async () => {
+    findBySlugMock.mockResolvedValue(succeededAudit());
+    const { createLocalisationAuditRoutes } = await import("./localisation-audit.route");
+    const routes = createLocalisationAuditRoutes();
+
+    const response = await routes.request("/example-com");
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.audit.unlocked).toBe(true);
+    expect(body.audit.report).toEqual(expect.objectContaining({ score: 82 }));
+  });
+
   it("queues report email instead of unlocking immediately", async () => {
     findBySlugMock.mockResolvedValue(succeededAudit());
     upsertLeadMock.mockResolvedValue({
@@ -281,7 +317,8 @@ describe("localisation audit routes", () => {
 
     expect(response.status).toBe(200);
     const body = await response.json();
-    expect(body.audit.unlocked).toBe(false);
+    expect(body.audit.unlocked).toBe(true);
+    expect(body.audit.report).toEqual(expect.objectContaining({ score: 82 }));
     expect(body.delivery.status).toBe("queued");
     expect(emailEnqueue).toHaveBeenCalledWith({
       leadId: "lead-1",
@@ -348,7 +385,7 @@ describe("localisation audit routes", () => {
     expect(upsertLeadMock).not.toHaveBeenCalled();
   });
 
-  it("verifies token, sets per-domain cookie, and redirects", async () => {
+  it("verifies token and redirects without setting an unlock cookie", async () => {
     verifyTokenMock.mockResolvedValue({
       lead: { id: "lead-1", email: "lead@example.com" },
       audit: succeededAudit(),
@@ -362,8 +399,7 @@ describe("localisation audit routes", () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe("/en/localisation-audit/example-com");
-    const setCookie = response.headers.get("set-cookie") ?? "";
-    expect(setCookie).toContain("hl_la_unlock_example-com=");
+    expect(response.headers.get("set-cookie")).toBeNull();
   });
 
   it("normalizes unsupported verify locales instead of open-redirecting", async () => {

@@ -13,6 +13,7 @@
 import { z } from "zod";
 
 import { ISSUE_LIST_VIEWS } from "@/lib/projects/issue-sheet/issue-list-constants";
+import { ISSUE_SHEET_COLUMN_ICON_IDS } from "@/lib/projects/issue-sheet/issue-sheet-column-icons";
 import { issueSheetImportContentExceedsByteLimit } from "@/lib/projects/issue-sheet/issue-sheet-csv-import";
 import {
   ISSUE_RESOLUTION_REASONS,
@@ -42,6 +43,21 @@ export const issueSheetIssueTypeSchema = z.enum([
   "glossary_violation",
   "qa_failure",
 ]);
+export type IssueSheetIssueType = z.infer<typeof issueSheetIssueTypeSchema>;
+
+// Issue template keys, deliberately distinct strings from IssueSheetIssueType values so the two
+// literal unions are disjoint and a mix-up is a type error. Provenance only: `template_key` on an
+// issue records which template created it, independent of the issue's own (mutable) issueType.
+// Definitions (label, linked type, default priority, description skeleton) are static code in
+// lib/projects/issue-sheet/issue-sheet-templates.ts, not stored here or in the database.
+export const issueSheetTemplateKeySchema = z.enum([
+  "tpl_translation_mistake",
+  "tpl_source_mistake",
+  "tpl_context_request",
+  "tpl_glossary_violation",
+  "tpl_qa_failure",
+]);
+export type IssueSheetTemplateKey = z.infer<typeof issueSheetTemplateKeySchema>;
 export const issueSheetLinkKindSchema = z.enum([
   "cat_segment",
   "native_issue",
@@ -59,6 +75,7 @@ export const issueSheetColumnTypeSchema = z.enum([
   "enrichment",
 ]);
 export const issueSheetColumnLayerSchema = z.enum(["system", "generated", "custom", "enrichment"]);
+export const issueSheetColumnIconIdSchema = z.enum(ISSUE_SHEET_COLUMN_ICON_IDS);
 
 export const issueSheetParamsSchema = projectIdParamsSchema;
 export const issueSheetIssueParamsSchema = projectIdParamsSchema.extend({
@@ -71,6 +88,7 @@ export const issueSheetColumnParamsSchema = projectIdParamsSchema.extend({
 export const issueSheetSortSchema = z.enum(["updated_at", "created_at", "priority", "status"]);
 export const issueSheetSortDirSchema = z.enum(["asc", "desc"]);
 export const issueSheetPrioritySchema = z.enum(["P0", "P1", "P2"]);
+export type IssueSheetPriority = z.infer<typeof issueSheetPrioritySchema>;
 
 export const issueSheetQuerySchema = z.object({
   view: z.enum(ISSUE_LIST_VIEWS).optional(),
@@ -96,6 +114,10 @@ export const issueSheetCreateIssueBodySchema = z.object({
   issueType: issueSheetIssueTypeSchema.optional(),
   status: issueSheetCreatableStatusSchema.optional(),
   resolutionReason: issueSheetResolutionReasonSchema.optional(),
+  // Provenance only: which static template (if any) the client applied to prefill this issue.
+  // The client is responsible for having already copied the template's type/priority/description
+  // into the fields above; the server does not resolve or apply template content itself.
+  templateKey: issueSheetTemplateKeySchema.optional(),
   targetLocale: z.string().trim().min(1).max(32).optional(),
   sourcePath: z.string().trim().min(1).max(2048).optional(),
   segmentId: z.string().trim().min(1).max(512).optional(),
@@ -143,6 +165,7 @@ export const issueSheetCreateColumnBodySchema = z.object({
     .regex(/^[a-z][a-z0-9_]*$/, "Use lowercase letters, numbers, and underscores"),
   label: z.string().trim().min(1).max(120),
   type: issueSheetColumnTypeSchema.exclude(["enrichment"]),
+  icon: issueSheetColumnIconIdSchema.nullable().optional(),
   config: z
     .object({
       options: z
@@ -159,10 +182,58 @@ export const issueSheetCreateColumnBodySchema = z.object({
     .optional(),
 });
 
+const issueSheetColumnSelectOptionSchema = z.object({
+  id: z.string().trim().min(1).max(64),
+  label: z.string().trim().min(1).max(120),
+  color: z.string().trim().min(1).max(64).optional(),
+});
+
+export const issueSheetUpdateColumnBodySchema = z
+  .object({
+    label: z.string().trim().min(1).max(120).optional(),
+    hidden: z.boolean().optional(),
+    sortOrder: z.number().int().min(0).max(100_000).optional(),
+    icon: issueSheetColumnIconIdSchema.nullable().optional(),
+    config: z
+      .object({
+        options: z.array(issueSheetColumnSelectOptionSchema).max(25).optional(),
+      })
+      .optional(),
+  })
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "at least one field must be provided",
+  });
+
+export const issueSheetReorderColumnsBodySchema = z.object({
+  columnIds: z.array(z.string().uuid()).min(1).max(200),
+});
+
 export const issueSheetSetValueBodySchema = z.object({
   columnKey: z.string().trim().min(1).max(64),
   value: z.unknown(),
 });
+
+// Full-object replace: PUT /template-config always overwrites both fields, so a client that only
+// intends to change the default must still resend its current assigneeByTemplate, or those
+// bindings are cleared. Keys of assigneeByTemplate are validated against issueSheetTemplateKeySchema
+// via superRefine rather than z.record(issueSheetTemplateKeySchema, ...), since a record keyed by
+// a zod enum is exhaustive (requires every key present) rather than partial.
+export const issueSheetTemplateConfigBodySchema = z.object({
+  defaultTemplateKey: issueSheetTemplateKeySchema.nullable(),
+  assigneeByTemplate: z.record(z.string(), z.string().uuid()).superRefine((value, ctx) => {
+    for (const key of Object.keys(value)) {
+      if (!issueSheetTemplateKeySchema.safeParse(key).success) {
+        ctx.addIssue({ code: "custom", path: [key], message: "Unknown template key" });
+      }
+    }
+  }),
+});
+export type IssueSheetTemplateConfigBody = z.infer<typeof issueSheetTemplateConfigBodySchema>;
+
+export type IssueSheetTemplateConfig = {
+  defaultTemplateKey: string | null;
+  assigneeByTemplate: { templateKey: string; userId: string; assignable: boolean }[];
+};
 
 export const issueSheetFeedQuerySchema = z
   .object({
@@ -365,5 +436,7 @@ export type IssueSheetQuery = z.infer<typeof issueSheetQuerySchema>;
 export type IssueSheetCreateIssueBody = z.infer<typeof issueSheetCreateIssueBodySchema>;
 export type IssueSheetUpdateIssueBody = z.infer<typeof issueSheetUpdateIssueBodySchema>;
 export type IssueSheetCreateColumnBody = z.infer<typeof issueSheetCreateColumnBodySchema>;
+export type IssueSheetUpdateColumnBody = z.infer<typeof issueSheetUpdateColumnBodySchema>;
+export type IssueSheetReorderColumnsBody = z.infer<typeof issueSheetReorderColumnsBodySchema>;
 export type IssueSheetSetValueBody = z.infer<typeof issueSheetSetValueBodySchema>;
 export type IssueSheetImportBody = z.infer<typeof issueSheetImportBodySchema>;

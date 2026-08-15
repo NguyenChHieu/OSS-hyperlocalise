@@ -544,8 +544,57 @@
     {
       "idx": 77,
       "version": "7",
-      "when": 1786761100451,
-      "tag": "0077_shocking_jasper_sitwell",
+      "when": 1786518983140,
+      "tag": "0077_lying_goliath",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1786523957894,
+      "tag": "0078_low_the_initiative",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1786544828422,
+      "tag": "0079_square_northstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1786613913583,
+      "tag": "0080_uneven_wrecker",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1786665421089,
+      "tag": "0081_even_amazoness",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1786754220834,
+      "tag": "0082_silky_spirit",
+      "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1786762986713,
+      "tag": "0083_majestic_thor",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1786800823809,
+      "tag": "0084_flat_roland_deschain",
       "breakpoints": true
     }
   ]

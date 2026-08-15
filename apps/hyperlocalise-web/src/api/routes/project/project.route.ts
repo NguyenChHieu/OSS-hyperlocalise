@@ -36,6 +36,8 @@ import {
 import { db, schema, type DatabaseClient } from "@/lib/database";
 import type { Project } from "@/lib/database/types";
 import { getFileStorageAdapter, type FileStorageAdapter } from "@/lib/file-storage";
+import { PRODUCT_USAGE_ANALYTICS_EVENTS } from "@/lib/analytics/events";
+import { serverAnalytics } from "@/lib/analytics/server";
 import { isReleaseCatAllFilesEnabled } from "@/lib/flags/release-flags";
 import { createLogger } from "@/lib/log";
 import {
@@ -97,6 +99,18 @@ import {
   setTranslationKeyTreatAsImage,
 } from "@/lib/projects/files/image-url-translation-service";
 import {
+  localizeAndStoreVideoVariant,
+  projectVideoAssetPath,
+  replaceVideoVariantBytes,
+  updateVideoVariantStatus,
+} from "@/lib/projects/files/video-variant-service";
+import {
+  isVideoUrlContentKind,
+  localizeVideoUrlTranslation,
+  replaceVideoUrlTranslationBytes,
+  setTranslationKeyTreatAsVideo,
+} from "@/lib/projects/files/video-url-translation-service";
+import {
   lookupCachedProjectFileStringRepositoryContext,
   lookupProjectFileStringRepositoryContext,
 } from "@/lib/projects/string-context/project-string-context-service";
@@ -129,6 +143,7 @@ import {
   projectFileCatRecommendationBodySchema,
   projectFileCatStatusBodySchema,
   projectFileCatTreatAsImageBodySchema,
+  projectFileCatTreatAsVideoBodySchema,
   projectFileCatTranslationBodySchema,
   projectFileCatVisualContextBodySchema,
   projectFileDetailQuerySchema,
@@ -190,7 +205,9 @@ import {
   inferSupportedBinaryTranslationFileFormat,
   inferSupportedImageTranslationFileFormat,
   inferSupportedSourceUploadFormat,
+  inferSupportedVideoTranslationFileFormat,
   looksLikeImageUrl,
+  looksLikeVideoUrl,
 } from "@/lib/translation/file-formats";
 
 type ProjectUpdateErrorCode =
@@ -576,6 +593,16 @@ const validateProjectFileCatTreatAsImageBody = validator("json", (value, c) => {
   return parsed.data;
 });
 
+const validateProjectFileCatTreatAsVideoBody = validator("json", (value, c) => {
+  const parsed = projectFileCatTreatAsVideoBodySchema.safeParse(value);
+
+  if (!parsed.success) {
+    return invalidProjectPayloadResponse(c);
+  }
+
+  return parsed.data;
+});
+
 const validateProjectFileStringContextBody = validator("json", (value, c) => {
   const parsed = projectFileStringContextBodySchema.safeParse(value);
 
@@ -593,6 +620,36 @@ function asString(value: unknown) {
 function asFile(value: unknown) {
   const values = Array.isArray(value) ? value : value ? [value] : [];
   return values.find((item): item is File => item instanceof File && item.size > 0) ?? null;
+}
+
+async function getNativeCatTranslationKey(input: {
+  organizationId: string;
+  projectId: string;
+  translationKeyId: string;
+}) {
+  const [key] = await db
+    .select({
+      id: schema.projectTranslationKeys.id,
+      sourceText: schema.projectTranslationKeys.sourceText,
+      metadata: schema.projectTranslationKeys.metadata,
+    })
+    .from(schema.projectTranslationKeys)
+    .where(
+      and(
+        eq(schema.projectTranslationKeys.id, input.translationKeyId),
+        eq(schema.projectTranslationKeys.organizationId, input.organizationId),
+        eq(schema.projectTranslationKeys.projectId, input.projectId),
+      ),
+    )
+    .limit(1);
+  return key ?? null;
+}
+
+function isNativeVideoUrlKey(key: {
+  sourceText: string;
+  metadata: Record<string, unknown> | null;
+}) {
+  return isVideoUrlContentKind(key.metadata) || looksLikeVideoUrl(key.sourceText);
 }
 
 const stringContextRouteLogger = createLogger("project-file-string-context-route");
@@ -1058,6 +1115,16 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             return badRequestResponse(c, "translation_key_not_found", "Translation key not found");
           }
 
+          serverAnalytics.track(
+            body.approve
+              ? PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentApproved
+              : PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentDraftSaved,
+            {
+              source: "native",
+              status: body.approve ? "approved" : "draft",
+            },
+          );
+
           return c.json({ translation }, 200);
         }
 
@@ -1077,6 +1144,16 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           if (!translation) {
             return projectNotFoundResponse(c);
           }
+
+          serverAnalytics.track(
+            translation.isApproved
+              ? PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentApproved
+              : PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentDraftSaved,
+            {
+              source: "external_tms",
+              status: translation.isApproved ? "approved" : "draft",
+            },
+          );
 
           return c.json({ translation }, 200);
         } catch (error) {
@@ -1133,6 +1210,11 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             );
           }
 
+          serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.catCommentCreated, {
+            source: "native",
+            feature: "comment",
+          });
+
           return c.json({ comment }, 200);
         }
 
@@ -1154,6 +1236,11 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           if (!comment) {
             return projectNotFoundResponse(c);
           }
+
+          serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.catCommentCreated, {
+            source: "external_tms",
+            feature: body.type === "issue" ? "issue" : "comment",
+          });
 
           return c.json({ comment }, 200);
         } catch (error) {
@@ -1355,6 +1442,10 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           return badRequestResponse(c, result.error.code, result.error.message);
         }
 
+        serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.catAiRecommendationRequested, {
+          source: target.kind === "provider" ? "external_tms" : "native",
+        });
+
         return c.json({ recommendation: result.value }, 200);
       },
     )
@@ -1400,6 +1491,13 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           return badRequestResponse(c, "translation_not_found", "Translation not found");
         }
 
+        if (body.status === "approved") {
+          serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentApproved, {
+            source: "native",
+            status: "approved",
+          });
+        }
+
         return c.json({ translation }, 200);
       },
     )
@@ -1434,6 +1532,68 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         const organizationSlug =
           c.var.auth.organization.slug ?? c.var.auth.organization.localOrganizationId;
         const organizationId = c.var.auth.organization.localOrganizationId;
+
+        if (inferSupportedVideoTranslationFileFormat(body.sourcePath)) {
+          const sourceFile = await getRepositorySourceFileByPath({
+            organizationId,
+            projectId: params.projectId,
+            sourcePath: body.sourcePath,
+          });
+          if (!sourceFile) {
+            return badRequestResponse(
+              c,
+              "source_file_not_found",
+              "Source file not found for the given path",
+            );
+          }
+
+          const latestVersion = await getLatestRepositorySourceFileVersion({
+            organizationId,
+            projectId: params.projectId,
+            sourcePath: body.sourcePath,
+          });
+          if (!latestVersion?.storedFileId) {
+            return badRequestResponse(c, "source_bytes_missing", "Source video bytes are missing");
+          }
+
+          const result = await localizeAndStoreVideoVariant({
+            organizationId,
+            projectId: params.projectId,
+            sourcePath: body.sourcePath,
+            targetLocale: body.targetLocale,
+            sourceLocale: project.sourceLocale,
+            sourceStoredFileId: latestVersion.storedFileId,
+            repositorySourceFileId: sourceFile.id,
+            instructions: body.instructions,
+            provenance: "agent",
+            createdByUserId: c.var.auth.user.localUserId,
+            force: body.force,
+          });
+
+          if (!result.ok) {
+            return badRequestResponse(c, result.error.code, "Video regeneration failed");
+          }
+
+          const targetAssetUrl = result.value.storedFileId
+            ? projectVideoAssetPath({
+                organizationSlug,
+                projectId: params.projectId,
+                fileId: result.value.storedFileId,
+              })
+            : null;
+
+          return c.json(
+            {
+              imageVariant: {
+                id: result.value.id,
+                status: result.value.status,
+                targetAssetUrl,
+                storedFileId: result.value.storedFileId,
+              },
+            },
+            200,
+          );
+        }
 
         if (inferSupportedImageTranslationFileFormat(body.sourcePath)) {
           const sourceFile = await getRepositorySourceFileByPath({
@@ -1502,6 +1662,42 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             c,
             "external_string_id_required",
             "externalStringId is required for URL-backed image regeneration",
+          );
+        }
+
+        const translationKey = await getNativeCatTranslationKey({
+          organizationId,
+          projectId: params.projectId,
+          translationKeyId: body.externalStringId,
+        });
+        if (translationKey && isNativeVideoUrlKey(translationKey)) {
+          const videoResult = await localizeVideoUrlTranslation({
+            organizationId,
+            projectId: params.projectId,
+            translationKeyId: body.externalStringId,
+            targetLocale: body.targetLocale,
+            sourceLocale: project.sourceLocale,
+            instructions: body.instructions,
+            actorUserId: c.var.auth.user.localUserId,
+            force: body.force,
+          });
+
+          if (!videoResult.ok) {
+            return badRequestResponse(c, videoResult.error.code, "Video URL regeneration failed");
+          }
+
+          return c.json(
+            {
+              translation: {
+                text: videoResult.value.translation.text,
+                externalTranslationId: videoResult.value.translation.id,
+                isApproved: videoResult.value.translation.status === "approved",
+                contentKind: "video_url" as const,
+                targetAssetUrl: videoResult.value.assetUrl,
+                status: videoResult.value.translation.status,
+              },
+            },
+            200,
           );
         }
 
@@ -1586,6 +1782,14 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
               c,
               "external_resource_id_required",
               "externalResourceId is required for provider image upload",
+            );
+          }
+
+          if (inferSupportedVideoTranslationFileFormat(sourcePath)) {
+            return badRequestResponse(
+              c,
+              "provider_cat_unsupported",
+              "File-backed video upload is only available for workspace files.",
             );
           }
 
@@ -1686,6 +1890,58 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           return projectNotFoundResponse(c);
         }
 
+        if (inferSupportedVideoTranslationFileFormat(sourcePath)) {
+          const sourceFile = await getRepositorySourceFileByPath({
+            organizationId,
+            projectId: params.projectId,
+            sourcePath,
+          });
+          if (!sourceFile) {
+            return badRequestResponse(
+              c,
+              "source_file_not_found",
+              "Source file not found for the given path",
+            );
+          }
+
+          const result = await replaceVideoVariantBytes({
+            organizationId,
+            projectId: params.projectId,
+            sourcePath,
+            targetLocale,
+            content,
+            contentType,
+            filename: file.name || path.basename(sourcePath),
+            repositorySourceFileId: sourceFile.id,
+            createdByUserId: c.var.auth.user.localUserId,
+            force,
+          });
+
+          if (!result.ok) {
+            return badRequestResponse(c, result.error.code, "File upload failed");
+          }
+
+          const targetAssetUrl = result.value.storedFileId
+            ? projectVideoAssetPath({
+                organizationSlug,
+                projectId: params.projectId,
+                fileId: result.value.storedFileId,
+              })
+            : null;
+
+          return c.json(
+            {
+              imageVariant: {
+                id: result.value.id,
+                status: result.value.status,
+                targetAssetUrl,
+                storedFileId: result.value.storedFileId,
+              },
+            },
+            200,
+          );
+        }
+
         if (inferSupportedBinaryTranslationFileFormat(sourcePath)) {
           const sourceFile = await getRepositorySourceFileByPath({
             organizationId,
@@ -1743,6 +1999,43 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             c,
             "external_string_id_required",
             "externalStringId is required for URL-backed image upload",
+          );
+        }
+
+        const translationKey = await getNativeCatTranslationKey({
+          organizationId,
+          projectId: params.projectId,
+          translationKeyId: externalStringId,
+        });
+        if (translationKey && isNativeVideoUrlKey(translationKey)) {
+          const videoResult = await replaceVideoUrlTranslationBytes({
+            organizationId,
+            projectId: params.projectId,
+            translationKeyId: externalStringId,
+            targetLocale,
+            content,
+            contentType,
+            filename: file.name || "video.mp4",
+            actorUserId: c.var.auth.user.localUserId,
+            force,
+          });
+
+          if (!videoResult.ok) {
+            return badRequestResponse(c, videoResult.error.code, "Video URL upload failed");
+          }
+
+          return c.json(
+            {
+              translation: {
+                text: videoResult.value.translation.text,
+                externalTranslationId: videoResult.value.translation.id,
+                isApproved: videoResult.value.translation.status === "approved",
+                contentKind: "video_url" as const,
+                targetAssetUrl: videoResult.value.assetUrl,
+                status: videoResult.value.translation.status,
+              },
+            },
+            200,
           );
         }
 
@@ -1808,6 +2101,41 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         const organizationId = c.var.auth.organization.localOrganizationId;
         const organizationSlug =
           c.var.auth.organization.slug ?? c.var.auth.organization.localOrganizationId;
+
+        if (inferSupportedVideoTranslationFileFormat(body.sourcePath)) {
+          const result = await updateVideoVariantStatus({
+            organizationId,
+            projectId: params.projectId,
+            sourcePath: body.sourcePath,
+            targetLocale: body.targetLocale,
+            status: body.status,
+            actorUserId: c.var.auth.user.localUserId,
+          });
+
+          if (!result.ok) {
+            return badRequestResponse(c, result.error.code, "File variant not found");
+          }
+
+          const targetAssetUrl = result.value.storedFileId
+            ? projectVideoAssetPath({
+                organizationSlug,
+                projectId: params.projectId,
+                fileId: result.value.storedFileId,
+              })
+            : null;
+
+          return c.json(
+            {
+              imageVariant: {
+                id: result.value.id,
+                status: result.value.status,
+                targetAssetUrl,
+                storedFileId: result.value.storedFileId,
+              },
+            },
+            200,
+          );
+        }
 
         if (inferSupportedBinaryTranslationFileFormat(body.sourcePath)) {
           const result = await updateImageVariantStatus({
@@ -1937,6 +2265,69 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
                 : ("text" as const),
               looksLikeImageUrl: looksLikeImageUrl(result.value.sourceText),
               ...(isImageUrlContentKind(result.value.metadata)
+                ? { sourceAssetUrl: result.value.sourceText }
+                : {}),
+            },
+          },
+          200,
+        );
+      },
+    )
+    .post(
+      "/:projectId/files/detail/cat/segments/:externalStringId/treat-as-video",
+      validateProjectParams,
+      validateProjectFileCatSegmentParams,
+      validateProjectFileCatTreatAsVideoBody,
+      async (c) => {
+        if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {
+          return projectForbiddenResponse(c);
+        }
+
+        const params = c.req.valid("param");
+        const body = c.req.valid("json");
+        if (params.externalStringId !== body.externalStringId) {
+          return invalidProjectPayloadResponse(c);
+        }
+
+        const target = await resolveProjectResourceTarget(c.var.auth, params.projectId);
+        if (target.kind === "provider_unavailable") {
+          return providerProjectUnavailableResponse(c, target);
+        }
+        if (target.kind === "provider") {
+          return badRequestResponse(
+            c,
+            "provider_cat_unsupported",
+            "Treat as video is only available for workspace files.",
+          );
+        }
+
+        const project = await getOwnedProject(c.var.auth, params.projectId);
+        if (!project) {
+          return projectNotFoundResponse(c);
+        }
+
+        const result = await setTranslationKeyTreatAsVideo({
+          organizationId: c.var.auth.organization.localOrganizationId,
+          projectId: params.projectId,
+          translationKeyId: body.externalStringId,
+          treatAsVideo: body.treatAsVideo,
+        });
+
+        if (!result.ok) {
+          return badRequestResponse(c, result.error.code, "Translation key not found");
+        }
+
+        return c.json(
+          {
+            segment: {
+              externalStringId: result.value.id,
+              key: result.value.key,
+              sourceText: result.value.sourceText,
+              contentKind: isVideoUrlContentKind(result.value.metadata)
+                ? ("video_url" as const)
+                : ("text" as const),
+              looksLikeVideoUrl: looksLikeVideoUrl(result.value.sourceText),
+              ...(isVideoUrlContentKind(result.value.metadata)
                 ? { sourceAssetUrl: result.value.sourceText }
                 : {}),
             },

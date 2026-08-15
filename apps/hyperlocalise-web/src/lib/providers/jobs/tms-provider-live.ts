@@ -646,6 +646,9 @@ function buildLiveProviderProject(input: {
     lastSyncErrorAt: null,
     lastSyncErrorMessage: null,
     providerMetadata: {},
+    // Live provider projects aren't rows in the projects table, so there's no per-project
+    // template config to read — same empty default as an unconfigured native project.
+    issueTemplateConfig: {},
     createdAt: now,
     updatedAt: now,
   };
@@ -960,6 +963,26 @@ function crowdinSourceTextValue(text: CrowdinSourceString["text"]) {
   return text;
 }
 
+function mapCrowdinSourceStringToCatSegment(
+  sourceString: CrowdinSourceString,
+  extras: Partial<{
+    sourcePath: string;
+    format: string | null;
+    externalResourceId: string;
+    resourceType: "file" | "key";
+  }> = {},
+) {
+  return {
+    externalStringId: String(sourceString.id),
+    key: sourceString.identifier,
+    sourceText: crowdinCatSourceTextValue(sourceString.text),
+    context: sourceString.context,
+    type: sourceString.type ?? null,
+    ...(sourceString.isHidden ? { isHidden: true as const } : {}),
+    ...extras,
+  };
+}
+
 function crowdinCatSourceTextValue(text: CrowdinSourceString["text"]): string {
   if (typeof text === "string") {
     return text;
@@ -1142,13 +1165,9 @@ async function buildCrowdinLiveCatFile(input: {
       canEditTranslations: input.canEditTranslations,
       truncated,
       pagination,
-      segments: visibleStrings.map((sourceString) => ({
-        externalStringId: String(sourceString.id),
-        key: sourceString.identifier,
-        sourceText: crowdinCatSourceTextValue(sourceString.text),
-        context: sourceString.context,
-        type: sourceString.type ?? null,
-      })),
+      segments: visibleStrings.map((sourceString) =>
+        mapCrowdinSourceStringToCatSegment(sourceString),
+      ),
     };
   } catch (error) {
     if (error instanceof CrowdinApiError && error.status === 401) {
@@ -2389,19 +2408,16 @@ async function buildCrowdinLiveCatAllFiles(input: {
         continue;
       }
 
-      segments.push({
-        externalStringId: String(sourceString.id),
-        key: sourceString.identifier,
-        sourceText: crowdinCatSourceTextValue(sourceString.text),
-        context: sourceString.context,
-        type: sourceString.type ?? null,
-        sourcePath: file.sourcePath,
-        ...(file.provider?.format != null ? { format: file.provider.format } : {}),
-        ...(file.provider?.externalResourceId
-          ? { externalResourceId: file.provider.externalResourceId }
-          : {}),
-        ...(file.provider?.resourceType ? { resourceType: file.provider.resourceType } : {}),
-      });
+      segments.push(
+        mapCrowdinSourceStringToCatSegment(sourceString, {
+          sourcePath: file.sourcePath,
+          ...(file.provider?.format != null ? { format: file.provider.format } : {}),
+          ...(file.provider?.externalResourceId
+            ? { externalResourceId: file.provider.externalResourceId }
+            : {}),
+          ...(file.provider?.resourceType ? { resourceType: file.provider.resourceType } : {}),
+        }),
+      );
     }
 
     const totalCount = page.hasMore ? offset + segments.length + 1 : offset + segments.length;

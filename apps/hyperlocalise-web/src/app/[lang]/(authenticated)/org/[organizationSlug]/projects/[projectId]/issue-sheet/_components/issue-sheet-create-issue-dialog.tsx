@@ -15,6 +15,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type KeyboardEvent,
@@ -227,6 +228,12 @@ export function IssueSheetCreateIssueDialog({
   // project-default resolution effect below from overriding that choice, including across a
   // project switch in the org-scoped dialog.
   const [templateUserOverridden, setTemplateUserOverridden] = useState(false);
+  // True once the user has picked an assignee by hand via the picker below. Ref, not state — read
+  // only inside applyBindingIfUnset, never rendered. Blocks every future template-binding
+  // auto-apply this session (switching templates, "create more") from overwriting a deliberate
+  // pick; reset on dialog close/reopen and on project switch, matching templateUserOverridden's
+  // scope, so a fresh project's binding can still apply.
+  const assigneeManuallySetRef = useRef(false);
 
   const {
     segmentId: linkSegmentId = null,
@@ -309,6 +316,22 @@ export function IssueSheetCreateIssueDialog({
     applyTemplateChange(null, "explicit_clear");
   }
 
+  // Applies (or clears) the given template's assignee binding, unless the user has picked an
+  // assignee by hand this session (assigneeManuallySetRef). Unconditional otherwise — not "only if
+  // currently unset" — so switching from a template bound to Alice to one bound to Bob actually
+  // reassigns to Bob, and switching to a template with no binding clears Alice rather than leaving
+  // her stuck from the previous template. Shared by the resolution effect below and
+  // resetAfterCreateMore, so "create more" reapplies the same binding a fresh dialog open would.
+  function applyTemplateAssigneeBinding(key: string | null) {
+    if (!key || assigneeManuallySetRef.current) {
+      return;
+    }
+    const binding = templateConfigQuery.data?.assigneeByTemplate.find(
+      (entry) => entry.templateKey === key && entry.assignable,
+    );
+    setAssigneeUserId(binding?.userId ?? null);
+  }
+
   useEffect(() => {
     if (!open) {
       setSelectedProjectId("");
@@ -322,6 +345,7 @@ export function IssueSheetCreateIssueDialog({
       setLinkLabel("");
       setLinkUrl("");
       setAssigneeUserId(null);
+      assigneeManuallySetRef.current = false;
       setCustomValues({});
       setCreateMore(defaultCreateMore);
       setTemplateKeyRaw(null);
@@ -414,6 +438,9 @@ export function IssueSheetCreateIssueDialog({
 
   useEffect(() => {
     setAssigneeUserId(null);
+    // A project switch lets that project's own template binding apply fresh (see the resolution
+    // effect below), same as if the dialog had just opened on it.
+    assigneeManuallySetRef.current = false;
     setCustomValues({});
     if (!resolvedProjectId || linkSegmentId) {
       return;
@@ -457,28 +484,15 @@ export function IssueSheetCreateIssueDialog({
       return;
     }
 
-    function applyBindingIfUnset(key: string | null) {
-      if (!key) {
-        return;
-      }
-      const binding = templateConfigQuery.data?.assigneeByTemplate.find(
-        (entry) => entry.templateKey === key && entry.assignable,
-      );
-      if (!binding) {
-        return;
-      }
-      setAssigneeUserId((current) => current ?? binding.userId);
-    }
-
     // An in-session pick or initialTemplateKey outranks the project default: nothing to resolve
     // for the template itself, but a newly selected project's binding for that template can
     // still apply.
     if (templateUserOverridden) {
-      applyBindingIfUnset(templateKey);
+      applyTemplateAssigneeBinding(templateKey);
       return;
     }
     if (initialTemplateKey) {
-      applyBindingIfUnset(initialTemplateKey);
+      applyTemplateAssigneeBinding(initialTemplateKey);
       return;
     }
     if (templateConfigQuery.isLoading || templateConfigQuery.isError) {
@@ -491,10 +505,11 @@ export function IssueSheetCreateIssueDialog({
     // assigned via a template that was never actually applied.
     const applied = defaultKey === templateKey || applyTemplateChange(defaultKey, "automatic");
     if (applied) {
-      applyBindingIfUnset(defaultKey);
+      applyTemplateAssigneeBinding(defaultKey);
     }
-    // applyTemplateChange closes over component state each render and is not a stable
-    // reference; the effect keys off the resolved template config and project instead.
+    // applyTemplateChange and applyTemplateAssigneeBinding close over component state each render
+    // and are not stable references; the effect keys off the resolved template config and project
+    // instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     open,
@@ -546,8 +561,16 @@ export function IssueSheetCreateIssueDialog({
 
   function resetAfterCreateMore() {
     setTitle("");
-    setAssigneeUserId(null);
     setCustomValues({});
+    // Clear first, then let applyTemplateAssigneeBinding reapply the still-selected template's
+    // configured assignee for issue #2 — matches the skeleton reapplication below (issueType and
+    // priority also persist across "create more"). Order matters: applyTemplateAssigneeBinding is
+    // a no-op when the user picked an assignee by hand on issue #1 (assigneeManuallySetRef is
+    // deliberately left set, not reset here — a manual pick on issue #1 should not silently
+    // persist onto issue #2 either), so the null set immediately before it is what actually clears
+    // that case.
+    setAssigneeUserId(null);
+    applyTemplateAssigneeBinding(templateKey);
     // Re-derive the skeleton for the still-selected template (issueType/priority chips
     // deliberately persist across "create more", matching prior behavior; only the skeleton is
     // reapplied here so issue #2 isn't tagged with a template but no prompts).
@@ -589,8 +612,10 @@ export function IssueSheetCreateIssueDialog({
       // Structural, not a diff against the original skeleton (markdown normalizes through
       // TipTap): drops any heading with nothing under it. A template's own headings are never
       // parsed back out of the body afterward — templateKey is the only machine-readable
-      // provenance.
-      const submittedDescription = stripEmptySections(description);
+      // provenance. Only runs when a template is attached: this exists to drop unfilled template
+      // prompts, not to "clean up" a manually-typed description — a user who writes their own
+      // `## Follow-up` heading with nothing under it yet is not asking for it to be deleted.
+      const submittedDescription = templateKey ? stripEmptySections(description) : description;
       const response = await fetch(issueSheetPath(organizationSlug, resolvedProjectId), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -823,7 +848,10 @@ export function IssueSheetCreateIssueDialog({
                   members={assignableMembersQuery.data?.members ?? []}
                   isLoading={assignableMembersQuery.isLoading}
                   disabled={createIssue.isPending}
-                  onChange={setAssigneeUserId}
+                  onChange={(userId) => {
+                    assigneeManuallySetRef.current = true;
+                    setAssigneeUserId(userId);
+                  }}
                   size="ghost"
                   triggerClassName={propertyTriggerClassName}
                 />

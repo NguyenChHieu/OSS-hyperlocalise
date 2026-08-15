@@ -27,6 +27,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import { TypographyP } from "@/components/ui/typography";
 import { apiClient } from "@/lib/api-client-instance";
+import { isEncodedProviderProjectId } from "@/lib/providers/jobs/tms-provider-resource-id";
 import { sanitizeExternalUrl } from "@/lib/security/safe-external-url";
 import { useAppShellHeaderAction } from "@/components/app-shell/store/use-app-shell-header-action";
 
@@ -419,7 +420,13 @@ export function ProjectSettingsPageContent({
 
         <ProjectSourceDetails project={project} />
 
-        <ProjectIssueTemplatesPanel organizationSlug={organizationSlug} projectId={projectId} />
+        {/* Live (unsynced) external-TMS projects have no row in `projects` — id is an encoded
+            "ext:provider:externalId" string, not a real project — so there is nowhere to persist
+            a template config. Rendering the panel there would let an admin "save" a config that
+            silently never took effect. */}
+        {!isEncodedProviderProjectId(project.id) ? (
+          <ProjectIssueTemplatesPanel organizationSlug={organizationSlug} projectId={projectId} />
+        ) : null}
 
         {project.source === "native" ? (
           <ProjectNativeConnectCliPanel organizationSlug={organizationSlug} projectId={projectId} />

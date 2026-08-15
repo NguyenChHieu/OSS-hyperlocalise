@@ -65,6 +65,7 @@ describe("OrganizationIssueService.getById", () => {
       organizationId: auth.organization.localOrganizationId,
       projectId: project.id,
       actorUserId: user.id,
+      actorRole: "translator",
       body: {
         title: "Service issue",
         issueType: "general_question",
@@ -102,6 +103,7 @@ describe("OrganizationIssueService.getById", () => {
       organizationId: owner.organization.id,
       projectId: owner.project.id,
       actorUserId: owner.user.id,
+      actorRole: "translator",
       body: {
         title: "Owner only",
         issueType: "general_question",
@@ -142,6 +144,7 @@ describe("IssueSheetService.getIssue", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: user.id,
+      actorRole: "translator",
       body: {
         title: "Cross project",
         issueType: "general_question",

@@ -650,7 +650,7 @@ describe("Issue Sheet routes", () => {
           projectId: project.id,
           issueId: firstBody.issue.id,
         },
-        json: { status: "resolved" },
+        json: { status: "resolved", resolutionReason: "fixed" },
       } as never,
       { headers: headers },
     );
@@ -1895,5 +1895,139 @@ Second import issue,Done,EXT-2,P2`;
     expect(subscribersBody.subscribers).toHaveLength(1);
     expect(subscribersBody.subscribers[0]?.userId).toBeTruthy();
     expect(subscribersBody.subscribers[0]?.displayName).toBeTruthy();
+  });
+
+  it("enforces the resolution and verification lifecycle: reason required, verifier-only verify/reopen, manager override", async () => {
+    const { identity, project } = await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const organizationSlug = identity.organization.slug ?? "missing-slug";
+
+    // Designated verifier: a translator with no elevated capability, added to the project team so
+    // assertAssignableIssueAssignee accepts them (same bar as an assignee).
+    const verifierIdentity = projectFixture.createWorkosIdentityForOrganization(
+      identity.organization,
+      "translator",
+    );
+    const verifierHeaders = await projectFixture.authHeadersFor(verifierIdentity);
+    const verifierUserId = await projectFixture.getLocalUserId(verifierIdentity.user.workosUserId);
+    await db.insert(schema.teamMemberships).values({
+      teamId: project.teamId!,
+      userId: verifierUserId,
+      role: "member",
+    });
+
+    // Holds teams:write but is not the designated verifier: exercises the manager override.
+    const managerIdentity = projectFixture.createWorkosIdentityForOrganization(
+      identity.organization,
+      "localization_manager",
+    );
+    const managerHeaders = await projectFixture.authHeadersFor(managerIdentity);
+    const managerUserId = await projectFixture.getLocalUserId(managerIdentity.user.workosUserId);
+
+    // Ordinary editor: write_back:translation but no teams:write and not the verifier. Needs
+    // project team access too (canAccessProject is team-scoped), or every PATCH here would 404
+    // before reaching the permission check this test is actually exercising.
+    const strangerIdentity = projectFixture.createWorkosIdentityForOrganization(
+      identity.organization,
+      "translator",
+    );
+    const strangerHeaders = await projectFixture.authHeadersFor(strangerIdentity);
+    const strangerUserId = await projectFixture.getLocalUserId(strangerIdentity.user.workosUserId);
+    await db.insert(schema.teamMemberships).values({
+      teamId: project.teamId!,
+      userId: strangerUserId,
+      role: "member",
+    });
+
+    const createResponse = await issueSheet().$post(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id },
+        json: { title: "Verification lifecycle", issueType: "general_question" },
+      } as never,
+      { headers: headers },
+    );
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as IssueResponse;
+    const issueId = created.issue.id;
+
+    const missingReason = await issueSheet()[":issueId"].$patch(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id, issueId: issueId },
+        json: { status: "resolved" },
+      } as never,
+      { headers: headers },
+    );
+    expect(missingReason.status).toBe(400);
+    await expect(missingReason.json()).resolves.toMatchObject({
+      error: "resolution_reason_required",
+    });
+
+    const closeResponse = await issueSheet()[":issueId"].$patch(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id, issueId: issueId },
+        json: { status: "resolved", resolutionReason: "fixed", verifierUserId: verifierUserId },
+      } as never,
+      { headers: headers },
+    );
+    expect(closeResponse.status).toBe(200);
+    const closed = (await closeResponse.json()) as IssueResponse;
+    expect(closed.issue.status).toBe("awaiting_verification");
+
+    const verificationQueue = await issueSheet().$get(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id },
+        query: { view: "my_verification" },
+      } as never,
+      { headers: verifierHeaders },
+    );
+    expect(verificationQueue.status).toBe(200);
+    const queueBody = (await verificationQueue.json()) as IssueSheetListResponse;
+    expect(queueBody.issues.map((issue) => issue.id)).toContain(issueId);
+
+    const strangerReassign = await issueSheet()[":issueId"].$patch(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id, issueId: issueId },
+        json: { verifierUserId: managerUserId },
+      } as never,
+      { headers: strangerHeaders },
+    );
+    expect(strangerReassign.status).toBe(403);
+    await expect(strangerReassign.json()).resolves.toMatchObject({
+      error: "verifier_reassignment_not_permitted",
+    });
+
+    const strangerVerify = await issueSheet()[":issueId"].$patch(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id, issueId: issueId },
+        json: { status: "verified" },
+      } as never,
+      { headers: strangerHeaders },
+    );
+    expect(strangerVerify.status).toBe(403);
+    await expect(strangerVerify.json()).resolves.toMatchObject({
+      error: "verification_not_permitted",
+    });
+
+    const managerVerify = await issueSheet()[":issueId"].$patch(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id, issueId: issueId },
+        json: { status: "verified" },
+      } as never,
+      { headers: managerHeaders },
+    );
+    expect(managerVerify.status).toBe(200);
+    const verified = (await managerVerify.json()) as IssueResponse;
+    expect(verified.issue.status).toBe("verified");
+
+    const reopenResponse = await issueSheet()[":issueId"].$patch(
+      {
+        param: { organizationSlug: organizationSlug, projectId: project.id, issueId: issueId },
+        json: { status: "open", reopenComment: "Actually still broken" },
+      } as never,
+      { headers: headers },
+    );
+    expect(reopenResponse.status).toBe(200);
+    const reopened = (await reopenResponse.json()) as IssueResponse;
+    expect(reopened.issue.status).toBe("open");
   });
 });

@@ -18,7 +18,12 @@ import {
   isProjectMutationAllowed,
   isWriteBackTranslationAllowed,
 } from "@/api/auth/capability-guards";
-import { badRequestResponse, conflictResponse, notFoundResponse } from "@/api/response.schema";
+import {
+  badRequestResponse,
+  conflictResponse,
+  forbiddenResponse,
+  notFoundResponse,
+} from "@/api/response.schema";
 import { createWorkspaceFeatureFlagMiddleware } from "@/api/middleware/workspace-feature-flag";
 import { workspaceIssuesFlag } from "@/lib/flags/workspace-flags";
 import { IssueSheetService } from "@/lib/projects/issue-sheet/issue-sheet-service";
@@ -106,6 +111,51 @@ async function requireProject(c: { var: { auth: AuthVariables["auth"] } }, proje
     return null;
   }
   return project;
+}
+
+/**
+ * Maps the HL-501 status-transition/verifier-reassignment error codes (thrown as plain `Error`s
+ * by IssueSheetService, mirroring the existing assignee/translation-key error pattern in this
+ * file) to responses. Returns null for any other error so callers fall through to their own
+ * error handling.
+ */
+function mapIssueStatusTransitionError(
+  c: Parameters<typeof badRequestResponse>[0],
+  error: unknown,
+) {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+  switch (error.message) {
+    case "invalid_status_transition":
+      return badRequestResponse(c, "invalid_status_transition", "That status change isn't allowed");
+    case "resolution_reason_required":
+      return badRequestResponse(
+        c,
+        "resolution_reason_required",
+        "A resolution reason is required to close this issue",
+      );
+    case "resolution_reason_not_allowed":
+      return badRequestResponse(
+        c,
+        "resolution_reason_not_allowed",
+        "A resolution reason is not allowed for this change",
+      );
+    case "verification_not_permitted":
+      return forbiddenResponse(
+        c,
+        "verification_not_permitted",
+        "Only the designated verifier or a manager can verify or reopen this issue",
+      );
+    case "verifier_reassignment_not_permitted":
+      return forbiddenResponse(
+        c,
+        "verifier_reassignment_not_permitted",
+        "Only the current verifier or a manager can change the designated verifier",
+      );
+    default:
+      return null;
+  }
 }
 
 export function createIssueSheetRoutes() {
@@ -343,10 +393,15 @@ export function createIssueSheetRoutes() {
           organizationId: c.var.auth.organization.localOrganizationId,
           projectId: project.id,
           actorUserId: c.var.auth.user.localUserId,
+          actorRole: c.var.auth.membership.role,
           body: c.req.valid("json"),
         });
         return c.json({ issue }, 201);
       } catch (error) {
+        const mapped = mapIssueStatusTransitionError(c, error);
+        if (mapped) {
+          return mapped;
+        }
         if (error instanceof Error && error.message === "assignee_not_assignable") {
           return badRequestResponse(
             c,
@@ -389,6 +444,7 @@ export function createIssueSheetRoutes() {
           projectId: project.id,
           issueId: projectParams.issueId,
           actorUserId: c.var.auth.user.localUserId,
+          actorRole: c.var.auth.membership.role,
           body: c.req.valid("json"),
         });
         if (!issue) {
@@ -396,6 +452,10 @@ export function createIssueSheetRoutes() {
         }
         return c.json({ issue }, 200);
       } catch (error) {
+        const mapped = mapIssueStatusTransitionError(c, error);
+        if (mapped) {
+          return mapped;
+        }
         if (error instanceof Error && error.message === "assignee_not_assignable") {
           return badRequestResponse(
             c,

@@ -30,6 +30,7 @@ export const ISSUE_NOTIFICATION_MENTIONED = "mentioned" as const;
 export const ISSUE_NOTIFICATION_COMMENT = "comment" as const;
 export const ISSUE_NOTIFICATION_STATUS_CHANGED = "status_changed" as const;
 export const ISSUE_NOTIFICATION_ASSIGNEE_CHANGED = "assignee_changed" as const;
+export const ISSUE_NOTIFICATION_VERIFICATION_REQUESTED = "verification_requested" as const;
 
 const STATUS_DEDUPE_WINDOW_MS = 5 * 60 * 1000;
 const COMMENT_EXCERPT_MAX_LENGTH = 160;
@@ -230,11 +231,15 @@ export class IssueNotificationService extends ProjectServiceBase {
     type: IssueNotificationType;
     dedupeKeyFor: (recipientUserId: string) => string;
     payloadExtra?: Omit<IssueNotificationPayload, "issueTitle" | "projectId">;
+    /** Recipients to skip even if they are otherwise a watcher, e.g. the verifier already
+     * getting a dedicated `verification_requested` notification for this same transition. */
+    excludeUserIds?: Iterable<string>;
     database?: DatabaseClient;
   }): Promise<void> {
     const database = input.database ?? this.database;
+    const excluded = new Set(input.excludeUserIds ?? []);
     const candidateUserIds = [...new Set(input.recipientUserIds)].filter(
-      (userId) => userId !== input.actorUserId,
+      (userId) => userId !== input.actorUserId && !excluded.has(userId),
     );
     if (candidateUserIds.length === 0) {
       return;
@@ -379,6 +384,9 @@ export class IssueNotificationService extends ProjectServiceBase {
     actorUserId: string;
     previousStatus: string;
     nextStatus: string;
+    /** Skip recipients who already got a dedicated notification for this same transition
+     * (e.g. the verifier, who gets `verification_requested` instead). */
+    excludeUserIds?: string[];
     database?: DatabaseClient;
   }): Promise<void> {
     const database = input.database ?? this.database;
@@ -402,6 +410,43 @@ export class IssueNotificationService extends ProjectServiceBase {
       payloadExtra: {
         previousStatus: input.previousStatus,
         nextStatus: input.nextStatus,
+      },
+      excludeUserIds: input.excludeUserIds,
+      database,
+    });
+  }
+
+  /**
+   * Fired when an issue enters `awaiting_verification`, i.e. a verifier is designated on a
+   * closed (or closing) issue. A state-entry event, not a repeated change, so the dedupe key has
+   * no time bucket — one notification per (issue, verifier) pair is enough.
+   */
+  async notifyVerificationRequested(input: {
+    organizationId: string;
+    projectId: string;
+    issueId: string;
+    actorUserId: string;
+    verifierUserId: string;
+    resolutionReason?: string | null;
+    database?: DatabaseClient;
+  }): Promise<void> {
+    const database = input.database ?? this.database;
+    const issue = await this.loadIssueContext(input, database);
+    if (!issue) {
+      return;
+    }
+
+    await this.notifyRecipients({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      issueId: input.issueId,
+      actorUserId: input.actorUserId,
+      issueTitle: issue.title,
+      recipientUserIds: [input.verifierUserId],
+      type: ISSUE_NOTIFICATION_VERIFICATION_REQUESTED,
+      dedupeKeyFor: () => `verification_requested:${input.issueId}:${input.verifierUserId}`,
+      payloadExtra: {
+        resolutionReason: input.resolutionReason ?? null,
       },
       database,
     });

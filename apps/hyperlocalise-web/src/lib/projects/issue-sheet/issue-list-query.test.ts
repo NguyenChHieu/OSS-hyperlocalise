@@ -77,6 +77,27 @@ describe("buildIssueListFilterConditions", () => {
         query: { view: "all_open" },
       }),
     ).toEqual([inArray(schema.issueSheetIssues.status, ["open", "in_progress"])]);
+
+    expect(
+      buildIssueListFilterConditions({
+        actorUserId,
+        query: { view: "my_verification" },
+      }),
+    ).toEqual([
+      eq(schema.issueSheetIssues.verifierUserId, actorUserId),
+      eq(schema.issueSheetIssues.status, "awaiting_verification"),
+    ]);
+
+    // An explicit status filter overrides the view default, same as every other view.
+    expect(
+      buildIssueListFilterConditions({
+        actorUserId,
+        query: { view: "my_verification", status: "verified" },
+      }),
+    ).toEqual([
+      eq(schema.issueSheetIssues.verifierUserId, actorUserId),
+      eq(schema.issueSheetIssues.status, "verified"),
+    ]);
   });
 
   it("combines project, locale, and assignee filters with translationKeyId", () => {

@@ -97,6 +97,7 @@ describe("IssueNotificationService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: {
         title: "Assign me",
         assigneeUserId,
@@ -123,6 +124,7 @@ describe("IssueNotificationService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: { title: "Dedupe assign" },
     });
 
@@ -162,6 +164,7 @@ describe("IssueNotificationService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: {
         title: "Comment watchers",
         assigneeUserId,
@@ -205,6 +208,7 @@ describe("IssueNotificationService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: {
         title: "Status watch",
         assigneeUserId,
@@ -220,6 +224,7 @@ describe("IssueNotificationService", () => {
       projectId: project.id,
       issueId: issue.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: { status: "in_progress" },
     });
 
@@ -239,6 +244,7 @@ describe("IssueNotificationService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: {
         title: "Watchers",
         assigneeUserId,
@@ -289,6 +295,7 @@ describe("IssueNotificationService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: {
         title: "Reassign me",
         assigneeUserId,
@@ -304,6 +311,7 @@ describe("IssueNotificationService", () => {
       projectId: project.id,
       issueId: issue.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: { assigneeUserId: nextAssigneeUserId },
     });
 
@@ -332,6 +340,7 @@ describe("IssueNotificationService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: {
         title: "Unassign me",
         assigneeUserId,
@@ -347,6 +356,7 @@ describe("IssueNotificationService", () => {
       projectId: project.id,
       issueId: issue.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: { assigneeUserId: null },
     });
 
@@ -388,6 +398,7 @@ describe("IssueNotificationService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: {
         title: "Unwatch stops fan-out",
         assigneeUserId,
@@ -410,6 +421,7 @@ describe("IssueNotificationService", () => {
       projectId: project.id,
       issueId: issue.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: { status: "in_progress" },
     });
 
@@ -448,6 +460,7 @@ describe("IssueNotificationService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: {
         title: "Explicit watcher",
         assigneeUserId,
@@ -470,6 +483,7 @@ describe("IssueNotificationService", () => {
       projectId: project.id,
       issueId: issue.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: { status: "in_progress" },
     });
 
@@ -494,6 +508,7 @@ describe("IssueNotificationService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: {
         title: "Team-scoped mention",
         assigneeUserId,

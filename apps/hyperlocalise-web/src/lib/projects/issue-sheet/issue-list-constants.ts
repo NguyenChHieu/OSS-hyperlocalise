@@ -10,7 +10,13 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-export const ISSUE_LIST_VIEWS = ["my_work", "qa_triage", "source_context", "all_open"] as const;
+export const ISSUE_LIST_VIEWS = [
+  "my_work",
+  "qa_triage",
+  "source_context",
+  "all_open",
+  "my_verification",
+] as const;
 export const ISSUE_LIST_SORT_FIELDS = ["updated_at", "created_at", "priority", "status"] as const;
 export const ISSUE_LIST_SORT_DIRECTIONS = ["asc", "desc"] as const;
 export const ISSUE_PRIORITIES = ["P0", "P1", "P2"] as const;

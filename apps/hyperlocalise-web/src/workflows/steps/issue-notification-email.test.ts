@@ -114,6 +114,7 @@ async function createAssignedNotificationFixture() {
     organizationId: organization.id,
     projectId: project.id,
     actorUserId: actor.id,
+    actorRole: "translator",
     body: {
       title: "Workflow email",
       assigneeUserId,

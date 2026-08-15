@@ -438,6 +438,12 @@ export async function runIssueSheetCsvImport(
           reporterUserId: input.actorUserId,
           assigneeUserId: row.assigneeUserId,
           resolvedAt: row.status === "resolved" || row.status === "wont_fix" ? new Date() : null,
+          // HL-501: CSV rows have no reason column. wont_fix is self-describing (see
+          // issue-status-transitions.ts); resolved rows get the machine sentinel so
+          // `resolutionReason IS NOT NULL` still means "currently closed" for imported issues.
+          resolutionReason: row.status === "resolved" ? "unspecified" : null,
+          resolvedByUserId:
+            row.status === "resolved" || row.status === "wont_fix" ? input.actorUserId : null,
         })
         .returning({ id: schema.issueSheetIssues.id });
 

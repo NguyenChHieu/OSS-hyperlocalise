@@ -12,11 +12,28 @@
  */
 import { z } from "zod";
 
+import { ISSUE_LIST_VIEWS } from "@/lib/projects/issue-sheet/issue-list-constants";
 import { issueSheetImportContentExceedsByteLimit } from "@/lib/projects/issue-sheet/issue-sheet-csv-import";
+import {
+  ISSUE_RESOLUTION_REASONS,
+  ISSUE_STATUSES,
+} from "@/lib/projects/issue-sheet/issue-status-transitions";
 
 import { projectIdParamsSchema } from "./project.schema";
 
-export const issueSheetIssueStatusSchema = z.enum(["open", "in_progress", "resolved", "wont_fix"]);
+export const issueSheetIssueStatusSchema = z.enum(ISSUE_STATUSES);
+// Creation must reach a closed state through the real close flow, not land there directly.
+export const issueSheetCreatableStatusSchema = issueSheetIssueStatusSchema.exclude([
+  "awaiting_verification",
+  "verified",
+]);
+// Client-settable resolution reasons. "won't fix" is the `wont_fix` status, not a reason value —
+// see issue-status-transitions.ts. "unspecified" (issueSheetStoredResolutionReasonSchema below)
+// is a machine sentinel clients never send.
+export const issueSheetResolutionReasonSchema = z.enum(ISSUE_RESOLUTION_REASONS);
+export const issueSheetStoredResolutionReasonSchema = issueSheetResolutionReasonSchema.or(
+  z.literal("unspecified"),
+);
 export const issueSheetIssueTypeSchema = z.enum([
   "general_question",
   "translation_mistake",
@@ -56,7 +73,7 @@ export const issueSheetSortDirSchema = z.enum(["asc", "desc"]);
 export const issueSheetPrioritySchema = z.enum(["P0", "P1", "P2"]);
 
 export const issueSheetQuerySchema = z.object({
-  view: z.enum(["my_work", "qa_triage", "source_context", "all_open"]).optional(),
+  view: z.enum(ISSUE_LIST_VIEWS).optional(),
   status: issueSheetIssueStatusSchema.or(z.literal("all")).optional(),
   issueType: issueSheetIssueTypeSchema.or(z.literal("all")).optional(),
   priority: issueSheetPrioritySchema.optional(),
@@ -77,7 +94,8 @@ export const issueSheetCreateIssueBodySchema = z.object({
   title: z.string().trim().min(1).max(300),
   description: z.string().max(20_000).optional(),
   issueType: issueSheetIssueTypeSchema.optional(),
-  status: issueSheetIssueStatusSchema.optional(),
+  status: issueSheetCreatableStatusSchema.optional(),
+  resolutionReason: issueSheetResolutionReasonSchema.optional(),
   targetLocale: z.string().trim().min(1).max(32).optional(),
   sourcePath: z.string().trim().min(1).max(2048).optional(),
   segmentId: z.string().trim().min(1).max(512).optional(),
@@ -89,6 +107,7 @@ export const issueSheetCreateIssueBodySchema = z.object({
   linkUrl: z.string().trim().min(1).max(2048).optional(),
   externalRef: z.string().trim().min(1).max(512).optional(),
   assigneeUserId: z.string().uuid().optional(),
+  verifierUserId: z.string().uuid().optional(),
   priority: z.enum(["P0", "P1", "P2"]).optional(),
   values: z.record(z.string(), z.unknown()).optional(),
 });
@@ -99,6 +118,9 @@ export const issueSheetUpdateIssueBodySchema = z
     description: z.string().max(20_000).optional(),
     issueType: issueSheetIssueTypeSchema.optional(),
     status: issueSheetIssueStatusSchema.optional(),
+    resolutionReason: issueSheetResolutionReasonSchema.optional(),
+    verifierUserId: nullableUuidSchema.optional(),
+    reopenComment: z.string().trim().min(1).max(4000).nullable().optional(),
     targetLocale: nullableStringSchema.optional(),
     sourcePath: nullableStringSchema.optional(),
     segmentId: nullableStringSchema.optional(),
@@ -225,6 +247,31 @@ export const issueSheetActivitySchema = z.discriminatedUnion("type", [
     type: z.literal("status_changed"),
     previousStatus: z.string(),
     nextStatus: z.string(),
+  }),
+  z.object({
+    ...issueSheetActivityBaseSchema,
+    type: z.literal("resolved"),
+    reason: z.string().nullable(),
+    previousStatus: z.string(),
+    nextStatus: z.string(),
+  }),
+  z.object({
+    ...issueSheetActivityBaseSchema,
+    type: z.literal("verified"),
+    reason: z.string().nullable(),
+  }),
+  z.object({
+    ...issueSheetActivityBaseSchema,
+    type: z.literal("reopened"),
+    clearedReason: z.string().nullable(),
+    previousStatus: z.string(),
+    comment: z.string().nullable(),
+  }),
+  z.object({
+    ...issueSheetActivityBaseSchema,
+    type: z.literal("verifier_changed"),
+    previousVerifier: issueSheetActivityUserSchema.nullable(),
+    nextVerifier: issueSheetActivityUserSchema.nullable(),
   }),
 ]);
 

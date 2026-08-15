@@ -120,6 +120,7 @@ describe("Issue notifications routes", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: user.id,
+      actorRole: "translator",
       body: { title: "Seed issue for notifications" },
     });
 
@@ -209,6 +210,7 @@ describe("Issue notifications routes", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: user.id,
+      actorRole: "translator",
       body: { title: "Hidden later" },
     });
 

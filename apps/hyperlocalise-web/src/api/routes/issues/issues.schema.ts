@@ -19,13 +19,14 @@ import {
   issueSheetSortDirSchema,
   issueSheetSortSchema,
 } from "@/api/routes/project/issue-sheet.schema";
+import { ISSUE_LIST_VIEWS } from "@/lib/projects/issue-sheet/issue-list-constants";
 
 export const organizationIssueSheetIssueParamsSchema = z.object({
   issueId: z.string().uuid(),
 });
 
 export const organizationIssuesQuerySchema = z.object({
-  view: z.enum(["my_work", "qa_triage", "source_context", "all_open"]).optional(),
+  view: z.enum(ISSUE_LIST_VIEWS).optional(),
   status: issueSheetIssueStatusSchema.or(z.literal("all")).optional(),
   issueType: issueSheetIssueTypeSchema.or(z.literal("all")).optional(),
   priority: issueSheetPrioritySchema.optional(),

@@ -126,6 +126,7 @@ describe("IssueSheetCommentService", () => {
       organizationId,
       projectId: project.id,
       actorUserId: user.id,
+      actorRole: "translator",
       body: { title: "Threaded issue", issueType: "general_question" },
     });
 
@@ -199,6 +200,7 @@ describe("IssueSheetCommentService", () => {
       organizationId,
       projectId: project.id,
       actorUserId: user.id,
+      actorRole: "translator",
       body: { title: "Sibling order", issueType: "general_question" },
     });
 
@@ -262,6 +264,7 @@ describe("IssueSheetCommentService", () => {
       organizationId,
       projectId: project.id,
       actorUserId: user.id,
+      actorRole: "translator",
       body: { title: "Mention issue", issueType: "general_question" },
     });
 
@@ -363,12 +366,14 @@ describe("IssueSheetCommentService", () => {
       organizationId: organization.id,
       projectId: accessibleProject!.id,
       actorUserId: adminUser.id,
+      actorRole: "translator",
       body: { title: "Accessible issue", issueType: "general_question" },
     });
     const inaccessibleIssue = await issueSheetService.createIssue({
       organizationId: organization.id,
       projectId: inaccessibleProject!.id,
       actorUserId: adminUser.id,
+      actorRole: "translator",
       body: { title: "Hidden issue", issueType: "general_question" },
     });
 
@@ -424,6 +429,7 @@ describe("IssueSheetCommentService", () => {
       organizationId,
       projectId: project.id,
       actorUserId: user.id,
+      actorRole: "translator",
       body: { title: "Mention on edit", issueType: "general_question" },
     });
 
@@ -480,6 +486,7 @@ describe("IssueSheetCommentService", () => {
       organizationId,
       projectId: project.id,
       actorUserId: user.id,
+      actorRole: "translator",
       body: { title: "Cascade issue", issueType: "general_question" },
     });
 

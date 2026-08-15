@@ -59,6 +59,7 @@ describe("IssueSheetService.listFeed", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: user.id,
+      actorRole: "translator",
       body: {
         title: "Feed service issue",
         issueType: "general_question",
@@ -95,7 +96,8 @@ describe("IssueSheetService.listFeed", () => {
       projectId: project.id,
       issueId: issue.id,
       actorUserId: user.id,
-      body: { status: "resolved" },
+      actorRole: "translator",
+      body: { status: "resolved", resolutionReason: "fixed" },
     });
 
     const feed = await issueSheetService.listFeed({
@@ -122,7 +124,12 @@ describe("IssueSheetService.listFeed", () => {
     }
     expect(feed.items[2]).toMatchObject({
       kind: "activity",
-      activity: { type: "status_changed", previousStatus: "open", nextStatus: "resolved" },
+      activity: {
+        type: "resolved",
+        reason: "fixed",
+        previousStatus: "open",
+        nextStatus: "resolved",
+      },
     });
 
     const firstPage = await issueSheetService.listFeed({

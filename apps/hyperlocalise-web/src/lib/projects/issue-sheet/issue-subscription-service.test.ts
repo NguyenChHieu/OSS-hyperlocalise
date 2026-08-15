@@ -89,6 +89,7 @@ describe("IssueSubscriptionService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: {
         title: "New issue",
         assigneeUserId: memberUserId,
@@ -110,6 +111,7 @@ describe("IssueSubscriptionService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: { title: "Duplicate subscribe" },
     });
 
@@ -139,6 +141,7 @@ describe("IssueSubscriptionService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: {
         title: "Unassign me",
         assigneeUserId: memberUserId,
@@ -150,6 +153,7 @@ describe("IssueSubscriptionService", () => {
       projectId: project.id,
       issueId: issue.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: { assigneeUserId: null },
     });
 
@@ -185,6 +189,7 @@ describe("IssueSubscriptionService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: {
         title: "Reassign subscribe",
         assigneeUserId: memberUserId,
@@ -196,6 +201,7 @@ describe("IssueSubscriptionService", () => {
       projectId: project.id,
       issueId: issue.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: { assigneeUserId: nextAssigneeUserId },
     });
 
@@ -217,6 +223,7 @@ describe("IssueSubscriptionService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: { title: "Comment subscribe" },
     });
 
@@ -254,6 +261,7 @@ describe("IssueSubscriptionService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: {
         title: "List subscribers",
         assigneeUserId: memberUserId,
@@ -279,6 +287,7 @@ describe("IssueSubscriptionService", () => {
       organizationId: organization.id,
       projectId: project.id,
       actorUserId: actor.id,
+      actorRole: "translator",
       body: { title: "Delete cascade" },
     });
 

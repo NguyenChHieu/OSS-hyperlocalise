@@ -51,11 +51,21 @@ import {
   priorityValues,
 } from "./issue-list-query";
 import { issueNotificationService } from "./issue-notification-service";
+import {
+  assertIssueStatusTransition,
+  assertVerifierReassignment,
+  type IssueResolutionReason,
+  type IssueStatus,
+} from "./issue-status-transitions";
 import { issueSubscriptionService } from "./issue-subscription-service";
 
 export const ISSUE_SHEET_ACTIVITY_ASSIGNEE_CHANGED = "assignee_changed" as const;
 export const ISSUE_SHEET_ACTIVITY_ISSUE_CREATED = "issue_created" as const;
 export const ISSUE_SHEET_ACTIVITY_STATUS_CHANGED = "status_changed" as const;
+export const ISSUE_SHEET_ACTIVITY_ISSUE_RESOLVED = "resolved" as const;
+export const ISSUE_SHEET_ACTIVITY_ISSUE_VERIFIED = "verified" as const;
+export const ISSUE_SHEET_ACTIVITY_ISSUE_REOPENED = "reopened" as const;
+export const ISSUE_SHEET_ACTIVITY_VERIFIER_CHANGED = "verifier_changed" as const;
 
 export type IssueSheetActivityUserSummary = {
   userId: string;
@@ -83,6 +93,27 @@ export type IssueSheetActivity =
       type: typeof ISSUE_SHEET_ACTIVITY_STATUS_CHANGED;
       previousStatus: string;
       nextStatus: string;
+    })
+  | (IssueSheetActivityBase & {
+      type: typeof ISSUE_SHEET_ACTIVITY_ISSUE_RESOLVED;
+      reason: string | null;
+      previousStatus: string;
+      nextStatus: string;
+    })
+  | (IssueSheetActivityBase & {
+      type: typeof ISSUE_SHEET_ACTIVITY_ISSUE_VERIFIED;
+      reason: string | null;
+    })
+  | (IssueSheetActivityBase & {
+      type: typeof ISSUE_SHEET_ACTIVITY_ISSUE_REOPENED;
+      clearedReason: string | null;
+      previousStatus: string;
+      comment: string | null;
+    })
+  | (IssueSheetActivityBase & {
+      type: typeof ISSUE_SHEET_ACTIVITY_VERIFIER_CHANGED;
+      previousVerifier: IssueSheetActivityUserSummary | null;
+      nextVerifier: IssueSheetActivityUserSummary | null;
     });
 
 export type IssueSheetFeedItem =
@@ -190,6 +221,11 @@ export type IssueSheetIssue = {
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;
+  resolutionReason: string | null;
+  resolvedByUserId: string | null;
+  verifierUserId: string | null;
+  verifiedAt: string | null;
+  verifiedByUserId: string | null;
   values: Record<string, unknown>;
   isWatching: boolean;
 };
@@ -202,7 +238,9 @@ export type IssueSheetListResult = {
     total: number;
     open: number;
     inProgress: number;
+    awaitingVerification: number;
     resolved: number;
+    verified: number;
     wontFix: number;
   };
 };
@@ -270,6 +308,11 @@ type IssueRow = {
   createdAt: Date;
   updatedAt: Date;
   resolvedAt: Date | null;
+  resolutionReason: string | null;
+  resolvedByUserId: string | null;
+  verifierUserId: string | null;
+  verifiedAt: Date | null;
+  verifiedByUserId: string | null;
 };
 
 function formatUser(row: {
@@ -321,6 +364,11 @@ function mapIssueRow(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
+    resolutionReason: row.resolutionReason,
+    resolvedByUserId: row.resolvedByUserId,
+    verifierUserId: row.verifierUserId,
+    verifiedAt: row.verifiedAt?.toISOString() ?? null,
+    verifiedByUserId: row.verifiedByUserId,
     values,
     isWatching,
   };
@@ -711,6 +759,23 @@ export class IssueSheetService {
           userIds.add(payload.nextAssigneeUserId);
         }
       }
+      if (
+        row.type === ISSUE_SHEET_ACTIVITY_VERIFIER_CHANGED &&
+        row.payload &&
+        typeof row.payload === "object" &&
+        "previousVerifierUserId" in row.payload
+      ) {
+        const payload = row.payload as {
+          previousVerifierUserId?: unknown;
+          nextVerifierUserId?: unknown;
+        };
+        if (typeof payload.previousVerifierUserId === "string") {
+          userIds.add(payload.previousVerifierUserId);
+        }
+        if (typeof payload.nextVerifierUserId === "string") {
+          userIds.add(payload.nextVerifierUserId);
+        }
+      }
     }
 
     const userRows =
@@ -778,6 +843,106 @@ export class IssueSheetService {
         continue;
       }
 
+      if (row.type === ISSUE_SHEET_ACTIVITY_ISSUE_RESOLVED) {
+        const reason =
+          "reason" in payload && typeof payload.reason === "string" ? payload.reason : null;
+        const previousStatus =
+          "previousStatus" in payload && typeof payload.previousStatus === "string"
+            ? payload.previousStatus
+            : null;
+        const nextStatus =
+          "nextStatus" in payload && typeof payload.nextStatus === "string"
+            ? payload.nextStatus
+            : null;
+        if (!previousStatus || !nextStatus) {
+          continue;
+        }
+        activities.push({
+          id: row.id,
+          type: ISSUE_SHEET_ACTIVITY_ISSUE_RESOLVED,
+          actor,
+          reason,
+          previousStatus,
+          nextStatus,
+          createdAt,
+        });
+        continue;
+      }
+
+      if (row.type === ISSUE_SHEET_ACTIVITY_ISSUE_VERIFIED) {
+        const reason =
+          "reason" in payload && typeof payload.reason === "string" ? payload.reason : null;
+        activities.push({
+          id: row.id,
+          type: ISSUE_SHEET_ACTIVITY_ISSUE_VERIFIED,
+          actor,
+          reason,
+          createdAt,
+        });
+        continue;
+      }
+
+      if (row.type === ISSUE_SHEET_ACTIVITY_ISSUE_REOPENED) {
+        const clearedReason =
+          "clearedReason" in payload && typeof payload.clearedReason === "string"
+            ? payload.clearedReason
+            : null;
+        const previousStatus =
+          "previousStatus" in payload && typeof payload.previousStatus === "string"
+            ? payload.previousStatus
+            : null;
+        const comment =
+          "comment" in payload && typeof payload.comment === "string" ? payload.comment : null;
+        if (!previousStatus) {
+          continue;
+        }
+        activities.push({
+          id: row.id,
+          type: ISSUE_SHEET_ACTIVITY_ISSUE_REOPENED,
+          actor,
+          clearedReason,
+          previousStatus,
+          comment,
+          createdAt,
+        });
+        continue;
+      }
+
+      if (row.type === ISSUE_SHEET_ACTIVITY_VERIFIER_CHANGED) {
+        const previousId =
+          "previousVerifierUserId" in payload && typeof payload.previousVerifierUserId === "string"
+            ? payload.previousVerifierUserId
+            : null;
+        const nextId =
+          "nextVerifierUserId" in payload && typeof payload.nextVerifierUserId === "string"
+            ? payload.nextVerifierUserId
+            : null;
+        const previous = previousId ? usersById.get(previousId) : undefined;
+        const next = nextId ? usersById.get(nextId) : undefined;
+
+        activities.push({
+          id: row.id,
+          type: ISSUE_SHEET_ACTIVITY_VERIFIER_CHANGED,
+          actor,
+          previousVerifier: this.mapActivityUser({
+            userId: previousId,
+            firstName: previous?.firstName ?? null,
+            lastName: previous?.lastName ?? null,
+            email: previous?.email ?? null,
+            avatarUrl: previous?.avatarUrl ?? null,
+          }),
+          nextVerifier: this.mapActivityUser({
+            userId: nextId,
+            firstName: next?.firstName ?? null,
+            lastName: next?.lastName ?? null,
+            email: next?.email ?? null,
+            avatarUrl: next?.avatarUrl ?? null,
+          }),
+          createdAt,
+        });
+        continue;
+      }
+
       if (row.type !== ISSUE_SHEET_ACTIVITY_ASSIGNEE_CHANGED) {
         continue;
       }
@@ -822,6 +987,7 @@ export class IssueSheetService {
     organizationId: string;
     projectId: string;
     actorUserId: string;
+    actorRole: OrganizationMembershipRole;
     body: IssueSheetCreateIssueBody;
   }): Promise<IssueSheetIssue> {
     await this.ensureStarterColumns(input);
@@ -850,6 +1016,45 @@ export class IssueSheetService {
       }
     }
 
+    const requestedVerifierUserId = input.body.verifierUserId ?? null;
+    if (requestedVerifierUserId) {
+      const assignableVerifier = await assertAssignableIssueAssignee({
+        organizationId: input.organizationId,
+        projectId: input.projectId,
+        assigneeUserId: requestedVerifierUserId,
+        database: this.database,
+      });
+      if (isErr(assignableVerifier)) {
+        throw new Error(assignableVerifier.error.code);
+      }
+    }
+
+    // Creation always departs from "open", so the transition guard's reason rules apply
+    // unchanged: reuse it instead of duplicating the reason-required/not-allowed logic here.
+    const requestedStatus = (input.body.status ?? "open") as IssueStatus;
+    const targetStatus: IssueStatus =
+      requestedStatus === "resolved" && requestedVerifierUserId
+        ? "awaiting_verification"
+        : requestedStatus;
+    const requestedReason = input.body.resolutionReason as IssueResolutionReason | undefined;
+    if (targetStatus !== "open") {
+      const reasonCheck = assertIssueStatusTransition({
+        from: "open",
+        to: targetStatus,
+        reason: requestedReason,
+        actorUserId: input.actorUserId,
+        actorRole: input.actorRole,
+        verifierUserId: null,
+      });
+      if (isErr(reasonCheck)) {
+        throw new Error(reasonCheck.error.code);
+      }
+    }
+    const entersClosed =
+      targetStatus === "resolved" ||
+      targetStatus === "awaiting_verification" ||
+      targetStatus === "wont_fix";
+
     const issueId = await this.database.transaction(async (tx) => {
       const [issue] = await tx
         .insert(schema.issueSheetIssues)
@@ -859,7 +1064,7 @@ export class IssueSheetService {
           title: input.body.title,
           description: input.body.description ?? "",
           issueType: input.body.issueType ?? "general_question",
-          status: input.body.status ?? "open",
+          status: targetStatus,
           targetLocale: input.body.targetLocale ?? null,
           sourcePath: input.body.sourcePath ?? null,
           segmentId: input.body.segmentId ?? null,
@@ -872,10 +1077,11 @@ export class IssueSheetService {
           externalRef: input.body.externalRef ?? null,
           reporterUserId: input.actorUserId,
           assigneeUserId,
-          resolvedAt:
-            input.body.status === "resolved" || input.body.status === "wont_fix"
-              ? new Date()
-              : null,
+          verifierUserId: requestedVerifierUserId,
+          resolvedAt: entersClosed ? new Date() : null,
+          resolutionReason:
+            entersClosed && targetStatus !== "wont_fix" ? (requestedReason ?? null) : null,
+          resolvedByUserId: entersClosed ? input.actorUserId : null,
         })
         .onConflictDoNothing()
         .returning({ id: schema.issueSheetIssues.id });
@@ -908,11 +1114,44 @@ export class IssueSheetService {
         });
       }
 
+      if (entersClosed) {
+        // Issue was created already closed: one "resolved" event captures both the reason and
+        // (via nextStatus) whether a verifier was designated, so no separate verifier_changed
+        // event is needed here.
+        await this.insertIssueResolvedActivity({
+          database: tx,
+          organizationId: input.organizationId,
+          projectId: input.projectId,
+          issueId: issue.id,
+          actorUserId: input.actorUserId,
+          reason: targetStatus === "wont_fix" ? null : (requestedReason ?? null),
+          previousStatus: "open",
+          nextStatus: targetStatus,
+          createdAt: new Date(activityCreatedAt.getTime() + 1),
+        });
+      } else if (requestedVerifierUserId) {
+        // Verifier pre-designated on an issue that was created open/in_progress.
+        await this.insertVerifierChangedActivity({
+          database: tx,
+          organizationId: input.organizationId,
+          projectId: input.projectId,
+          issueId: issue.id,
+          actorUserId: input.actorUserId,
+          previousVerifierUserId: null,
+          nextVerifierUserId: requestedVerifierUserId,
+          createdAt: new Date(activityCreatedAt.getTime() + 1),
+        });
+      }
+
       await issueSubscriptionService.subscribeMany({
         organizationId: input.organizationId,
         projectId: input.projectId,
         issueId: issue.id,
-        userIds: [input.actorUserId, ...(assigneeUserId ? [assigneeUserId] : [])],
+        userIds: [
+          input.actorUserId,
+          ...(assigneeUserId ? [assigneeUserId] : []),
+          ...(requestedVerifierUserId ? [requestedVerifierUserId] : []),
+        ],
         database: tx,
       });
 
@@ -968,6 +1207,19 @@ export class IssueSheetService {
       );
     }
 
+    if (targetStatus === "awaiting_verification" && requestedVerifierUserId) {
+      await issueNotificationService.safeFanOut("verification_requested_on_create", () =>
+        issueNotificationService.notifyVerificationRequested({
+          organizationId: input.organizationId,
+          projectId: input.projectId,
+          issueId,
+          actorUserId: input.actorUserId,
+          verifierUserId: requestedVerifierUserId,
+          resolutionReason: requestedReason ?? null,
+        }),
+      );
+    }
+
     const created = await this.getIssueById({
       organizationId: input.organizationId,
       projectId: input.projectId,
@@ -985,16 +1237,9 @@ export class IssueSheetService {
     projectId: string;
     issueId: string;
     actorUserId: string;
+    actorRole: OrganizationMembershipRole;
     body: IssueSheetUpdateIssueBody;
   }): Promise<IssueSheetIssue | null> {
-    const nextStatus = input.body.status;
-    const resolvedAt =
-      nextStatus === "resolved" || nextStatus === "wont_fix"
-        ? new Date()
-        : nextStatus === "open" || nextStatus === "in_progress"
-          ? null
-          : undefined;
-
     const assigneeChanging = Object.hasOwn(input.body, "assigneeUserId");
     const requestedAssigneeUserId = assigneeChanging ? (input.body.assigneeUserId ?? null) : null;
 
@@ -1010,6 +1255,21 @@ export class IssueSheetService {
       }
     }
 
+    const verifierChanging = Object.hasOwn(input.body, "verifierUserId");
+    const requestedVerifierUserId = verifierChanging ? (input.body.verifierUserId ?? null) : null;
+
+    if (verifierChanging && requestedVerifierUserId) {
+      const assignableVerifier = await assertAssignableIssueAssignee({
+        organizationId: input.organizationId,
+        projectId: input.projectId,
+        assigneeUserId: requestedVerifierUserId,
+        database: this.database,
+      });
+      if (isErr(assignableVerifier)) {
+        throw new Error(assignableVerifier.error.code);
+      }
+    }
+
     const translationKeyChanging = Object.hasOwn(input.body, "translationKeyId");
     if (translationKeyChanging && input.body.translationKeyId) {
       await this.assertTranslationKeyInProject({
@@ -1019,12 +1279,22 @@ export class IssueSheetService {
       });
     }
 
+    const clientStatusRequested = Object.hasOwn(input.body, "status") && input.body.status != null;
+    const requestedReason = input.body.resolutionReason as IssueResolutionReason | undefined;
+    const reopenComment = input.body.reopenComment ?? null;
+    const now = new Date();
+
     const found = await this.database.transaction(async (tx) => {
+      // Widened beyond {id, status, assigneeUserId}: verifierUserId feeds the permission check,
+      // resolutionReason feeds the verified/reopened activity payloads. Reading them inside this
+      // same locked SELECT is what makes the transition guard race-safe.
       const [current] = await tx
         .select({
           id: schema.issueSheetIssues.id,
           status: schema.issueSheetIssues.status,
           assigneeUserId: schema.issueSheetIssues.assigneeUserId,
+          verifierUserId: schema.issueSheetIssues.verifierUserId,
+          resolutionReason: schema.issueSheetIssues.resolutionReason,
         })
         .from(schema.issueSheetIssues)
         .where(
@@ -1041,16 +1311,96 @@ export class IssueSheetService {
         return null;
       }
 
+      const currentStatus = current.status as IssueStatus;
       const nextAssigneeUserId = assigneeChanging
         ? requestedAssigneeUserId
         : current.assigneeUserId;
-      const statusChanging =
-        Object.hasOwn(input.body, "status") &&
-        input.body.status != null &&
-        input.body.status !== current.status;
-      const nextStatusValue = statusChanging ? input.body.status! : current.status;
       const assigneeActuallyChanged =
         assigneeChanging && current.assigneeUserId !== nextAssigneeUserId;
+      const nextVerifierUserId = verifierChanging
+        ? requestedVerifierUserId
+        : current.verifierUserId;
+      const verifierActuallyChanged =
+        verifierChanging && current.verifierUserId !== nextVerifierUserId;
+
+      if (verifierActuallyChanged) {
+        const reassignment = assertVerifierReassignment({
+          currentVerifierUserId: current.verifierUserId,
+          nextVerifierUserId,
+          actorUserId: input.actorUserId,
+          actorRole: input.actorRole,
+        });
+        if (isErr(reassignment)) {
+          throw new Error(reassignment.error.code);
+        }
+      }
+
+      // Server-side normalization: a client closing with "resolved" lands on
+      // awaiting_verification when a verifier ends up designated by this same request. Clients
+      // never author "awaiting_verification" directly. A verifier newly designated on an
+      // already-resolved issue with no explicit status field in the body triggers the same
+      // promotion.
+      let targetStatus: IssueStatus = currentStatus;
+      if (clientStatusRequested) {
+        const requestedStatus = input.body.status as IssueStatus;
+        targetStatus =
+          requestedStatus === "resolved" && nextVerifierUserId
+            ? "awaiting_verification"
+            : requestedStatus;
+      } else if (
+        verifierActuallyChanged &&
+        currentStatus === "resolved" &&
+        nextVerifierUserId != null
+      ) {
+        targetStatus = "awaiting_verification";
+      }
+      const statusChanging = targetStatus !== currentStatus;
+
+      if (statusChanging) {
+        const transition = assertIssueStatusTransition({
+          from: currentStatus,
+          to: targetStatus,
+          reason: requestedReason,
+          actorUserId: input.actorUserId,
+          actorRole: input.actorRole,
+          verifierUserId: current.verifierUserId,
+        });
+        if (isErr(transition)) {
+          throw new Error(transition.error.code);
+        }
+      }
+
+      const enteringClosedFromOpen =
+        statusChanging &&
+        (currentStatus === "open" || currentStatus === "in_progress") &&
+        (targetStatus === "resolved" ||
+          targetStatus === "awaiting_verification" ||
+          targetStatus === "wont_fix");
+      const promotingToAwaitingVerification =
+        statusChanging && currentStatus === "resolved" && targetStatus === "awaiting_verification";
+      const enteringVerifiedFromAwaiting =
+        statusChanging && currentStatus === "awaiting_verification" && targetStatus === "verified";
+      const reopening = statusChanging && targetStatus === "open" && currentStatus !== "open";
+
+      const resolutionFieldsPatch = reopening
+        ? {
+            resolutionReason: null,
+            resolvedAt: null,
+            resolvedByUserId: null,
+            verifiedAt: null,
+            verifiedByUserId: null,
+          }
+        : enteringClosedFromOpen
+          ? {
+              resolutionReason: targetStatus === "wont_fix" ? null : (requestedReason ?? null),
+              resolvedAt: now,
+              resolvedByUserId: input.actorUserId,
+              verifiedAt: null,
+              verifiedByUserId: null,
+            }
+          : enteringVerifiedFromAwaiting
+            ? { verifiedAt: now, verifiedByUserId: input.actorUserId }
+            : {};
 
       await tx
         .update(schema.issueSheetIssues)
@@ -1058,7 +1408,7 @@ export class IssueSheetService {
           title: input.body.title,
           description: input.body.description,
           issueType: input.body.issueType,
-          status: input.body.status,
+          status: statusChanging ? targetStatus : undefined,
           targetLocale: input.body.targetLocale,
           sourcePath: input.body.sourcePath,
           segmentId: input.body.segmentId,
@@ -1069,7 +1419,8 @@ export class IssueSheetService {
           linkLabel: input.body.linkLabel,
           linkUrl: input.body.linkUrl,
           ...(assigneeChanging ? { assigneeUserId: nextAssigneeUserId } : {}),
-          ...(resolvedAt !== undefined ? { resolvedAt } : {}),
+          ...(verifierChanging ? { verifierUserId: nextVerifierUserId } : {}),
+          ...resolutionFieldsPatch,
         })
         .where(
           and(
@@ -1080,14 +1431,67 @@ export class IssueSheetService {
         );
 
       if (statusChanging) {
-        await this.insertStatusChangedActivity({
+        if (enteringClosedFromOpen) {
+          await this.insertIssueResolvedActivity({
+            database: tx,
+            organizationId: input.organizationId,
+            projectId: input.projectId,
+            issueId: input.issueId,
+            actorUserId: input.actorUserId,
+            reason: targetStatus === "wont_fix" ? null : (requestedReason ?? null),
+            previousStatus: currentStatus,
+            nextStatus: targetStatus,
+          });
+        } else if (promotingToAwaitingVerification) {
+          await this.insertVerifierChangedActivity({
+            database: tx,
+            organizationId: input.organizationId,
+            projectId: input.projectId,
+            issueId: input.issueId,
+            actorUserId: input.actorUserId,
+            previousVerifierUserId: current.verifierUserId,
+            nextVerifierUserId,
+          });
+        } else if (enteringVerifiedFromAwaiting) {
+          await this.insertIssueVerifiedActivity({
+            database: tx,
+            organizationId: input.organizationId,
+            projectId: input.projectId,
+            issueId: input.issueId,
+            actorUserId: input.actorUserId,
+            reason: current.resolutionReason,
+          });
+        } else if (reopening) {
+          await this.insertIssueReopenedActivity({
+            database: tx,
+            organizationId: input.organizationId,
+            projectId: input.projectId,
+            issueId: input.issueId,
+            actorUserId: input.actorUserId,
+            clearedReason: current.resolutionReason,
+            previousStatus: currentStatus,
+            comment: reopenComment,
+          });
+        } else {
+          await this.insertStatusChangedActivity({
+            database: tx,
+            organizationId: input.organizationId,
+            projectId: input.projectId,
+            issueId: input.issueId,
+            actorUserId: input.actorUserId,
+            previousStatus: currentStatus,
+            nextStatus: targetStatus,
+          });
+        }
+      } else if (verifierActuallyChanged) {
+        await this.insertVerifierChangedActivity({
           database: tx,
           organizationId: input.organizationId,
           projectId: input.projectId,
           issueId: input.issueId,
           actorUserId: input.actorUserId,
-          previousStatus: current.status,
-          nextStatus: nextStatusValue,
+          previousVerifierUserId: current.verifierUserId,
+          nextVerifierUserId,
         });
       }
 
@@ -1105,11 +1509,20 @@ export class IssueSheetService {
 
       return {
         statusChanging,
-        previousStatus: current.status,
-        nextStatus: nextStatusValue,
+        previousStatus: currentStatus,
+        nextStatus: targetStatus,
+        enteringVerification: statusChanging && targetStatus === "awaiting_verification",
+        resolutionReason: enteringClosedFromOpen
+          ? targetStatus === "wont_fix"
+            ? null
+            : (requestedReason ?? null)
+          : current.resolutionReason,
         assigneeActuallyChanged,
         previousAssigneeUserId: current.assigneeUserId,
         nextAssigneeUserId,
+        verifierActuallyChanged,
+        previousVerifierUserId: current.verifierUserId,
+        nextVerifierUserId,
       };
     });
 
@@ -1126,7 +1539,18 @@ export class IssueSheetService {
       });
     }
 
+    if (found.verifierActuallyChanged && found.nextVerifierUserId) {
+      await issueSubscriptionService.subscribe({
+        organizationId: input.organizationId,
+        projectId: input.projectId,
+        issueId: input.issueId,
+        userId: found.nextVerifierUserId,
+      });
+    }
+
     if (found.statusChanging) {
+      // The verifier gets a dedicated verification_requested notification below on this same
+      // transition; exclude them here so they don't also get a generic status_changed one.
       await issueNotificationService.safeFanOut("status_changed", () =>
         issueNotificationService.notifyStatusChanged({
           organizationId: input.organizationId,
@@ -1135,6 +1559,23 @@ export class IssueSheetService {
           actorUserId: input.actorUserId,
           previousStatus: found.previousStatus,
           nextStatus: found.nextStatus,
+          excludeUserIds:
+            found.enteringVerification && found.nextVerifierUserId
+              ? [found.nextVerifierUserId]
+              : undefined,
+        }),
+      );
+    }
+
+    if (found.enteringVerification && found.nextVerifierUserId) {
+      await issueNotificationService.safeFanOut("verification_requested", () =>
+        issueNotificationService.notifyVerificationRequested({
+          organizationId: input.organizationId,
+          projectId: input.projectId,
+          issueId: input.issueId,
+          actorUserId: input.actorUserId,
+          verifierUserId: found.nextVerifierUserId!,
+          resolutionReason: found.resolutionReason,
         }),
       );
     }
@@ -1322,6 +1763,100 @@ export class IssueSheetService {
         previousStatus: input.previousStatus,
         nextStatus: input.nextStatus,
       },
+    });
+  }
+
+  private async insertIssueResolvedActivity(input: {
+    database: DatabaseClient;
+    organizationId: string;
+    projectId: string;
+    issueId: string;
+    actorUserId: string;
+    reason: string | null;
+    previousStatus: string;
+    nextStatus: string;
+    createdAt?: Date;
+  }) {
+    await input.database.insert(schema.issueSheetActivities).values({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      issueId: input.issueId,
+      actorUserId: input.actorUserId,
+      type: ISSUE_SHEET_ACTIVITY_ISSUE_RESOLVED,
+      payload: {
+        reason: input.reason,
+        previousStatus: input.previousStatus,
+        nextStatus: input.nextStatus,
+      },
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
+    });
+  }
+
+  private async insertIssueVerifiedActivity(input: {
+    database: DatabaseClient;
+    organizationId: string;
+    projectId: string;
+    issueId: string;
+    actorUserId: string;
+    reason: string | null;
+  }) {
+    await input.database.insert(schema.issueSheetActivities).values({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      issueId: input.issueId,
+      actorUserId: input.actorUserId,
+      type: ISSUE_SHEET_ACTIVITY_ISSUE_VERIFIED,
+      payload: {
+        reason: input.reason,
+      },
+    });
+  }
+
+  private async insertIssueReopenedActivity(input: {
+    database: DatabaseClient;
+    organizationId: string;
+    projectId: string;
+    issueId: string;
+    actorUserId: string;
+    clearedReason: string | null;
+    previousStatus: string;
+    comment: string | null;
+  }) {
+    await input.database.insert(schema.issueSheetActivities).values({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      issueId: input.issueId,
+      actorUserId: input.actorUserId,
+      type: ISSUE_SHEET_ACTIVITY_ISSUE_REOPENED,
+      payload: {
+        clearedReason: input.clearedReason,
+        previousStatus: input.previousStatus,
+        comment: input.comment,
+      },
+    });
+  }
+
+  private async insertVerifierChangedActivity(input: {
+    database: DatabaseClient;
+    organizationId: string;
+    projectId: string;
+    issueId: string;
+    actorUserId: string;
+    previousVerifierUserId: string | null;
+    nextVerifierUserId: string | null;
+    createdAt?: Date;
+  }) {
+    await input.database.insert(schema.issueSheetActivities).values({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      issueId: input.issueId,
+      actorUserId: input.actorUserId,
+      type: ISSUE_SHEET_ACTIVITY_VERIFIER_CHANGED,
+      payload: {
+        previousVerifierUserId: input.previousVerifierUserId,
+        nextVerifierUserId: input.nextVerifierUserId,
+      },
+      ...(input.createdAt ? { createdAt: input.createdAt } : {}),
     });
   }
 
@@ -1589,6 +2124,11 @@ export class IssueSheetService {
         createdAt: schema.issueSheetIssues.createdAt,
         updatedAt: schema.issueSheetIssues.updatedAt,
         resolvedAt: schema.issueSheetIssues.resolvedAt,
+        resolutionReason: schema.issueSheetIssues.resolutionReason,
+        resolvedByUserId: schema.issueSheetIssues.resolvedByUserId,
+        verifierUserId: schema.issueSheetIssues.verifierUserId,
+        verifiedAt: schema.issueSheetIssues.verifiedAt,
+        verifiedByUserId: schema.issueSheetIssues.verifiedByUserId,
       })
       .from(schema.issueSheetIssues)
       .leftJoin(schema.users, eq(schema.issueSheetIssues.reporterUserId, schema.users.id))
@@ -1694,7 +2234,9 @@ export class IssueSheetService {
       total: rows.reduce((sum, row) => sum + row.count, 0),
       open: counts.get("open") ?? 0,
       inProgress: counts.get("in_progress") ?? 0,
+      awaitingVerification: counts.get("awaiting_verification") ?? 0,
       resolved: counts.get("resolved") ?? 0,
+      verified: counts.get("verified") ?? 0,
       wontFix: counts.get("wont_fix") ?? 0,
     };
   }

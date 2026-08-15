@@ -86,6 +86,63 @@ Valid row,Open,EXT-2`,
     await expect(countImportedIssues(organization.id, project.id)).resolves.toBe(0);
   });
 
+  it("gives resolved rows the unspecified reason sentinel and leaves wont_fix rows without one", async () => {
+    const { organization, project, user } = await projectFixture.createStoredProjectFixture();
+    const service = new IssueSheetService();
+
+    const result = await runIssueSheetCsvImport(service, {
+      organizationId: organization.id,
+      projectId: project.id,
+      actorUserId: user.id,
+      body: {
+        content: `Title,Status,External ID
+Fixed already,Resolved,EXT-RESOLVED
+Not our bug,Won't Fix,EXT-WONTFIX`,
+        dryRun: false,
+        mapping: [
+          systemMapping("Title", { kind: "system", field: "title" }),
+          systemMapping("Status", { kind: "system", field: "status" }),
+          systemMapping("External ID", { kind: "system", field: "external_ref" }),
+        ],
+        options: { skipInvalidRows: false },
+      },
+    });
+
+    expect(result).toMatchObject({ totalRows: 2, created: 2, skippedInvalid: 0 });
+
+    const rows = await db
+      .select({
+        externalRef: schema.issueSheetIssues.externalRef,
+        status: schema.issueSheetIssues.status,
+        resolutionReason: schema.issueSheetIssues.resolutionReason,
+        resolvedAt: schema.issueSheetIssues.resolvedAt,
+        resolvedByUserId: schema.issueSheetIssues.resolvedByUserId,
+      })
+      .from(schema.issueSheetIssues)
+      .where(
+        and(
+          eq(schema.issueSheetIssues.organizationId, organization.id),
+          eq(schema.issueSheetIssues.projectId, project.id),
+        ),
+      );
+
+    const resolvedRow = rows.find((row) => row.externalRef === "EXT-RESOLVED");
+    expect(resolvedRow).toMatchObject({
+      status: "resolved",
+      resolutionReason: "unspecified",
+      resolvedByUserId: user.id,
+    });
+    expect(resolvedRow?.resolvedAt).not.toBeNull();
+
+    const wontFixRow = rows.find((row) => row.externalRef === "EXT-WONTFIX");
+    expect(wontFixRow).toMatchObject({
+      status: "wont_fix",
+      resolutionReason: null,
+      resolvedByUserId: user.id,
+    });
+    expect(wontFixRow?.resolvedAt).not.toBeNull();
+  });
+
   it("skips duplicate external references within the same csv import", async () => {
     const { organization, project, user } = await projectFixture.createStoredProjectFixture();
     const service = new IssueSheetService();

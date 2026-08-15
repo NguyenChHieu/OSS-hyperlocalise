@@ -121,6 +121,7 @@ async function createAssignedNotification() {
     organizationId: organization.id,
     projectId: project.id,
     actorUserId: actor.id,
+    actorRole: "translator",
     body: {
       title: "Email me",
       assigneeUserId,

@@ -82,6 +82,21 @@ export const issueSheetIssues = pgTable(
       .defaultNow()
       .$onUpdateFn(() => new Date()),
     resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    // HL-501: resolution reason + verification. `status` carries `awaiting_verification` /
+    // `verified` / `wont_fix` as first-class states (see issue-status-transitions.ts); this
+    // column only ever holds a reason for the four non-wont_fix closing reasons, or the
+    // machine sentinel "unspecified" for legacy/CSV rows.
+    resolutionReason: text("resolution_reason"),
+    resolvedByUserId: uuid("resolved_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    verifierUserId: uuid("verifier_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    verifiedByUserId: uuid("verified_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => [
     index("idx_issue_sheet_issues_org_project_status").on(
@@ -96,6 +111,8 @@ export const issueSheetIssues = pgTable(
     uniqueIndex("issue_sheet_issues_project_external_ref_key")
       .on(table.projectId, table.externalRef)
       .where(sql`${table.externalRef} IS NOT NULL`),
+    // Powers the "My verification" queue: verifierUserId = actor AND status = awaiting_verification.
+    index("idx_issue_sheet_issues_verifier_status").on(table.verifierUserId, table.status),
   ],
 );
 
@@ -235,10 +252,35 @@ export type IssueSheetActivityStatusChangedPayload = {
   nextStatus: string;
 };
 
+export type IssueSheetActivityIssueResolvedPayload = {
+  reason: string;
+  previousStatus: string;
+  nextStatus: string;
+};
+
+export type IssueSheetActivityIssueVerifiedPayload = {
+  reason: string | null;
+};
+
+export type IssueSheetActivityIssueReopenedPayload = {
+  clearedReason: string | null;
+  previousStatus: string;
+  comment: string | null;
+};
+
+export type IssueSheetActivityVerifierChangedPayload = {
+  previousVerifierUserId: string | null;
+  nextVerifierUserId: string | null;
+};
+
 export type IssueSheetActivityPayload =
   | IssueSheetActivityAssigneeChangedPayload
   | IssueSheetActivityIssueCreatedPayload
-  | IssueSheetActivityStatusChangedPayload;
+  | IssueSheetActivityStatusChangedPayload
+  | IssueSheetActivityIssueResolvedPayload
+  | IssueSheetActivityIssueVerifiedPayload
+  | IssueSheetActivityIssueReopenedPayload
+  | IssueSheetActivityVerifierChangedPayload;
 
 /**
  * Stores non-comment issue events (assignee changes, and later status/link events)
@@ -282,7 +324,8 @@ export type IssueNotificationType =
   | "mentioned"
   | "comment"
   | "status_changed"
-  | "assignee_changed";
+  | "assignee_changed"
+  | "verification_requested";
 
 export type IssueNotificationPayload = {
   issueTitle: string;
@@ -293,6 +336,7 @@ export type IssueNotificationPayload = {
   nextStatus?: string;
   previousAssigneeUserId?: string | null;
   nextAssigneeUserId?: string | null;
+  resolutionReason?: string | null;
 };
 
 /**

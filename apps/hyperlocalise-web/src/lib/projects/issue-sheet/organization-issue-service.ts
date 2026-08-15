@@ -63,7 +63,9 @@ export type OrganizationIssueListResult = {
     total: number;
     open: number;
     inProgress: number;
+    awaitingVerification: number;
     resolved: number;
+    verified: number;
     wontFix: number;
   };
 };
@@ -289,7 +291,9 @@ export class OrganizationIssueService {
       total: rows.reduce((sum, row) => sum + row.count, 0),
       open: counts.get("open") ?? 0,
       inProgress: counts.get("in_progress") ?? 0,
+      awaitingVerification: counts.get("awaiting_verification") ?? 0,
       resolved: counts.get("resolved") ?? 0,
+      verified: counts.get("verified") ?? 0,
       wontFix: counts.get("wont_fix") ?? 0,
     };
   }

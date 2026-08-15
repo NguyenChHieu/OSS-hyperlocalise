@@ -37,7 +37,14 @@ export {
 
 export type IssueListFilterQuery = {
   view?: IssueListView;
-  status?: "open" | "in_progress" | "resolved" | "wont_fix" | "all";
+  status?:
+    | "open"
+    | "in_progress"
+    | "awaiting_verification"
+    | "resolved"
+    | "verified"
+    | "wont_fix"
+    | "all";
   issueType?:
     | "general_question"
     | "translation_mistake"
@@ -80,12 +87,15 @@ const priorityRankExpression = sql<number>`case
   else 3
 end`;
 
+// Awaiting-verification sits ahead of resolved/verified: it still needs someone's attention.
 const statusRankExpression = sql<number>`case
   when ${schema.issueSheetIssues.status} = 'open' then 0
   when ${schema.issueSheetIssues.status} = 'in_progress' then 1
-  when ${schema.issueSheetIssues.status} = 'resolved' then 2
-  when ${schema.issueSheetIssues.status} = 'wont_fix' then 3
-  else 4
+  when ${schema.issueSheetIssues.status} = 'awaiting_verification' then 2
+  when ${schema.issueSheetIssues.status} = 'resolved' then 3
+  when ${schema.issueSheetIssues.status} = 'verified' then 4
+  when ${schema.issueSheetIssues.status} = 'wont_fix' then 5
+  else 6
 end`;
 
 export function buildIssueListFilterConditions(input: {
@@ -127,6 +137,11 @@ export function buildIssueListFilterConditions(input: {
   } else if (view === "all_open") {
     if (!hasStatusFilter) {
       conditions.push(inArray(schema.issueSheetIssues.status, [...OPEN_STATUSES]));
+    }
+  } else if (view === "my_verification") {
+    conditions.push(eq(schema.issueSheetIssues.verifierUserId, input.actorUserId));
+    if (!hasStatusFilter) {
+      conditions.push(eq(schema.issueSheetIssues.status, "awaiting_verification"));
     }
   }
 

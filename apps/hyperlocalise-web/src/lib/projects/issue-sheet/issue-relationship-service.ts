@@ -54,6 +54,7 @@ export type IssueRelationship = {
 };
 
 export type IssueRelationshipError =
+  | { code: "issue_not_found" }
   | { code: "relationship_target_is_self" }
   | { code: "related_issue_not_found" }
   | { code: "issue_already_marked_duplicate" }
@@ -91,6 +92,31 @@ export class IssueRelationshipService extends ProjectServiceBase {
     super(database, "issue-relationship-service");
   }
 
+  /**
+   * The route authorizes the project id in the URL, but not that the issue id in
+   * the URL lives in it. Without this, an accessible project id could be paired
+   * with an issue from a project the actor cannot reach. Mirrors
+   * IssueSheetCommentService.findIssue.
+   */
+  private async findIssue(input: {
+    organizationId: string;
+    projectId: string;
+    issueId: string;
+  }): Promise<{ id: string } | null> {
+    const [issue] = await this.database
+      .select({ id: schema.issueSheetIssues.id })
+      .from(schema.issueSheetIssues)
+      .where(
+        and(
+          eq(schema.issueSheetIssues.id, input.issueId),
+          eq(schema.issueSheetIssues.organizationId, input.organizationId),
+          eq(schema.issueSheetIssues.projectId, input.projectId),
+        ),
+      )
+      .limit(1);
+    return issue ?? null;
+  }
+
   private async insertRelationshipActivity(input: {
     database: DatabaseClient;
     type:
@@ -119,9 +145,15 @@ export class IssueRelationshipService extends ProjectServiceBase {
    */
   async listRelationships(input: {
     organizationId: string;
+    projectId: string;
     issueId: string;
     auth: ApiAuthContext;
-  }): Promise<IssueRelationship[]> {
+  }): Promise<Result<IssueRelationship[], IssueRelationshipError>> {
+    const issue = await this.findIssue(input);
+    if (!issue) {
+      return err({ code: "issue_not_found" });
+    }
+
     const accessibleProjectsWhere = await buildAccessibleProjectsWhere(input.auth);
 
     const selectOtherIssue = {
@@ -181,10 +213,10 @@ export class IssueRelationshipService extends ProjectServiceBase {
       createdAt: row.createdAt.toISOString(),
     });
 
-    return [
+    return ok([
       ...outgoing.map((row) => toRelationship(row, "outgoing")),
       ...incoming.map((row) => toRelationship(row, "incoming")),
-    ];
+    ]);
   }
 
   async createRelationship(input: {
@@ -196,6 +228,11 @@ export class IssueRelationshipService extends ProjectServiceBase {
     kind: IssueRelationshipRequestKind;
     auth: ApiAuthContext;
   }): Promise<Result<IssueRelationship, IssueRelationshipError>> {
+    const issue = await this.findIssue(input);
+    if (!issue) {
+      return err({ code: "issue_not_found" });
+    }
+
     if (input.relatedIssueId === input.issueId) {
       return err({ code: "relationship_target_is_self" });
     }
@@ -367,6 +404,11 @@ export class IssueRelationshipService extends ProjectServiceBase {
     relationshipId: string;
     actorUserId: string;
   }): Promise<Result<void, IssueRelationshipError>> {
+    const issue = await this.findIssue(input);
+    if (!issue) {
+      return err({ code: "issue_not_found" });
+    }
+
     const [existing] = await this.database
       .select({
         id: schema.issueSheetRelationships.id,

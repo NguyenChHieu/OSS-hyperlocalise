@@ -49,6 +49,8 @@ function mapRelationshipError(
   code: IssueRelationshipError["code"],
 ) {
   switch (code) {
+    case "issue_not_found":
+      return notFoundResponse(c, "issue_not_found", "Issue not found");
     case "relationship_target_is_self":
       return badRequestResponse(
         c,
@@ -91,12 +93,16 @@ export function createIssueRelationshipRoutes() {
         return projectNotFoundResponse(c);
       }
 
-      const relationships = await issueRelationshipService.listRelationships({
+      const result = await issueRelationshipService.listRelationships({
         organizationId: c.var.auth.organization.localOrganizationId,
+        projectId: project.id,
         issueId: params.issueId,
         auth: c.var.auth,
       });
-      return c.json({ relationships }, 200);
+      if (isErr(result)) {
+        return mapRelationshipError(c, result.error.code);
+      }
+      return c.json({ relationships: result.value }, 200);
     })
     .post("/", validateRelationshipParams, validateCreateBody, async (c) => {
       if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {

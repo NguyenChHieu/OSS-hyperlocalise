@@ -10,7 +10,7 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { and, eq, ilike, ne, or, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, ne, or, type SQL } from "drizzle-orm";
 import { Hono } from "hono";
 
 import { hasCapability } from "@/api/auth/policy";
@@ -88,7 +88,9 @@ export function createOrganizationIssueSheetRoutes() {
           .from(schema.issueSheetIssues)
           .innerJoin(schema.projects, eq(schema.issueSheetIssues.projectId, schema.projects.id))
           .where(and(...conditions))
-          .orderBy(schema.issueSheetIssues.updatedAt)
+          // Most recently touched first — this is the primary picker result set,
+          // and an empty query would otherwise surface the org's stalest issues.
+          .orderBy(desc(schema.issueSheetIssues.updatedAt))
           .limit(query.limit);
 
         return c.json({ issues: rows }, 200);

@@ -14,7 +14,7 @@ import "dotenv/config";
 
 import { randomUUID } from "node:crypto";
 
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { testClient } from "hono/testing";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
@@ -436,6 +436,103 @@ describe("issue relationships", () => {
     ).toBe(true);
   });
 
+  // The route authorizes the projectId in the URL, but the issueId must also be
+  // verified to live in that project — otherwise an accessible project id can be
+  // paired with an issue from a project the actor cannot reach.
+  it("rejects an issueId that does not belong to the projectId in the URL", async () => {
+    const owner = await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(owner.identity);
+    const organizationSlug = owner.identity.organization.slug ?? "missing-slug";
+
+    const [otherProject] = await db
+      .insert(schema.projects)
+      .values({
+        id: `project_${randomUUID()}`,
+        organizationId: owner.organization.id,
+        teamId: owner.project.teamId,
+        createdByUserId: owner.user.id,
+        name: "Other Project",
+        description: "",
+        translationContext: "",
+        sourceLocale: "en-US",
+        targetLocales: ["fr-FR"],
+      })
+      .returning();
+
+    const foreignIssue = await createIssue(
+      headers,
+      organizationSlug,
+      otherProject.id,
+      "Issue in the other project",
+    );
+    const foreignTarget = await createIssue(
+      headers,
+      organizationSlug,
+      otherProject.id,
+      "Target in the other project",
+    );
+    const ownIssue = await createIssue(headers, organizationSlug, owner.project.id, "Own issue");
+
+    // Seed a relationship on the foreign issue, from its own (correct) project.
+    const seeded = await issueSheet()[":issueId"].relationships.$post(
+      {
+        param: { organizationSlug, projectId: otherProject.id, issueId: foreignIssue },
+        json: { relatedIssueId: ownIssue, kind: "related" },
+      } as never,
+      { headers },
+    );
+    expect(seeded.status).toBe(201);
+    const seededRelationshipId = ((await seeded.json()) as RelationshipResponse).relationship.id;
+
+    // GET: owner.project.id is accessible, but foreignIssue does not live in it.
+    const listResponse = await issueSheet()[":issueId"].relationships.$get(
+      { param: { organizationSlug, projectId: owner.project.id, issueId: foreignIssue } } as never,
+      { headers },
+    );
+    expect(listResponse.status).toBe(404);
+    const listBody = await listResponse.text();
+    expect(listBody).not.toContain(seededRelationshipId);
+
+    // POST: must not create a row whose projectId disagrees with its issueId's project.
+    const createResponse = await issueSheet()[":issueId"].relationships.$post(
+      {
+        param: { organizationSlug, projectId: owner.project.id, issueId: foreignIssue },
+        json: { relatedIssueId: foreignTarget, kind: "blocks" },
+      } as never,
+      { headers },
+    );
+    expect(createResponse.status).toBe(404);
+    const blocksRows = await db
+      .select({ id: schema.issueSheetRelationships.id })
+      .from(schema.issueSheetRelationships)
+      .where(
+        and(
+          eq(schema.issueSheetRelationships.issueId, foreignIssue),
+          eq(schema.issueSheetRelationships.kind, "blocks"),
+        ),
+      );
+    expect(blocksRows).toHaveLength(0);
+
+    // DELETE: must not remove a relationship reached through a mismatched project.
+    const deleteResponse = await issueSheet()[":issueId"].relationships[":relationshipId"].$delete(
+      {
+        param: {
+          organizationSlug,
+          projectId: owner.project.id,
+          issueId: foreignIssue,
+          relationshipId: seededRelationshipId,
+        },
+      } as never,
+      { headers },
+    );
+    expect(deleteResponse.status).toBe(404);
+    const survivingRows = await db
+      .select({ id: schema.issueSheetRelationships.id })
+      .from(schema.issueSheetRelationships)
+      .where(eq(schema.issueSheetRelationships.id, seededRelationshipId));
+    expect(survivingRows).toHaveLength(1);
+  });
+
   it("renders relationship titles same-project but not cross-project on the feed", async () => {
     const owner = await projectFixture.createStoredProjectFixture();
     const headers = await projectFixture.authHeadersFor(owner.identity);
@@ -529,7 +626,12 @@ describe("issue search", () => {
       "Unrelated title",
       "REF-123",
     );
-    await createIssue(ownerHeaders, ownerSlug, owner.project.id, "Something else entirely");
+    const newest = await createIssue(
+      ownerHeaders,
+      ownerSlug,
+      owner.project.id,
+      "Something else entirely",
+    );
 
     const titleSearch = await orgIssueSheet().search.$get(
       { param: { organizationSlug: ownerSlug }, query: { q: "Findable" } } as never,
@@ -571,7 +673,11 @@ describe("issue search", () => {
       { param: { organizationSlug: ownerSlug }, query: { q: "", limit: "1" } } as never,
       { headers: ownerHeaders },
     );
-    const limitedSearchJson = (await limitedSearch.json()) as { issues: unknown[] };
+    const limitedSearchJson = (await limitedSearch.json()) as {
+      issues: Array<{ issueId: string }>;
+    };
     expect(limitedSearchJson.issues.length).toBe(1);
+    // Most-recently-updated first: with limit 1 the newest issue wins, not the oldest.
+    expect(limitedSearchJson.issues[0]?.issueId).toBe(newest);
   });
 });

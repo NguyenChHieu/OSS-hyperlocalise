@@ -22,6 +22,7 @@ import {
 
 import { db, schema } from "@/lib/database";
 import type { HyperlocaliseAgentRuntimeContext } from "@/lib/agent-runtime/context";
+import type { ResolvedAgentLanguageModel } from "@/lib/providers/language-model";
 import { getHyperlocaliseAgentModel } from "./model";
 
 export { getHyperlocaliseAgentModel, hyperlocaliseAgentModelId } from "./model";
@@ -75,6 +76,7 @@ type CreateConversationAgentInput = {
   attachedProject?: HyperlocaliseAttachedProjectContext | null;
   additionalInstructions?: string;
   onEnd?: ConversationSkillAgentOnFinish;
+  languageModel?: ResolvedAgentLanguageModel;
 };
 
 export function buildTranslationAttachmentRequiredMessage(surface: HyperlocaliseAgentSurface) {
@@ -173,12 +175,13 @@ export {
   type ConversationClassification,
 } from "./conversation-classifier";
 
-export function createConversationToolLoopAgent({
+export async function createConversationToolLoopAgent({
   surface,
   toolContext,
   attachedProject = null,
   additionalInstructions,
   onEnd,
+  languageModel,
   hasFileAttachments = false,
   hasTmsIntegration = false,
   hasVisualMockSkill = false,
@@ -197,5 +200,5 @@ export function createConversationToolLoopAgent({
     additionalInstructions: additionalInstructions?.trim() || undefined,
   };
 
-  return createConversationSkillAgent(runtime, onEnd);
+  return createConversationSkillAgent(runtime, onEnd, languageModel);
 }

@@ -26,6 +26,11 @@ type IssueActivityBase = {
   createdAt: string;
 };
 
+export type IssueActivityRelatedIssue = {
+  issueId: string;
+  title: string | null;
+};
+
 export type IssueActivity =
   | (IssueActivityBase & {
       type: "assignee_changed";
@@ -39,4 +44,14 @@ export type IssueActivity =
       type: "status_changed";
       previousStatus: string;
       nextStatus: string;
+    })
+  | (IssueActivityBase & {
+      type: "relationship_added";
+      relationshipKind: string;
+      relatedIssue: IssueActivityRelatedIssue;
+    })
+  | (IssueActivityBase & {
+      type: "relationship_removed";
+      relationshipKind: string;
+      relatedIssue: IssueActivityRelatedIssue;
     });

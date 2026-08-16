@@ -40,6 +40,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TypographyP } from "@/components/ui/typography";
+import { assertNever } from "@/lib/primitives/assert-never/assert-never";
 import { cn } from "@/lib/primitives/cn";
 
 import { formatRelativeTimestamp } from "../workspace-files-shared";
@@ -354,6 +355,40 @@ function IssueFeedActivityRow({
   );
 }
 
+function relationshipAddedCopy(
+  intl: ReturnType<typeof useIntl>,
+  actor: ReactNode,
+  activity: Extract<IssueActivity, { type: "relationship_added" }>,
+) {
+  const relatedIssue = activityName(
+    activity.relatedIssue.title ?? intl.formatMessage(messages.unknownIssue),
+  );
+  switch (activity.relationshipKind) {
+    case "blocks":
+      return (
+        <FormattedMessage {...messages.relationshipAddedBlocks} values={{ actor, relatedIssue }} />
+      );
+    case "blocked_by":
+      return (
+        <FormattedMessage
+          {...messages.relationshipAddedBlockedBy}
+          values={{ actor, relatedIssue }}
+        />
+      );
+    case "duplicate_of":
+      return (
+        <FormattedMessage
+          {...messages.relationshipAddedDuplicateOf}
+          values={{ actor, relatedIssue }}
+        />
+      );
+    default:
+      return (
+        <FormattedMessage {...messages.relationshipAddedRelated} values={{ actor, relatedIssue }} />
+      );
+  }
+}
+
 function IssueActivityRow({
   activity,
   connectAbove = false,
@@ -369,33 +404,57 @@ function IssueActivityRow({
   const actor = activityName(actorName);
 
   let copy: ReactNode;
-  if (activity.type === "issue_created") {
-    copy = <FormattedMessage {...messages.issueCreated} values={{ actor }} />;
-  } else if (activity.type === "status_changed") {
-    copy = (
-      <FormattedMessage
-        {...messages.statusChanged}
-        values={{
-          actor,
-          previousStatus: activityName(issueStatusLabel(intl, activity.previousStatus)),
-          nextStatus: activityName(issueStatusLabel(intl, activity.nextStatus)),
-        }}
-      />
-    );
-  } else if (!activity.nextAssignee) {
-    copy = <FormattedMessage {...messages.unassigned} values={{ actor }} />;
-  } else if (activity.actor?.userId && activity.nextAssignee.userId === activity.actor.userId) {
-    copy = <FormattedMessage {...messages.assignedToSelf} values={{ actor }} />;
-  } else {
-    copy = (
-      <FormattedMessage
-        {...messages.assignedTo}
-        values={{
-          actor,
-          assignee: activityName(activity.nextAssignee.displayName),
-        }}
-      />
-    );
+  switch (activity.type) {
+    case "issue_created":
+      copy = <FormattedMessage {...messages.issueCreated} values={{ actor }} />;
+      break;
+    case "status_changed":
+      copy = (
+        <FormattedMessage
+          {...messages.statusChanged}
+          values={{
+            actor,
+            previousStatus: activityName(issueStatusLabel(intl, activity.previousStatus)),
+            nextStatus: activityName(issueStatusLabel(intl, activity.nextStatus)),
+          }}
+        />
+      );
+      break;
+    case "assignee_changed":
+      if (!activity.nextAssignee) {
+        copy = <FormattedMessage {...messages.unassigned} values={{ actor }} />;
+      } else if (activity.actor?.userId && activity.nextAssignee.userId === activity.actor.userId) {
+        copy = <FormattedMessage {...messages.assignedToSelf} values={{ actor }} />;
+      } else {
+        copy = (
+          <FormattedMessage
+            {...messages.assignedTo}
+            values={{
+              actor,
+              assignee: activityName(activity.nextAssignee.displayName),
+            }}
+          />
+        );
+      }
+      break;
+    case "relationship_added":
+      copy = relationshipAddedCopy(intl, actor, activity);
+      break;
+    case "relationship_removed":
+      copy = (
+        <FormattedMessage
+          {...messages.relationshipRemoved}
+          values={{
+            actor,
+            relatedIssue: activityName(
+              activity.relatedIssue.title ?? intl.formatMessage(messages.unknownIssue),
+            ),
+          }}
+        />
+      );
+      break;
+    default:
+      assertNever(activity);
   }
 
   return (

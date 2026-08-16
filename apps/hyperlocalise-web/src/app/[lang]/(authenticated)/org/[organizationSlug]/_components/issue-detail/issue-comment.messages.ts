@@ -55,6 +55,36 @@ export const issueCommentMessages = defineMessages({
     id: "hFzuwtEzyB",
     description: "Fallback actor name for issue activity when author is missing",
   },
+  unknownIssue: {
+    defaultMessage: "another issue",
+    id: "kBB5urcgnt",
+    description: "Fallback name for a related issue when its title isn't available (cross-project)",
+  },
+  relationshipAddedRelated: {
+    defaultMessage: "{actor} related this to {relatedIssue}",
+    id: "G1T9+1x7MC",
+    description: "Activity line when a related-issue relationship is added",
+  },
+  relationshipAddedBlocks: {
+    defaultMessage: "{actor} marked this as blocking {relatedIssue}",
+    id: "jYCKNw+LDl",
+    description: "Activity line when a blocks relationship is added",
+  },
+  relationshipAddedBlockedBy: {
+    defaultMessage: "{actor} marked this as blocked by {relatedIssue}",
+    id: "yWn40N8bPb",
+    description: "Activity line when a blocked-by relationship is added",
+  },
+  relationshipAddedDuplicateOf: {
+    defaultMessage: "{actor} marked this as a duplicate of {relatedIssue}",
+    id: "KDIMmNPAxL",
+    description: "Activity line when a duplicate_of relationship is added",
+  },
+  relationshipRemoved: {
+    defaultMessage: "{actor} removed a relationship with {relatedIssue}",
+    id: "S66c1EpmCM",
+    description: "Activity line when any relationship is removed",
+  },
   loadError: {
     defaultMessage: "Could not load comments.",
     id: "f8cyzFEbV0",

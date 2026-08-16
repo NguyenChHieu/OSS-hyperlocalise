@@ -32,12 +32,14 @@ export type IssueRelationship = {
   createdAt: string;
 };
 
+export const ISSUE_RELATIONSHIPS_QUERY_PREFIX = "issue-relationships";
+
 export function issueRelationshipsQueryKey(
   organizationSlug: string,
   projectId: string,
   issueId: string,
 ) {
-  return ["issue-relationships", organizationSlug, projectId, issueId] as const;
+  return [ISSUE_RELATIONSHIPS_QUERY_PREFIX, organizationSlug, projectId, issueId] as const;
 }
 
 export function useIssueRelationshipsQuery({

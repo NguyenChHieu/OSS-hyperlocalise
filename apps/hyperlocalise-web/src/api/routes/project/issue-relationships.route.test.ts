@@ -240,6 +240,56 @@ describe("issue relationships", () => {
     await expect(second.json()).resolves.toMatchObject({ error: "blocking_relationship_cycle" });
   });
 
+  // Regression for a race the pre-checks alone can't catch: the edge_key unique
+  // index is directional (issueId, relatedIssueId, kind), so it never conflicts
+  // for a reversed pair. Two opposite-direction requests fired concurrently can
+  // both pass the cycle check before either commits unless the check-and-insert
+  // is serialized (see lockRelationshipMutations in issue-relationship-service.ts).
+  it("rejects a blocking cycle even when both directions are created concurrently", async () => {
+    const { identity, project, organization } = await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const organizationSlug = identity.organization.slug ?? "missing-slug";
+
+    const a = await createIssue(headers, organizationSlug, project.id, "A");
+    const b = await createIssue(headers, organizationSlug, project.id, "B");
+
+    const [first, second] = await Promise.all([
+      issueSheet()[":issueId"].relationships.$post(
+        {
+          param: { organizationSlug, projectId: project.id, issueId: a },
+          json: { relatedIssueId: b, kind: "blocks" },
+        } as never,
+        { headers },
+      ),
+      issueSheet()[":issueId"].relationships.$post(
+        {
+          param: { organizationSlug, projectId: project.id, issueId: b },
+          json: { relatedIssueId: a, kind: "blocks" },
+        } as never,
+        { headers },
+      ),
+    ]);
+
+    // Whichever request the lock let through first, exactly one must win and
+    // the other must be rejected as a cycle — never both succeeding, which
+    // would leave a live A-blocks-B-blocks-A cycle in the database.
+    expect([first.status, second.status].sort((a, b) => a - b)).toEqual([201, 400]);
+
+    const rejected = first.status === 400 ? first : second;
+    await expect(rejected.json()).resolves.toMatchObject({ error: "blocking_relationship_cycle" });
+
+    const blocksRows = await db
+      .select({ id: schema.issueSheetRelationships.id })
+      .from(schema.issueSheetRelationships)
+      .where(
+        and(
+          eq(schema.issueSheetRelationships.organizationId, organization.id),
+          eq(schema.issueSheetRelationships.kind, "blocks"),
+        ),
+      );
+    expect(blocksRows).toHaveLength(1);
+  });
+
   it("rejects marking an issue as duplicate twice, and rejects a duplicate cycle", async () => {
     const { identity, project } = await projectFixture.createStoredProjectFixture();
     const headers = await projectFixture.authHeadersFor(identity);

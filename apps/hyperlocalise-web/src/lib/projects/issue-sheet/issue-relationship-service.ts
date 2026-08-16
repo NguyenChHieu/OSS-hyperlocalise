@@ -10,11 +10,11 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, or, sql } from "drizzle-orm";
 
 import { buildAccessibleProjectsWhere } from "@/api/auth/team-access";
 import type { ApiAuthContext } from "@/api/auth/workos";
-import { db, schema, type DatabaseClient } from "@/lib/database";
+import { db, schema, type DatabaseClient, type DatabaseTransaction } from "@/lib/database";
 import type { IssueSheetRelationshipKind } from "@/lib/database/schema/issue-sheet";
 import { err, ok, type Result } from "@/lib/primitives/result/results";
 import { ProjectServiceBase } from "@/lib/projects/project-service-base";
@@ -63,6 +63,17 @@ export type IssueRelationshipError =
   | { code: "duplicate_relationship_cycle" }
   | { code: "relationship_not_found" };
 
+// Thrown inside the locked transaction below to abort/rollback on a validation
+// failure while still surfacing the specific error code to the caller — a
+// transaction callback's return value becomes the transaction's result, so a
+// plain `return err(...)` from inside it can't distinguish "validation failed"
+// from "here is the successfully inserted row".
+class RelationshipConflictError extends Error {
+  constructor(readonly code: IssueRelationshipError["code"]) {
+    super(code);
+  }
+}
+
 function isUniqueViolation(error: unknown): boolean {
   if (!(error instanceof Error)) {
     return false;
@@ -72,6 +83,24 @@ function isUniqueViolation(error: unknown): boolean {
   }
   const cause = "cause" in error ? error.cause : undefined;
   return typeof cause === "object" && cause !== null && "code" in cause && cause.code === "23505";
+}
+
+// Serializes concurrent createRelationship calls for an organization so the
+// symmetric/cycle pre-checks below can't both pass for two opposite-direction
+// edges (A related B / B related A, or A blocks B / B blocks A) racing each
+// other — the edge_key unique index is directional and doesn't catch a
+// reversed pair, so without this a second writer's pre-checks can run before
+// the first writer's insert commits. Org-scoped, not per-pair: this write
+// path is low-frequency, so the extra serialization is cheap, and it avoids
+// having to canonicalize a sorted pair-of-issue-ids lock key. Matches
+// lockOrganizationJobBudget's pattern in organization-operation-budget.ts.
+async function lockRelationshipMutations(tx: DatabaseTransaction, organizationId: string) {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtextextended(${[
+      "issue_sheet_relationships",
+      organizationId,
+    ].join(":")}, 0))`,
+  );
 }
 
 function presentRelationshipKind(
@@ -272,70 +301,75 @@ export class IssueRelationshipService extends ProjectServiceBase {
     const relationshipProjectId =
       storedIssueId === input.issueId ? input.projectId : target.projectId;
 
-    if (storedKind === "duplicate_of") {
-      const [existingCanonical] = await this.database
-        .select({ id: schema.issueSheetRelationships.id })
-        .from(schema.issueSheetRelationships)
-        .where(
-          and(
-            eq(schema.issueSheetRelationships.organizationId, input.organizationId),
-            eq(schema.issueSheetRelationships.issueId, storedIssueId),
-            eq(schema.issueSheetRelationships.kind, "duplicate_of"),
-          ),
-        )
-        .limit(1);
-      if (existingCanonical) {
-        return err({ code: "issue_already_marked_duplicate" });
-      }
-    }
-
-    if (storedKind === "related") {
-      // Symmetric: a DB index alone can't normalize (A,B) vs (B,A), so check both.
-      const [existingRelated] = await this.database
-        .select({ id: schema.issueSheetRelationships.id })
-        .from(schema.issueSheetRelationships)
-        .where(
-          and(
-            eq(schema.issueSheetRelationships.organizationId, input.organizationId),
-            eq(schema.issueSheetRelationships.kind, "related"),
-            or(
-              and(
-                eq(schema.issueSheetRelationships.issueId, storedIssueId),
-                eq(schema.issueSheetRelationships.relatedIssueId, storedRelatedIssueId),
-              ),
-              and(
-                eq(schema.issueSheetRelationships.issueId, storedRelatedIssueId),
-                eq(schema.issueSheetRelationships.relatedIssueId, storedIssueId),
-              ),
-            ),
-          ),
-        )
-        .limit(1);
-      if (existingRelated) {
-        return err({ code: "relationship_already_exists" });
-      }
-    }
-
-    if (storedKind === "blocks" || storedKind === "duplicate_of") {
-      const cycle = await wouldCreateCycle({
-        database: this.database,
-        organizationId: input.organizationId,
-        kind: storedKind,
-        fromIssueId: storedIssueId,
-        toIssueId: storedRelatedIssueId,
-      });
-      if (cycle) {
-        return err({
-          code:
-            storedKind === "blocks"
-              ? "blocking_relationship_cycle"
-              : "duplicate_relationship_cycle",
-        });
-      }
-    }
-
     try {
+      // The symmetric/cycle checks below and the insert must run as one
+      // serialized unit — see lockRelationshipMutations for why: without it,
+      // two opposite-direction concurrent requests (A related B / B related A,
+      // or A blocks B / B blocks A) can both pass validation before either
+      // commits, since the DB's edge_key index is directional and doesn't
+      // catch a reversed pair.
       const relationship = await this.database.transaction(async (tx) => {
+        await lockRelationshipMutations(tx, input.organizationId);
+
+        if (storedKind === "duplicate_of") {
+          const [existingCanonical] = await tx
+            .select({ id: schema.issueSheetRelationships.id })
+            .from(schema.issueSheetRelationships)
+            .where(
+              and(
+                eq(schema.issueSheetRelationships.organizationId, input.organizationId),
+                eq(schema.issueSheetRelationships.issueId, storedIssueId),
+                eq(schema.issueSheetRelationships.kind, "duplicate_of"),
+              ),
+            )
+            .limit(1);
+          if (existingCanonical) {
+            throw new RelationshipConflictError("issue_already_marked_duplicate");
+          }
+        }
+
+        if (storedKind === "related") {
+          // Symmetric: a DB index alone can't normalize (A,B) vs (B,A), so check both.
+          const [existingRelated] = await tx
+            .select({ id: schema.issueSheetRelationships.id })
+            .from(schema.issueSheetRelationships)
+            .where(
+              and(
+                eq(schema.issueSheetRelationships.organizationId, input.organizationId),
+                eq(schema.issueSheetRelationships.kind, "related"),
+                or(
+                  and(
+                    eq(schema.issueSheetRelationships.issueId, storedIssueId),
+                    eq(schema.issueSheetRelationships.relatedIssueId, storedRelatedIssueId),
+                  ),
+                  and(
+                    eq(schema.issueSheetRelationships.issueId, storedRelatedIssueId),
+                    eq(schema.issueSheetRelationships.relatedIssueId, storedIssueId),
+                  ),
+                ),
+              ),
+            )
+            .limit(1);
+          if (existingRelated) {
+            throw new RelationshipConflictError("relationship_already_exists");
+          }
+        }
+
+        if (storedKind === "blocks" || storedKind === "duplicate_of") {
+          const cycle = await wouldCreateCycle({
+            database: tx,
+            organizationId: input.organizationId,
+            kind: storedKind,
+            fromIssueId: storedIssueId,
+            toIssueId: storedRelatedIssueId,
+          });
+          if (cycle) {
+            throw new RelationshipConflictError(
+              storedKind === "blocks" ? "blocking_relationship_cycle" : "duplicate_relationship_cycle",
+            );
+          }
+        }
+
         const [inserted] = await tx
           .insert(schema.issueSheetRelationships)
           .values({
@@ -383,7 +417,12 @@ export class IssueRelationshipService extends ProjectServiceBase {
         createdAt: relationship.createdAt.toISOString(),
       });
     } catch (error) {
-      // Defense against a race between the pre-checks above and this insert.
+      if (error instanceof RelationshipConflictError) {
+        return err({ code: error.code });
+      }
+      // Belt-and-suspenders: the lock above serializes concurrent callers, so
+      // this shouldn't fire from that race anymore, but keep it as a fallback
+      // for the unique index itself.
       if (isUniqueViolation(error)) {
         return err({
           code:

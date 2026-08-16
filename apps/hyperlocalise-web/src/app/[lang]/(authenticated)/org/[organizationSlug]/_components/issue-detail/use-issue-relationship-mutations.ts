@@ -18,7 +18,7 @@ import { readApiResponseError } from "@/lib/api-error";
 
 import { issueSheetApiPath } from "./issue-detail-utils";
 import { issueFeedQueryKey } from "./use-issue-feed";
-import { issueRelationshipsQueryKey } from "./use-issue-relationships-query";
+import { ISSUE_RELATIONSHIPS_QUERY_PREFIX } from "./use-issue-relationships-query";
 
 export type IssueRelationshipRequestKind = "related" | "blocks" | "blocked_by" | "duplicate_of";
 
@@ -32,12 +32,19 @@ export function useIssueRelationshipMutations({
   issueId: string;
 }) {
   const queryClient = useQueryClient();
-  const relationshipsKey = issueRelationshipsQueryKey(organizationSlug, projectId, issueId);
   const feedKey = issueFeedQueryKey(organizationSlug, projectId, issueId);
   const basePath = `${issueSheetApiPath(organizationSlug, projectId)}/${issueId}/relationships`;
 
   const invalidate = () => {
-    void queryClient.invalidateQueries({ queryKey: relationshipsKey });
+    // A relationship is visible from both endpoint issues, but only this issue's
+    // own id is known here — the other side may live in a different project
+    // (relationships are cross-project) with its own query key. Invalidate the
+    // whole org-scoped prefix instead of just this issue's key so a relationship
+    // added/removed here doesn't leave the other issue's cached list stale for
+    // up to the 30s staleTime if the user is (or soon navigates) there.
+    void queryClient.invalidateQueries({
+      queryKey: [ISSUE_RELATIONSHIPS_QUERY_PREFIX, organizationSlug],
+    });
     void queryClient.invalidateQueries({ queryKey: feedKey });
   };
 

@@ -170,6 +170,25 @@ export function getLocalisationAuditPageCopy(locale: string) {
       id: "4XzQKxM2MY",
       description: "Empty state for the public localisation audit leaderboard",
     }),
+    leaderboardSiteColumn: intl.formatMessage({
+      defaultMessage: "Site",
+      id: "mHZZxFedL8",
+      description: "Column heading for site names on the localisation audit leaderboard",
+    }),
+    leaderboardScoreColumn: intl.formatMessage({
+      defaultMessage: "Score",
+      id: "MrZ8+8I97E",
+      description: "Column heading for scores on the localisation audit leaderboard",
+    }),
+    leaderboardScoreLabel: (values: { score: number }) =>
+      intl.formatMessage(
+        {
+          defaultMessage: "Score {score} out of 100",
+          id: "dbtTNEaJX2",
+          description: "Accessible label for a localisation audit leaderboard score bar",
+        },
+        values,
+      ),
   };
 }
 

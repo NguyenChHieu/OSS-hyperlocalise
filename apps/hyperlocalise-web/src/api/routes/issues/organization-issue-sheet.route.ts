@@ -16,11 +16,9 @@ import { Hono } from "hono";
 import { hasCapability } from "@/api/auth/policy";
 import { createZodValidator } from "@/api/errors";
 import { buildAccessibleProjectsWhere } from "@/api/auth/team-access";
-import { createWorkspaceFeatureFlagMiddleware } from "@/api/middleware/workspace-feature-flag";
 import { forbiddenResponse, notFoundResponse } from "@/api/response.schema";
 import { workosAuthMiddleware, type AuthVariables } from "@/api/auth/workos";
 import { db, schema } from "@/lib/database";
-import { workspaceIssuesFlag } from "@/lib/flags/workspace-flags";
 import { organizationIssueService } from "@/lib/projects/issue-sheet/organization-issue-service";
 
 import {
@@ -40,16 +38,10 @@ const validateIssueSearchQuery = createZodValidator(
   "invalid_issue_search_query",
 );
 
-const requireWorkspaceIssuesFeature = createWorkspaceFeatureFlagMiddleware(
-  workspaceIssuesFlag,
-  "Workspace issues is not enabled for this organization",
-);
-
 export function createOrganizationIssueSheetRoutes() {
   return (
     new Hono<{ Variables: AuthVariables }>()
       .use("*", workosAuthMiddleware)
-      .use("*", requireWorkspaceIssuesFeature)
       // Registered before "/:issueId" — a later registration here would be
       // swallowed as issueId="search", since Hono matches in registration order.
       .get("/search", validateIssueSearchQuery, async (c) => {

@@ -50,6 +50,10 @@ export const supportedFileTranslationFileFormats = [
   "stringsdict",
   "xcstrings",
   "csv",
+  "png",
+  "jpeg",
+  "webp",
+  "mp4",
 ] as const;
 
 export type SupportedFileTranslationFileFormat =
@@ -258,7 +262,7 @@ export function getLocaleScanExtensions(): string[] {
   const extensions = new Set<string>();
 
   for (const [extension, format] of Object.entries(formatsByExtension)) {
-    if (isSupportedFileTranslationFileFormat(format)) {
+    if (isSupportedFileTranslationFileFormat(format) && !isBinaryTranslationFileFormat(format)) {
       extensions.add(extension.slice(1));
     }
   }

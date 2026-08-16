@@ -26,7 +26,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useQuery } from "@tanstack/react-query";
-import { ClockIcon, MailIcon, SearchIcon, Trash2Icon } from "lucide-react";
+import { ClockIcon, GlobeIcon, MailIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import { FormattedMessage, useIntl, type IntlShape } from "react-intl";
 import type { SimpleIcon } from "simple-icons";
 import {
@@ -342,7 +342,8 @@ function toolCount(form: WorkspaceAutomationFormState) {
     Number(form.knowledgeEnabled) +
     Number(form.mcpEnabled) +
     Number(form.semrushEnabled) +
-    Number(form.ahrefsEnabled)
+    Number(form.ahrefsEnabled) +
+    Number(form.webSearchEnabled)
   );
 }
 
@@ -1091,7 +1092,6 @@ function AddToolMenu({
   emailConnected,
   form,
   githubConnected,
-  issuesAvailable,
   knowledgeAvailable,
   mcpConnected,
   onChange,
@@ -1105,7 +1105,6 @@ function AddToolMenu({
   emailConnected: boolean;
   form: WorkspaceAutomationFormState;
   githubConnected: boolean;
-  issuesAvailable: boolean;
   knowledgeAvailable: boolean;
   mcpConnected: boolean;
   onChange: (next: WorkspaceAutomationFormState) => void;
@@ -1357,7 +1356,7 @@ function AddToolMenu({
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="min-w-56">
                 <DropdownMenuItem
-                  disabled={form.listIssuesEnabled || !issuesAvailable}
+                  disabled={form.listIssuesEnabled}
                   onClick={() => onChange({ ...form, listIssuesEnabled: true })}
                 >
                   <HugeiconsIcon icon={Task01Icon} strokeWidth={1.8} className="size-4" />
@@ -1366,16 +1365,10 @@ function AddToolMenu({
                     <DropdownMenuShortcut>
                       <FormattedMessage {...workspaceAutomationFormMessages.addedShortcut} />
                     </DropdownMenuShortcut>
-                  ) : !issuesAvailable ? (
-                    <DropdownMenuShortcut>
-                      <FormattedMessage
-                        {...workspaceAutomationFormMessages.enableIssuesFirstShortcut}
-                      />
-                    </DropdownMenuShortcut>
                   ) : null}
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  disabled={form.createIssueEnabled || !issuesAvailable}
+                  disabled={form.createIssueEnabled}
                   onClick={() => onChange({ ...form, createIssueEnabled: true })}
                 >
                   <HugeiconsIcon icon={Task01Icon} strokeWidth={1.8} className="size-4" />
@@ -1383,12 +1376,6 @@ function AddToolMenu({
                   {form.createIssueEnabled ? (
                     <DropdownMenuShortcut>
                       <FormattedMessage {...workspaceAutomationFormMessages.addedShortcut} />
-                    </DropdownMenuShortcut>
-                  ) : !issuesAvailable ? (
-                    <DropdownMenuShortcut>
-                      <FormattedMessage
-                        {...workspaceAutomationFormMessages.enableIssuesFirstShortcut}
-                      />
                     </DropdownMenuShortcut>
                   ) : null}
                 </DropdownMenuItem>
@@ -1439,6 +1426,18 @@ function AddToolMenu({
               ) : !ahrefsConnected ? (
                 <DropdownMenuShortcut>
                   <FormattedMessage {...workspaceAutomationFormMessages.connectFirstShortcut} />
+                </DropdownMenuShortcut>
+              ) : null}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={form.webSearchEnabled}
+              onClick={() => onChange({ ...form, webSearchEnabled: true })}
+            >
+              <GlobeIcon className="size-4" />
+              <FormattedMessage {...workspaceAutomationFormMessages.webSearch} />
+              {form.webSearchEnabled ? (
+                <DropdownMenuShortcut>
+                  <FormattedMessage {...workspaceAutomationFormMessages.addedShortcut} />
                 </DropdownMenuShortcut>
               ) : null}
             </DropdownMenuItem>
@@ -1554,7 +1553,6 @@ function ToolsSettings({
   errors,
   form,
   githubConnected,
-  issuesAvailable,
   knowledgeAvailable,
   mcpServerConnections,
   onChange,
@@ -1574,7 +1572,6 @@ function ToolsSettings({
   errors: Record<string, string | undefined>;
   form: WorkspaceAutomationFormState;
   githubConnected: boolean;
-  issuesAvailable: boolean;
   knowledgeAvailable: boolean;
   mcpServerConnections: McpServerConnectionOption[];
   onChange: (next: WorkspaceAutomationFormState) => void;
@@ -2184,13 +2181,7 @@ function ToolsSettings({
             icon={<HugeiconsIcon icon={Task01Icon} strokeWidth={1.8} className="size-4" />}
             title={<FormattedMessage {...workspaceAutomationFormMessages.listIssues} />}
             description={
-              issuesAvailable ? (
-                <FormattedMessage {...workspaceAutomationFormMessages.listIssuesDescription} />
-              ) : (
-                <FormattedMessage
-                  {...workspaceAutomationFormMessages.issuesUnavailableDescription}
-                />
-              )
+              <FormattedMessage {...workspaceAutomationFormMessages.listIssuesDescription} />
             }
             action={
               <DeleteToolButton
@@ -2207,13 +2198,7 @@ function ToolsSettings({
             icon={<HugeiconsIcon icon={Task01Icon} strokeWidth={1.8} className="size-4" />}
             title={<FormattedMessage {...workspaceAutomationFormMessages.createIssue} />}
             description={
-              issuesAvailable ? (
-                <FormattedMessage {...workspaceAutomationFormMessages.createIssueDescription} />
-              ) : (
-                <FormattedMessage
-                  {...workspaceAutomationFormMessages.issuesUnavailableDescription}
-                />
-              )
+              <FormattedMessage {...workspaceAutomationFormMessages.createIssueDescription} />
             }
             action={
               <DeleteToolButton
@@ -2413,13 +2398,74 @@ function ToolsSettings({
           </EditorRow>
         ) : null}
 
+        {form.webSearchEnabled ? (
+          <EditorRow
+            icon={<GlobeIcon className="size-4" />}
+            title={<FormattedMessage {...workspaceAutomationFormMessages.webSearch} />}
+            description={intl.formatMessage(workspaceAutomationFormMessages.webSearchDescription)}
+            action={
+              <DeleteToolButton
+                disabled={disabled}
+                label={intl.formatMessage(workspaceAutomationFormMessages.removeWebSearchTool)}
+                onClick={() =>
+                  onChange({
+                    ...form,
+                    webSearchEnabled: false,
+                    webSearchProvider: "auto",
+                  })
+                }
+              />
+            }
+          >
+            <div className="grid gap-1.5">
+              <Label className="text-xs text-muted-foreground">
+                <FormattedMessage {...workspaceAutomationFormMessages.webSearchProvider} />
+              </Label>
+              <Select
+                value={form.webSearchProvider}
+                disabled={disabled}
+                onValueChange={(value) => {
+                  if (value !== "auto" && value !== "perplexity" && value !== "exa") {
+                    return;
+                  }
+                  onChange({ ...form, webSearchProvider: value });
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue>
+                    {form.webSearchProvider === "perplexity"
+                      ? intl.formatMessage(
+                          workspaceAutomationFormMessages.webSearchProviderPerplexity,
+                        )
+                      : form.webSearchProvider === "exa"
+                        ? intl.formatMessage(workspaceAutomationFormMessages.webSearchProviderExa)
+                        : intl.formatMessage(workspaceAutomationFormMessages.webSearchProviderAuto)}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">
+                    <FormattedMessage {...workspaceAutomationFormMessages.webSearchProviderAuto} />
+                  </SelectItem>
+                  <SelectItem value="perplexity">
+                    <FormattedMessage
+                      {...workspaceAutomationFormMessages.webSearchProviderPerplexity}
+                    />
+                  </SelectItem>
+                  <SelectItem value="exa">
+                    <FormattedMessage {...workspaceAutomationFormMessages.webSearchProviderExa} />
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </EditorRow>
+        ) : null}
+
         <AddToolMenu
           contentfulConnected={contentfulConnected}
           disabled={disabled}
           emailConnected={emailConnected}
           form={form}
           githubConnected={githubConnected}
-          issuesAvailable={issuesAvailable}
           knowledgeAvailable={knowledgeAvailable}
           mcpConnected={mcpConnected}
           onChange={onChange}
@@ -2537,7 +2583,6 @@ export function WorkspaceAutomationEditor({
   disabled,
   errors,
   form,
-  issuesAvailable = false,
   knowledgeAvailable = false,
   mode,
   onChange,
@@ -2549,7 +2594,6 @@ export function WorkspaceAutomationEditor({
   disabled?: boolean;
   errors: Record<string, string | undefined>;
   form: WorkspaceAutomationFormState;
-  issuesAvailable?: boolean;
   knowledgeAvailable?: boolean;
   mode: "create" | "detail";
   onChange: (next: WorkspaceAutomationFormState) => void;
@@ -2857,7 +2901,6 @@ export function WorkspaceAutomationEditor({
             errors={errors}
             form={form}
             githubConnected={githubConnected}
-            issuesAvailable={issuesAvailable}
             knowledgeAvailable={knowledgeAvailable}
             mcpServerConnections={mcpServerConnections}
             onChange={onChange}
@@ -2887,7 +2930,6 @@ export function WorkspaceAutomationForm(props: {
   form: WorkspaceAutomationFormState;
   errors: Record<string, string | undefined>;
   disabled?: boolean;
-  issuesAvailable?: boolean;
   knowledgeAvailable?: boolean;
   canUpdateKnowledgeMemory?: boolean;
   onChange: (next: WorkspaceAutomationFormState) => void;

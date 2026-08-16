@@ -14,7 +14,6 @@ import { and, asc, desc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm
 import { z } from "zod";
 
 import { db, schema, type DatabaseClient } from "@/lib/database";
-import { resolveWorkspaceIssuesFlag } from "@/lib/flags/workspace-flags";
 import { err, isErr, ok, type Result } from "@/lib/primitives/result/results";
 import { optionalProjectIdSchema } from "@/lib/projects/identity/project-id";
 import { lockAhrefsConnectionForUpdate } from "@/lib/ahrefs/connections";
@@ -186,6 +185,15 @@ const ahrefsToolConfigSchema = z
   })
   .default({ enabled: false });
 
+export const workspaceAutomationWebSearchProviderSchema = z.enum(["auto", "perplexity", "exa"]);
+
+const webSearchToolConfigSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    provider: workspaceAutomationWebSearchProviderSchema.default("auto"),
+  })
+  .default({ enabled: false, provider: "auto" });
+
 function migrateLegacyTranslationToolConfig(
   value: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -243,6 +251,7 @@ const toolConfigObjectSchema = z
     mcp: mcpToolConfigSchema.optional(),
     semrush: semrushToolConfigSchema.optional(),
     ahrefs: ahrefsToolConfigSchema.optional(),
+    webSearch: webSearchToolConfigSchema.optional(),
   })
   .default({});
 
@@ -282,6 +291,10 @@ export type WorkspaceAutomationKnowledgeToolConfig = z.infer<typeof knowledgeToo
 export type WorkspaceAutomationMcpToolConfig = z.infer<typeof mcpToolConfigSchema>;
 export type WorkspaceAutomationSemrushToolConfig = z.infer<typeof semrushToolConfigSchema>;
 export type WorkspaceAutomationAhrefsToolConfig = z.infer<typeof ahrefsToolConfigSchema>;
+export type WorkspaceAutomationWebSearchProvider = z.infer<
+  typeof workspaceAutomationWebSearchProviderSchema
+>;
+export type WorkspaceAutomationWebSearchToolConfig = z.infer<typeof webSearchToolConfigSchema>;
 export type WorkspaceAutomationToolConfig = z.infer<typeof toolConfigObjectSchema>;
 
 export type WorkspaceAutomationConfigValidationError =
@@ -307,7 +320,7 @@ export type WorkspaceAutomationConfigValidationError =
     }
   | {
       code: "scheduled_workflow_required";
-      message: "Scheduled automations require at least one GitHub, Contentful, or Issues workflow tool.";
+      message: "Scheduled automations require at least one GitHub, Contentful, Issues, or Web Search workflow tool.";
     }
   | {
       code: "contentful_connection_required";
@@ -384,10 +397,6 @@ export type WorkspaceAutomationConfigValidationError =
   | {
       code: "ahrefs_not_connected";
       message: "Enable the selected Ahrefs connection in Integrations before using it.";
-    }
-  | {
-      code: "issues_feature_unavailable";
-      message: "Enable workspace Issues before using Issue Sheet automation tools.";
     };
 
 type AutomationRow = typeof schema.workspaceAutomations.$inferSelect;
@@ -440,6 +449,10 @@ export function hasWorkspaceAutomationSemrushTool(toolConfig: WorkspaceAutomatio
 
 export function hasWorkspaceAutomationAhrefsTool(toolConfig: WorkspaceAutomationToolConfig) {
   return Boolean(toolConfig.ahrefs?.enabled);
+}
+
+export function hasWorkspaceAutomationWebSearchTool(toolConfig: WorkspaceAutomationToolConfig) {
+  return Boolean(toolConfig.webSearch?.enabled);
 }
 
 export type WorkspaceAutomationRecord = {
@@ -611,12 +624,13 @@ function validateWorkspaceAutomationConfig(input: {
     !hasWorkspaceAutomationGithubWorkflow(input.toolConfig) &&
     !hasWorkspaceAutomationContentfulWorkflow(input.toolConfig) &&
     !hasWorkspaceAutomationListIssuesTool(input.toolConfig) &&
-    !hasWorkspaceAutomationCreateIssueTool(input.toolConfig)
+    !hasWorkspaceAutomationCreateIssueTool(input.toolConfig) &&
+    !hasWorkspaceAutomationWebSearchTool(input.toolConfig)
   ) {
     return err({
       code: "scheduled_workflow_required",
       message:
-        "Scheduled automations require at least one GitHub, Contentful, or Issues workflow tool.",
+        "Scheduled automations require at least one GitHub, Contentful, Issues, or Web Search workflow tool.",
     });
   }
 
@@ -905,22 +919,6 @@ export async function validateWorkspaceAutomationIntegrations(input: {
       return err({
         code: "ahrefs_not_connected",
         message: "Enable the selected Ahrefs connection in Integrations before using it.",
-      });
-    }
-  }
-
-  if (
-    hasWorkspaceAutomationListIssuesTool(input.toolConfig) ||
-    hasWorkspaceAutomationCreateIssueTool(input.toolConfig)
-  ) {
-    const issuesEnabled = await resolveWorkspaceIssuesFlag({
-      organizationId: input.organizationId,
-      dbClient: database,
-    });
-    if (!issuesEnabled) {
-      return err({
-        code: "issues_feature_unavailable",
-        message: "Enable workspace Issues before using Issue Sheet automation tools.",
       });
     }
   }

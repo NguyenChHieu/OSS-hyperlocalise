@@ -13,11 +13,7 @@
 import { experimental_generateVideo as generateVideo } from "ai";
 
 import { withAgentRuntimeUsageMetering } from "@/lib/billing/agent-runtime-usage";
-import {
-  getManagedVideoModel,
-  hyperlocaliseVideoModelId,
-  isManagedLanguageModelAvailable,
-} from "@/lib/providers/language-model";
+import { getManagedVideoModel, hyperlocaliseVideoModelId } from "@/lib/providers/language-model";
 
 export { hyperlocaliseVideoModelId };
 
@@ -51,12 +47,6 @@ export class VideoLocalizationError extends Error {
 }
 
 function getVideoModel() {
-  if (!isManagedLanguageModelAvailable()) {
-    throw new VideoLocalizationError(
-      "video_model_unavailable",
-      "AI_GATEWAY_API_KEY is not configured",
-    );
-  }
   return getManagedVideoModel();
 }
 
@@ -97,6 +87,11 @@ async function generateVideoFromPrompt(
     aspectRatio: "adaptive",
     generateAudio: true,
     ...(durationSeconds != null ? { duration: durationSeconds } : {}),
+    providerOptions: {
+      bytedance: {
+        pollTimeoutMs: 600_000,
+      },
+    },
   });
 
   const generatedVideo = result.video;
@@ -112,7 +107,7 @@ async function generateVideoFromPrompt(
 
 /**
  * End-to-end video regeneration pipeline:
- * 1. Send the source video and localization prompt to Gemini Omni via AI Gateway
+ * 1. Send the source video and localization prompt to Seedance 2.5 via AI Gateway
  * 2. Return the generated video buffer and the prompt used
  */
 export async function regenerateVideoFromAttachment(

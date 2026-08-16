@@ -45,7 +45,6 @@ const {
 vi.mock("@/lib/env", () => ({
   env: {
     OPENAI_API_KEY: "test-openai-key",
-    AI_GATEWAY_API_KEY: "test-ai-gateway-key",
   },
 }));
 
@@ -113,6 +112,7 @@ vi.mock("@/lib/log", () => ({
 }));
 
 import {
+  buildFileTranslationInstructions,
   getOrCreateConversationRepositorySandbox,
   prepareConversationAgentTurn,
   REPOSITORY_ACCESS_CONTENTION_FOLLOW_UP,
@@ -128,6 +128,18 @@ const baseClassification = {
   currentMessageSpecifiesRepository: false,
   confidence: 0.9,
 };
+
+describe("buildFileTranslationInstructions", () => {
+  it("lists image and video formats for chat file translation jobs", () => {
+    const instructions = buildFileTranslationInstructions();
+    expect(instructions).toContain("png");
+    expect(instructions).toContain("jpeg");
+    expect(instructions).toContain("webp");
+    expect(instructions).toContain("mp4");
+    expect(instructions).toContain("localizes the image or video asset");
+    expect(instructions).toContain("3–30 seconds");
+  });
+});
 
 describe("conversation repository sandbox reuse", () => {
   const githubContext = {

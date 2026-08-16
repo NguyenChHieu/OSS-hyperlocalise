@@ -34,6 +34,10 @@ import {
 } from "@/lib/agent-runtime/workspaces/repository-sandbox";
 import { parseProviderProjectId } from "@/lib/providers/jobs/tms-provider-resource-id";
 import { supportedFileTranslationFileFormats } from "@/lib/translation/file-formats";
+import {
+  VIDEO_LOCALIZATION_MAX_DURATION_SECONDS,
+  VIDEO_LOCALIZATION_MIN_DURATION_SECONDS,
+} from "@/lib/translation/mp4-duration";
 import { createLogger, serializeErrorForLog } from "@/lib/log";
 
 import {
@@ -60,7 +64,13 @@ export const REPOSITORY_ACCESS_CONTENTION_FOLLOW_UP =
   "I'm still preparing repository access for this conversation. Please send your message again in a moment.";
 
 export function buildFileTranslationInstructions() {
-  return `When a message includes stored source file IDs, create file translation jobs with type "file", the provided sourceFileId and fileFormat, targetLocales, and sourceLocale. Use sourceLocale "auto" if the user did not specify a source locale. Supported file job formats: ${supportedFileTranslationFileFormats.join(", ")}.`;
+  return [
+    'When a message includes stored source file IDs, create file translation jobs with type "file", the provided sourceFileId and fileFormat, targetLocales, and sourceLocale.',
+    'Use sourceLocale "auto" if the user did not specify a source locale.',
+    `Supported file job formats: ${supportedFileTranslationFileFormats.join(", ")}.`,
+    "For png, jpeg, webp, and mp4 attachments, still create a file translation job — the workflow localizes the image or video asset for each target locale.",
+    `mp4 clips should typically be ${VIDEO_LOCALIZATION_MIN_DURATION_SECONDS}–${VIDEO_LOCALIZATION_MAX_DURATION_SECONDS} seconds.`,
+  ].join(" ");
 }
 
 /**

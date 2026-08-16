@@ -22,11 +22,13 @@ Resolve language models in `src/lib/providers/language-model.ts` and
 
 | Path | When | Client | Auth |
 |------|------|--------|------|
-| Managed | No org BYOK credential | `createGateway` from the AI SDK | Platform `AI_GATEWAY_API_KEY` |
+| Managed | No org BYOK credential | AI SDK Gateway model string | Vercel OIDC on deploy |
 | BYOK | Latest org credential | `createAnthropic`, `createOpenAI`, or OpenAI-compatible | Decrypted org key |
 
-Managed model id is `openai/gpt-5.6-luna` (`hyperlocaliseManagedGatewayModelId`).
-BYOK keeps the catalog model name the org selected.
+Managed calls pass a Gateway model id, for example `openai/gpt-5.6-luna`
+(`hyperlocaliseManagedGatewayModelId`). The AI SDK default provider is Vercel
+AI Gateway, so no `AI_GATEWAY_API_KEY` or `createGateway({ apiKey })` is
+required on Vercel. BYOK keeps the catalog model name the org selected.
 
 The conversation agent resolves this per organization and reuses that model for
 conversation classification. Managed string translation uses the same Gateway
@@ -38,16 +40,20 @@ BYOK:
 | Media | Gateway model | Why |
 |-------|---------------|-----|
 | Image translation | `openai/gpt-image-2` | OpenAI image model through Vercel AI Gateway |
-| Video translation | `google/gemini-omni-flash-preview` | Gemini Omni through the same Gateway |
+| Video translation | `bytedance/seedance-2.5` | Seedance 2.5 through the same Gateway |
 
-File-translation sandboxes and the Go CLI still use `OPENAI_API_KEY`.
+File-translation sandboxes follow the same BYOK-then-managed order as string
+jobs. When the organization has a stored provider credential, the sandbox CLI
+profile uses that provider, model, and decrypted key. Otherwise they use
+`ai_gateway` and `AI_GATEWAY_API_KEY` when that env var is set, or `openai` and
+`OPENAI_API_KEY`. The Go CLI supports those providers.
 
 OpenAI `reasoningSummary` options apply only for Gateway and OpenAI BYOK.
 
 ## Consequences
 
-- Deployments that run the agent, managed translation, image localization, or
-  video localization need `AI_GATEWAY_API_KEY`.
+- Vercel deployments authenticate Gateway with OIDC. Do not set
+  `AI_GATEWAY_API_KEY` in the app, CI, or local env files.
 - BYOK orgs keep conversational agent and classification traffic on their own
   provider accounts. Image and video jobs still go through the platform Gateway.
 - Subagents and automations that call `getHyperlocaliseAgentModel()` use Gateway

@@ -19,8 +19,6 @@ import {
   isWriteBackTranslationAllowed,
 } from "@/api/auth/capability-guards";
 import { badRequestResponse, conflictResponse, notFoundResponse } from "@/api/response.schema";
-import { createWorkspaceFeatureFlagMiddleware } from "@/api/middleware/workspace-feature-flag";
-import { workspaceIssuesFlag } from "@/lib/flags/workspace-flags";
 import { IssueSheetService } from "@/lib/projects/issue-sheet/issue-sheet-service";
 
 import { createIssueRelationshipRoutes } from "./issue-relationships.route";
@@ -114,11 +112,6 @@ const validateFeedQuery = createZodValidator(
   "invalid_issue_sheet_feed_query",
 );
 
-const requireWorkspaceIssuesFeature = createWorkspaceFeatureFlagMiddleware(
-  workspaceIssuesFlag,
-  "Workspace issues is not enabled for this organization",
-);
-
 async function requireProject(c: { var: { auth: AuthVariables["auth"] } }, projectId: string) {
   const project = await getOwnedProject(c.var.auth, projectId);
   if (!project) {
@@ -130,7 +123,6 @@ async function requireProject(c: { var: { auth: AuthVariables["auth"] } }, proje
 export function createIssueSheetRoutes() {
   return (
     new Hono<{ Variables: AuthVariables }>()
-      .use("*", requireWorkspaceIssuesFeature)
       .route("/:issueId/comments", createIssueSheetCommentRoutes())
       .route("/:issueId/relationships", createIssueRelationshipRoutes())
       .get("/", validateIssueSheetParams, validateIssueSheetQuery, async (c) => {

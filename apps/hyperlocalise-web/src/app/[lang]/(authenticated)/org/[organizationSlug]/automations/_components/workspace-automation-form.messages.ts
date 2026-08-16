@@ -402,16 +402,6 @@ export const workspaceAutomationFormMessages = defineMessages({
     id: "MweQRnF9MU",
     description: "Description for the Create issue automation tool",
   },
-  issuesUnavailableDescription: {
-    defaultMessage: "Enable workspace Issues before using Issue Sheet tools in automations.",
-    id: "uyibAnXll7",
-    description: "Description when workspace Issues feature flag is off",
-  },
-  enableIssuesFirstShortcut: {
-    defaultMessage: "Enable first",
-    id: "SCwFU6O6EH",
-    description: "Shortcut shown when workspace Issues is not enabled for the organization",
-  },
   removeListIssues: {
     defaultMessage: "Remove List issues tool",
     id: "N7Y/6FnTVv",
@@ -481,6 +471,42 @@ export const workspaceAutomationFormMessages = defineMessages({
     defaultMessage: "Remove Ahrefs tool",
     id: "CKjsX01Ql/",
     description: "Accessible label to remove the Ahrefs tool",
+  },
+  webSearch: {
+    defaultMessage: "Web Search",
+    id: "DwaD/cBlPO",
+    description: "Menu item and tool title for live web search",
+  },
+  webSearchDescription: {
+    defaultMessage:
+      "Search the live web through AI Gateway. Auto lets the agent pick Perplexity or Exa.",
+    id: "SnTFQm1KyV",
+    description: "Description for the Web Search automation tool",
+  },
+  removeWebSearchTool: {
+    defaultMessage: "Remove Web Search tool",
+    id: "YOVFvt60oU",
+    description: "Accessible label to remove the Web Search tool",
+  },
+  webSearchProvider: {
+    defaultMessage: "Search provider",
+    id: "6Nr6tK1aoh",
+    description: "Label for the Web Search provider picker",
+  },
+  webSearchProviderAuto: {
+    defaultMessage: "Auto",
+    id: "y6su8h1cH4",
+    description: "Web Search provider option that lets the agent choose Perplexity or Exa",
+  },
+  webSearchProviderPerplexity: {
+    defaultMessage: "Perplexity",
+    id: "Uuw7RsxOWd",
+    description: "Web Search provider option for Perplexity Search",
+  },
+  webSearchProviderExa: {
+    defaultMessage: "Exa",
+    id: "P5KI62Z4os",
+    description: "Web Search provider option for Exa Search",
   },
   comingSoon: {
     defaultMessage: "Coming soon",

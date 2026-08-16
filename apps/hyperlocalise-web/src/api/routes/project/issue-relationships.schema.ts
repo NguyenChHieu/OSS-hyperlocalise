@@ -29,6 +29,13 @@ export const issueRelationshipKindSchema = z.enum([
   "duplicate_of",
 ]);
 
+// Adds "duplicate": the read-only inverse of duplicate_of, shown when another
+// issue was marked as a duplicate of this one. Only ever appears in reads
+// (relationship rows, feed events), never accepted as request input.
+export const issueRelationshipPresentedKindSchema = issueRelationshipKindSchema.or(
+  z.literal("duplicate"),
+);
+
 export const issueRelationshipCreateBodySchema = z.object({
   relatedIssueId: z.uuid(),
   kind: issueRelationshipKindSchema,

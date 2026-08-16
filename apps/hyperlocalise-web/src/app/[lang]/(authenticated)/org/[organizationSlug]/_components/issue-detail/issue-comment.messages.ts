@@ -80,10 +80,30 @@ export const issueCommentMessages = defineMessages({
     id: "KDIMmNPAxL",
     description: "Activity line when a duplicate_of relationship is added",
   },
-  relationshipRemoved: {
-    defaultMessage: "{actor} removed a relationship with {relatedIssue}",
-    id: "S66c1EpmCM",
-    description: "Activity line when any relationship is removed",
+  relationshipRemovedRelated: {
+    defaultMessage: "{actor} removed the related link to {relatedIssue}",
+    id: "psXoqti6i8",
+    description: "Activity line when a related-issue relationship is removed",
+  },
+  relationshipRemovedBlocks: {
+    defaultMessage: "{actor} marked this as no longer blocking {relatedIssue}",
+    id: "gTVgkDcRK6",
+    description: "Activity line when a blocks relationship is removed",
+  },
+  relationshipRemovedBlockedBy: {
+    defaultMessage: "{actor} marked this as no longer blocked by {relatedIssue}",
+    id: "DzV7NQXkgD",
+    description: "Activity line when a blocked-by relationship is removed",
+  },
+  relationshipRemovedDuplicateOf: {
+    defaultMessage: "{actor} marked this as no longer a duplicate of {relatedIssue}",
+    id: "+Qv1Pt0/I9",
+    description: "Activity line when a duplicate_of relationship is removed",
+  },
+  relationshipRemovedDuplicate: {
+    defaultMessage: "{actor} unmarked {relatedIssue} as a duplicate of this issue",
+    id: "B9k45Fzigm",
+    description: "Activity line when the inverse duplicate relationship is removed",
   },
   loadError: {
     defaultMessage: "Could not load comments.",

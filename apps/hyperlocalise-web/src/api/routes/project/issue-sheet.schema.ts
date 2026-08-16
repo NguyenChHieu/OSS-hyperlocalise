@@ -15,6 +15,10 @@ import { z } from "zod";
 import { ISSUE_SHEET_COLUMN_ICON_IDS } from "@/lib/projects/issue-sheet/issue-sheet-column-icons";
 import { issueSheetImportContentExceedsByteLimit } from "@/lib/projects/issue-sheet/issue-sheet-csv-import";
 
+import {
+  issueRelationshipKindSchema,
+  issueRelationshipPresentedKindSchema,
+} from "./issue-relationships.schema";
 import { projectIdParamsSchema } from "./project.schema";
 
 export const issueSheetIssueStatusSchema = z.enum(["open", "in_progress", "resolved", "wont_fix"]);
@@ -300,13 +304,15 @@ export const issueSheetActivitySchema = z.discriminatedUnion("type", [
   z.object({
     ...issueSheetActivityBaseSchema,
     type: z.literal("relationship_added"),
-    relationshipKind: z.string(),
+    relationshipKind: issueRelationshipKindSchema,
     relatedIssue: z.object({ issueId: z.string().uuid(), title: z.string().nullable() }),
   }),
   z.object({
     ...issueSheetActivityBaseSchema,
     type: z.literal("relationship_removed"),
-    relationshipKind: z.string(),
+    // Removal can be actioned from either side of the relationship, so the
+    // presented kind can also be "duplicate" (see presentRelationshipKind).
+    relationshipKind: issueRelationshipPresentedKindSchema,
     relatedIssue: z.object({ issueId: z.string().uuid(), title: z.string().nullable() }),
   }),
 ]);

@@ -13,6 +13,9 @@
  * Version 2.0 or later.
  */
 
+import type { IssueRelationshipRequestKind } from "./use-issue-relationship-mutations";
+import type { IssueRelationshipPresentedKind } from "./use-issue-relationships-query";
+
 export type IssueActivityUser = {
   userId: string;
   displayName: string;
@@ -47,11 +50,12 @@ export type IssueActivity =
     })
   | (IssueActivityBase & {
       type: "relationship_added";
-      relationshipKind: string;
+      relationshipKind: IssueRelationshipRequestKind;
       relatedIssue: IssueActivityRelatedIssue;
     })
   | (IssueActivityBase & {
       type: "relationship_removed";
-      relationshipKind: string;
+      // Removal can be actioned from either side, so this can also be "duplicate".
+      relationshipKind: IssueRelationshipPresentedKind;
       relatedIssue: IssueActivityRelatedIssue;
     });

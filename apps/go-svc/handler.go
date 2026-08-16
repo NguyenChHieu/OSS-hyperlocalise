@@ -32,14 +32,6 @@ func newHandler() *handler {
 	}
 }
 
-func registerRoutes(mux *http.ServeMux, h *handler, verifier SessionVerifier) {
-	validate := authMiddleware(verifier)(http.HandlerFunc(h.validateSegment))
-	mux.HandleFunc("GET /health", h.health)
-	mux.HandleFunc("GET /api/go-svc/health", h.health)
-	mux.Handle("POST /v1/validate/segment", validate)
-	mux.Handle("POST /api/go-svc/v1/validate/segment", validate)
-}
-
 func (h *handler) health(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)

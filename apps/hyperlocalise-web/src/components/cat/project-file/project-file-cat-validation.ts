@@ -36,7 +36,8 @@ const catSegmentValidationResponseSchema = z.object({
 
 export const CAT_SEGMENT_QA_MODES = ["not_localized", "whitespace_only", "same_as_source"] as const;
 
-const CAT_SEGMENT_VALIDATION_ENABLED = true;
+/** Disabled until go-svc is deployed as a separate service. */
+const CAT_SEGMENT_VALIDATION_ENABLED = false;
 
 export type CatSegmentValidationError =
   | { code: "aborted" }

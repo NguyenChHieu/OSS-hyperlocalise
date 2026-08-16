@@ -52,26 +52,6 @@ func TestValidateSegmentUnauthorized(t *testing.T) {
 	require.Equal(t, "unauthorized", body["error"])
 }
 
-func TestValidateSegmentPublicPrefix(t *testing.T) {
-	h := newHandler()
-	mux := http.NewServeMux()
-	registerRoutes(mux, h, mockSessionVerifier{claims: AuthClaims{UserID: "user_123"}})
-
-	payload := `{"sourceText":"Hello","targetText":"Bonjour","sourcePath":"/messages/en.json"}`
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/go-svc/v1/validate/segment", bytes.NewBufferString(payload))
-	req.AddCookie(&http.Cookie{Name: workOSSessionCookieName, Value: "test-session"})
-	mux.ServeHTTP(rec, req)
-
-	require.Equal(t, http.StatusOK, rec.Code)
-
-	healthRec := httptest.NewRecorder()
-	healthReq := httptest.NewRequest(http.MethodGet, "/api/go-svc/health", nil)
-	mux.ServeHTTP(healthRec, healthReq)
-	require.Equal(t, http.StatusOK, healthRec.Code)
-	require.JSONEq(t, `{"status":"ok"}`, healthRec.Body.String())
-}
-
 func TestValidateSegmentSuccess(t *testing.T) {
 	h := &handler{
 		validate: func(req segmentvalidate.Request) []segmentvalidate.Check {

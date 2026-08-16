@@ -19,6 +19,7 @@ import type {
 } from "@/api/routes/project/project.schema";
 import { db, schema } from "@/lib/database";
 import { ProjectServiceBase } from "@/lib/projects/project-service-base";
+import { shouldRetrySameAsSourcePrefill } from "@/lib/projects/translations/should-retry-same-as-source-prefill";
 import { normalizeTranslationMemorySourceText } from "@/lib/translation/normalizeTranslationMemorySourceText";
 
 type ProjectKeysScopeInput = {
@@ -498,6 +499,7 @@ export class ProjectTranslationService extends ProjectServiceBase {
     includeAllSourceKeys?: boolean;
   }): Promise<{
     prefilled: Record<string, string>;
+    retryKeys: string[];
     truncated: boolean;
     loadedKeyCount: number;
     maxKeyCount: number;
@@ -512,6 +514,7 @@ export class ProjectTranslationService extends ProjectServiceBase {
     if (!sourceFile) {
       return {
         prefilled: {},
+        retryKeys: [],
         truncated: false,
         loadedKeyCount: 0,
         maxKeyCount: maxKeysPerImport,
@@ -520,6 +523,7 @@ export class ProjectTranslationService extends ProjectServiceBase {
     }
 
     const prefilled: Record<string, string> = {};
+    const retryKeys: string[] = [];
     let loadedKeyCount = 0;
     let translatedKeyCount = 0;
     let offset = 0;
@@ -551,8 +555,21 @@ export class ProjectTranslationService extends ProjectServiceBase {
         const translation = translationByKeyId.get(key.id);
         const hasValidTranslation =
           Boolean(translation?.text?.trim()) && translation?.status !== "rejected";
+        // Leave multi-word needs-review copies out of prefill so a later
+        // translate-with-agent run can try them again. Single-word copies stay.
+        const retrySameAsSource =
+          hasValidTranslation &&
+          shouldRetrySameAsSourcePrefill({
+            sourceText: key.sourceText,
+            targetText: translation!.text,
+            status: translation!.status,
+          });
 
-        if (hasValidTranslation) {
+        if (retrySameAsSource) {
+          retryKeys.push(key.key);
+        }
+
+        if (hasValidTranslation && !retrySameAsSource) {
           prefilled[key.key] = translation!.text;
           translatedKeyCount += 1;
           continue;
@@ -573,6 +590,7 @@ export class ProjectTranslationService extends ProjectServiceBase {
 
     return {
       prefilled,
+      retryKeys,
       truncated: false,
       loadedKeyCount,
       maxKeyCount: maxKeysPerImport,

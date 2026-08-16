@@ -35,24 +35,4 @@ export const issueRelationshipPickerMessages = defineMessages({
     id: "7GXNJdLyH7",
     description: "Shown when the relationship target search returns no results",
   },
-  kindRelated: {
-    defaultMessage: "Related to",
-    id: "9fhvgRdHAm",
-    description: "Relationship kind option: related",
-  },
-  kindBlocks: {
-    defaultMessage: "Blocks",
-    id: "w0wUPAuOYA",
-    description: "Relationship kind option: blocks",
-  },
-  kindBlockedBy: {
-    defaultMessage: "Blocked by",
-    id: "MFeoPDmGj6",
-    description: "Relationship kind option: blocked by",
-  },
-  kindDuplicateOf: {
-    defaultMessage: "Duplicate of",
-    id: "8oZO1d1q3y",
-    description: "Relationship kind option: duplicate of",
-  },
 });

@@ -12,8 +12,8 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { useState } from "react";
-import { FormattedMessage, useIntl, type IntlShape } from "react-intl";
+import { useMemo, useState } from "react";
+import { FormattedMessage, useIntl } from "react-intl";
 import { PlusSignIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
@@ -35,10 +35,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { relationshipKindLabel } from "./issue-relationship-kind";
 import { issueRelationshipPickerMessages as messages } from "./issue-relationship-picker.messages";
 import { IssueStatusIcon } from "./issue-status-icon";
 import type { IssueRelationshipRequestKind } from "./use-issue-relationship-mutations";
 import { useIssueRelationshipSearch } from "./use-issue-relationship-search";
+
+const DEFAULT_KIND: IssueRelationshipRequestKind = "related";
 
 const RELATIONSHIP_KINDS: IssueRelationshipRequestKind[] = [
   "related",
@@ -46,19 +49,6 @@ const RELATIONSHIP_KINDS: IssueRelationshipRequestKind[] = [
   "blocked_by",
   "duplicate_of",
 ];
-
-function kindLabel(intl: IntlShape, kind: IssueRelationshipRequestKind) {
-  switch (kind) {
-    case "related":
-      return intl.formatMessage(messages.kindRelated);
-    case "blocks":
-      return intl.formatMessage(messages.kindBlocks);
-    case "blocked_by":
-      return intl.formatMessage(messages.kindBlockedBy);
-    case "duplicate_of":
-      return intl.formatMessage(messages.kindDuplicateOf);
-  }
-}
 
 export function IssueRelationshipPicker({
   organizationSlug,
@@ -73,8 +63,13 @@ export function IssueRelationshipPicker({
 }) {
   const intl = useIntl();
   const [open, setOpen] = useState(false);
-  const [kind, setKind] = useState<IssueRelationshipRequestKind>("related");
+  const [kind, setKind] = useState<IssueRelationshipRequestKind>(DEFAULT_KIND);
   const [query, setQuery] = useState("");
+
+  const kindItems = useMemo(
+    () => RELATIONSHIP_KINDS.map((value) => ({ value, label: relationshipKindLabel(intl, value) })),
+    [intl],
+  );
 
   const searchQuery = useIssueRelationshipSearch({
     organizationSlug,
@@ -91,6 +86,7 @@ export function IssueRelationshipPicker({
         setOpen(next);
         if (!next) {
           setQuery("");
+          setKind(DEFAULT_KIND);
         }
       }}
     >
@@ -112,15 +108,16 @@ export function IssueRelationshipPicker({
         <div className="border-b border-border p-2">
           <Select
             value={kind}
+            items={kindItems}
             onValueChange={(value) => setKind(value as IssueRelationshipRequestKind)}
           >
             <SelectTrigger className="h-8 w-full text-sm">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {RELATIONSHIP_KINDS.map((value) => (
-                <SelectItem key={value} value={value}>
-                  {kindLabel(intl, value)}
+              {kindItems.map((item) => (
+                <SelectItem key={item.value} value={item.value} label={item.label}>
+                  {item.label}
                 </SelectItem>
               ))}
             </SelectContent>

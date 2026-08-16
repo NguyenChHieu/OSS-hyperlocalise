@@ -40,29 +40,9 @@ export const issueRelationshipSectionMessages = defineMessages({
     id: "p22y6wrB6M",
     description: "Fallback toast when removing a relationship fails",
   },
-  groupRelated: {
-    defaultMessage: "Related",
-    id: "Si+6vywvvS",
-    description: "Group heading for symmetric related-issue relationships",
-  },
-  groupBlocks: {
-    defaultMessage: "Blocks",
-    id: "IYx5yvswpT",
-    description: "Group heading for issues this issue blocks",
-  },
-  groupBlockedBy: {
-    defaultMessage: "Blocked by",
-    id: "iuZGgjOd6g",
-    description: "Group heading for issues blocking this issue",
-  },
-  groupDuplicateOf: {
-    defaultMessage: "Duplicate of",
-    id: "WfqdtvkWHU",
-    description: "Group heading for the canonical issue this issue is a duplicate of",
-  },
-  groupDuplicates: {
-    defaultMessage: "Duplicates",
-    id: "5t0u9MCd8I",
-    description: "Group heading for issues marked as duplicates of this issue",
+  loadError: {
+    defaultMessage: "Could not load relationships",
+    id: "r3j9bzJdAk",
+    description: "Shown when the relationships list fails to load",
   },
 });

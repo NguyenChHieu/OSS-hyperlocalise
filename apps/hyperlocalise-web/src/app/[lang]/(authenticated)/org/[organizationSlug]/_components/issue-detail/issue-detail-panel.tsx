@@ -771,6 +771,8 @@ export const IssueDetailPanel = forwardRef<
           projectId={projectId}
           issueId={issue.id}
           relationships={relationships}
+          isLoading={relationshipsQuery.isLoading}
+          isError={relationshipsQuery.isError}
           disabled={isSaving}
         />
 

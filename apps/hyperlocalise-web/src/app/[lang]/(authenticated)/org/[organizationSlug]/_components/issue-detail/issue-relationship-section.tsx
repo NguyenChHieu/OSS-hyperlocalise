@@ -12,15 +12,19 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { FormattedMessage, useIntl, type IntlShape } from "react-intl";
+import { useMemo } from "react";
+import Link from "next/link";
+import { FormattedMessage, useIntl } from "react-intl";
 import { Delete02Icon, LinkSquare02Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { TypographyP } from "@/components/ui/typography";
 
 import { buildIssueDetailHref } from "./issue-detail-utils";
+import { IssueRelationshipKindIcon, relationshipKindLabel } from "./issue-relationship-kind";
 import { issueRelationshipSectionMessages as messages } from "./issue-relationship-section.messages";
 import { IssueRelationshipPicker } from "./issue-relationship-picker";
 import { IssueStatusIcon } from "./issue-status-icon";
@@ -38,19 +42,14 @@ const GROUP_ORDER: IssueRelationshipPresentedKind[] = [
   "duplicate",
 ];
 
-function groupLabel(intl: IntlShape, kind: IssueRelationshipPresentedKind) {
-  switch (kind) {
-    case "related":
-      return intl.formatMessage(messages.groupRelated);
-    case "blocks":
-      return intl.formatMessage(messages.groupBlocks);
-    case "blocked_by":
-      return intl.formatMessage(messages.groupBlockedBy);
-    case "duplicate_of":
-      return intl.formatMessage(messages.groupDuplicateOf);
-    case "duplicate":
-      return intl.formatMessage(messages.groupDuplicates);
+function groupRelationships(relationships: IssueRelationship[]) {
+  const groups = new Map<IssueRelationshipPresentedKind, IssueRelationship[]>();
+  for (const relationship of relationships) {
+    const list = groups.get(relationship.presentedKind) ?? [];
+    list.push(relationship);
+    groups.set(relationship.presentedKind, list);
   }
+  return groups;
 }
 
 function RelationshipRow({
@@ -66,9 +65,9 @@ function RelationshipRow({
 }) {
   const intl = useIntl();
   return (
-    <div className="flex items-center gap-2 py-1">
+    <div className="group flex items-center gap-2 rounded-md px-1.5 py-1 hover:bg-muted/40">
       <IssueStatusIcon status={relationship.otherIssue.status} />
-      <a
+      <Link
         href={buildIssueDetailHref({
           organizationSlug,
           projectId: relationship.otherIssue.projectId,
@@ -77,17 +76,27 @@ function RelationshipRow({
         className="min-w-0 flex-1 truncate text-sm text-foreground hover:underline"
       >
         {relationship.otherIssue.title}
-      </a>
+      </Link>
       <Button
         type="button"
         variant="ghost"
         size="icon-sm"
         disabled={disabled}
         aria-label={intl.formatMessage(messages.remove)}
+        className="opacity-0 focus-visible:opacity-100 group-hover:opacity-100"
         onClick={onRemove}
       >
         <HugeiconsIcon icon={Delete02Icon} strokeWidth={1.8} className="size-3.5" />
       </Button>
+    </div>
+  );
+}
+
+function RelationshipSkeleton() {
+  return (
+    <div className="grid gap-3" aria-hidden>
+      <Skeleton className="h-3 w-16" />
+      <Skeleton className="h-6 w-full" />
     </div>
   );
 }
@@ -97,12 +106,16 @@ export function IssueRelationshipSection({
   projectId,
   issueId,
   relationships,
+  isLoading = false,
+  isError = false,
   disabled = false,
 }: {
   organizationSlug: string;
   projectId: string;
   issueId: string;
   relationships: IssueRelationship[];
+  isLoading?: boolean;
+  isError?: boolean;
   disabled?: boolean;
 }) {
   const intl = useIntl();
@@ -112,12 +125,7 @@ export function IssueRelationshipSection({
     issueId,
   });
 
-  const groups = new Map<IssueRelationshipPresentedKind, IssueRelationship[]>();
-  for (const relationship of relationships) {
-    const list = groups.get(relationship.presentedKind) ?? [];
-    list.push(relationship);
-    groups.set(relationship.presentedKind, list);
-  }
+  const groups = useMemo(() => groupRelationships(relationships), [relationships]);
 
   return (
     <section className="mt-2 grid gap-3 border-t border-border pt-4">
@@ -145,7 +153,13 @@ export function IssueRelationshipSection({
           }}
         />
       </div>
-      {relationships.length === 0 ? (
+      {isLoading ? (
+        <RelationshipSkeleton />
+      ) : isError ? (
+        <TypographyP className="text-sm text-muted-foreground">
+          <FormattedMessage {...messages.loadError} />
+        </TypographyP>
+      ) : relationships.length === 0 ? (
         <TypographyP className="text-sm text-muted-foreground">
           <FormattedMessage {...messages.empty} />
         </TypographyP>
@@ -153,7 +167,10 @@ export function IssueRelationshipSection({
         <div className="grid gap-3">
           {GROUP_ORDER.filter((kind) => groups.has(kind)).map((kind) => (
             <div key={kind} className="grid gap-1">
-              <span className="text-xs text-muted-foreground">{groupLabel(intl, kind)}</span>
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <IssueRelationshipKindIcon kind={kind} />
+                {relationshipKindLabel(intl, kind)}
+              </span>
               <div className="grid">
                 {groups.get(kind)!.map((relationship) => (
                   <RelationshipRow

@@ -52,7 +52,10 @@ const relationships: IssueRelationship[] = [
   },
 ];
 
-function renderSection(items: IssueRelationship[]) {
+function renderSection(
+  items: IssueRelationship[],
+  options: { isLoading?: boolean; isError?: boolean } = {},
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -64,6 +67,8 @@ function renderSection(items: IssueRelationship[]) {
           projectId={projectId}
           issueId={issueId}
           relationships={items}
+          isLoading={options.isLoading}
+          isError={options.isError}
         />
       </QueryClientProvider>
     </IntlProvider>,
@@ -87,6 +92,23 @@ describe("IssueRelationshipSection", () => {
   it("shows an empty state with no relationships", () => {
     renderSection([]);
     expect(screen.getByText("No relationships yet")).toBeInTheDocument();
+  });
+
+  it("does not claim there are no relationships while still loading", () => {
+    renderSection([], { isLoading: true });
+    expect(screen.queryByText("No relationships yet")).not.toBeInTheDocument();
+  });
+
+  it("shows an error message when relationships fail to load", () => {
+    renderSection([], { isError: true });
+    expect(screen.getByText("Could not load relationships")).toBeInTheDocument();
+    expect(screen.queryByText("No relationships yet")).not.toBeInTheDocument();
+  });
+
+  it("shows a kind icon next to each group heading", () => {
+    renderSection(relationships);
+    const blocksHeading = screen.getByText("Blocks").closest("span");
+    expect(blocksHeading?.querySelector("svg")).toBeInTheDocument();
   });
 
   it("removes a relationship on click", async () => {

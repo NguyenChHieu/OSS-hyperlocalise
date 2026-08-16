@@ -1,5 +1,4 @@
-# Fallback when the Vercel Root Directory is this app.
-# Services deploys use the repo-root .vercelignore instead.
+# Exclude dev-only files from Vercel uploads.
 # See https://vercel.com/docs/deployments/vercel-ignore
 # Vercel already ignores node_modules, .next, .git, and .env* by default.
 

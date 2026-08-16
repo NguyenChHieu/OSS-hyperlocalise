@@ -38,8 +38,7 @@ func main() {
 
 	h := newHandler()
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", h.health)
-	mux.Handle("POST /v1/validate/segment", authMiddleware(verifier)(http.HandlerFunc(h.validateSegment)))
+	registerRoutes(mux, h, verifier)
 
 	addr := ":" + port
 	log.Printf("go-svc listening on %s", addr)

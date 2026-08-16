@@ -297,6 +297,18 @@ export const issueSheetActivitySchema = z.discriminatedUnion("type", [
     previousStatus: z.string(),
     nextStatus: z.string(),
   }),
+  z.object({
+    ...issueSheetActivityBaseSchema,
+    type: z.literal("relationship_added"),
+    relationshipKind: z.string(),
+    relatedIssue: z.object({ issueId: z.string().uuid(), title: z.string().nullable() }),
+  }),
+  z.object({
+    ...issueSheetActivityBaseSchema,
+    type: z.literal("relationship_removed"),
+    relationshipKind: z.string(),
+    relatedIssue: z.object({ issueId: z.string().uuid(), title: z.string().nullable() }),
+  }),
 ]);
 
 export type IssueSheetFeedQuery = z.infer<typeof issueSheetFeedQuerySchema>;

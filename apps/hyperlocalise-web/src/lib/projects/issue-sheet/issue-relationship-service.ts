@@ -365,7 +365,9 @@ export class IssueRelationshipService extends ProjectServiceBase {
           });
           if (cycle) {
             throw new RelationshipConflictError(
-              storedKind === "blocks" ? "blocking_relationship_cycle" : "duplicate_relationship_cycle",
+              storedKind === "blocks"
+                ? "blocking_relationship_cycle"
+                : "duplicate_relationship_cycle",
             );
           }
         }

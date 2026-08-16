@@ -241,10 +241,22 @@ export type IssueSheetActivityStatusChangedPayload = {
   nextStatus: string;
 };
 
+export type IssueSheetActivityRelationshipAddedPayload = {
+  relatedIssueId: string;
+  kind: string;
+};
+
+export type IssueSheetActivityRelationshipRemovedPayload = {
+  relatedIssueId: string;
+  kind: string;
+};
+
 export type IssueSheetActivityPayload =
   | IssueSheetActivityAssigneeChangedPayload
   | IssueSheetActivityIssueCreatedPayload
-  | IssueSheetActivityStatusChangedPayload;
+  | IssueSheetActivityStatusChangedPayload
+  | IssueSheetActivityRelationshipAddedPayload
+  | IssueSheetActivityRelationshipRemovedPayload;
 
 /**
  * Stores non-comment issue events (assignee changes, and later status/link events)
@@ -280,6 +292,50 @@ export const issueSheetActivities = pgTable(
       table.projectId,
       table.issueId,
     ),
+  ],
+);
+
+export const issueSheetRelationshipKinds = ["related", "blocks", "duplicate_of"] as const;
+export type IssueSheetRelationshipKind = (typeof issueSheetRelationshipKinds)[number];
+
+/**
+ * Stores directed issue-to-issue relationships (related, blocks, duplicate_of).
+ * "blocked_by" is not stored separately — it's the inverse read of a "blocks" row
+ * (relatedIssueId = this issue, kind = "blocks" means "this issue is blocked by issueId").
+ */
+export const issueSheetRelationships = pgTable(
+  "issue_sheet_relationships",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    issueId: uuid("issue_id")
+      .notNull()
+      .references(() => issueSheetIssues.id, { onDelete: "cascade" }),
+    relatedIssueId: uuid("related_issue_id")
+      .notNull()
+      .references(() => issueSheetIssues.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    createdByUserId: uuid("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("idx_issue_sheet_relationships_issue_kind").on(table.issueId, table.kind),
+    index("idx_issue_sheet_relationships_related_kind").on(table.relatedIssueId, table.kind),
+    uniqueIndex("issue_sheet_relationships_edge_key").on(
+      table.issueId,
+      table.relatedIssueId,
+      table.kind,
+    ),
+    uniqueIndex("issue_sheet_relationships_one_canonical_key")
+      .on(table.issueId)
+      .where(sql`${table.kind} = 'duplicate_of'`),
   ],
 );
 

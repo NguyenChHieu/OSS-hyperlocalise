@@ -64,6 +64,7 @@ import { IssueMarkdownField } from "./issue-markdown-field";
 import { issueMarkdownFieldMessages as markdownFieldMessages } from "./issue-markdown-field.messages";
 import { IssueAssigneePicker } from "./issue-assignee-picker";
 import { IssueCommentThread } from "./issue-comment-thread";
+import { IssueDuplicateBanner } from "./issue-duplicate-banner";
 import {
   buildIssueCatHref,
   isExternalHttpUrl,
@@ -78,6 +79,7 @@ import {
 } from "./issue-detail-utils";
 import { IssueLocalePicker } from "./issue-locale-picker";
 import { IssuePriorityIcon } from "./issue-priority-icon";
+import { IssueRelationshipSection } from "./issue-relationship-section";
 import { IssueStatusIcon } from "./issue-status-icon";
 import {
   areCustomColumnDraftsDirty,
@@ -94,6 +96,7 @@ import { IssueWatchControl } from "./issue-watch-control";
 import { useAssignableIssueMembersQuery } from "./use-assignable-issue-members";
 import { useIssueDetailMutations } from "./use-issue-detail-mutations";
 import { useIssueDetailQuery } from "./use-issue-detail-query";
+import { useIssueRelationshipsQuery } from "./use-issue-relationships-query";
 import { useIssueSheetColumnsQuery } from "./use-issue-sheet-columns-query";
 import { issueDetailPanelMessages as messages } from "./issue-detail-panel.messages";
 import { type IssueDetailSidebarScope } from "./issue-detail-sidebar-state";
@@ -242,6 +245,12 @@ export const IssueDetailPanel = forwardRef<
     organizationSlug,
     projectId,
   });
+  const relationshipsQuery = useIssueRelationshipsQuery({
+    organizationSlug,
+    projectId,
+    issueId,
+  });
+  const relationships = relationshipsQuery.data ?? [];
   const actorUserId = assignableMembersQuery.data?.members.find(
     (member) => member.isCurrentUser,
   )?.userId;
@@ -629,6 +638,8 @@ export const IssueDetailPanel = forwardRef<
       aria-busy={isSaving}
     >
       <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto px-6 py-5">
+        <IssueDuplicateBanner organizationSlug={organizationSlug} relationships={relationships} />
+
         <Textarea
           value={titleDraft}
           onChange={(event) => setTitleDraft(event.currentTarget.value)}
@@ -754,6 +765,16 @@ export const IssueDetailPanel = forwardRef<
             </div>
           </section>
         ) : null}
+
+        <IssueRelationshipSection
+          organizationSlug={organizationSlug}
+          projectId={projectId}
+          issueId={issue.id}
+          relationships={relationships}
+          isLoading={relationshipsQuery.isLoading}
+          isError={relationshipsQuery.isError}
+          disabled={isSaving}
+        />
 
         <IssueWatchControl
           organizationSlug={organizationSlug}

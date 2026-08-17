@@ -40,6 +40,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { TypographyP } from "@/components/ui/typography";
+import { assertNever } from "@/lib/primitives/assert-never/assert-never";
 import { cn } from "@/lib/primitives/cn";
 
 import { formatRelativeTimestamp } from "../workspace-files-shared";
@@ -47,6 +48,8 @@ import { IssueCommentComposer } from "./issue-comment-composer";
 import { issueCommentMessages as messages } from "./issue-comment.messages";
 import { useIssueDetailGuardedNavigate } from "./issue-detail-navigation-guard";
 import { buildIssueDetailHref, issueStatusLabel } from "./issue-detail-utils";
+import { IssueRelationshipKindIcon } from "./issue-relationship-kind";
+import { IssueStatusIcon } from "./issue-status-icon";
 import { useIssueCommentMutations, type IssueComment } from "./use-issue-comments";
 import { useIssueFeedQuery } from "./use-issue-feed";
 import type { IssueActivity } from "./use-issue-activities";
@@ -320,6 +323,7 @@ function IssueFeedActivityRow({
   createdAt,
   connectAbove = false,
   connectBelow = false,
+  icon,
   children,
 }: {
   actorName: string;
@@ -327,6 +331,8 @@ function IssueFeedActivityRow({
   createdAt: string;
   connectAbove?: boolean;
   connectBelow?: boolean;
+  /** Event-type glyph shown instead of the actor avatar (relationship/status events). */
+  icon?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -339,12 +345,21 @@ function IssueFeedActivityRow({
           connectBelow ? "bottom-0" : "bottom-1",
         )}
       />
-      <Avatar className="relative z-10 size-4 ring-2 ring-background after:hidden">
-        {actorAvatar ? <AvatarImage src={actorAvatar} alt="" /> : null}
-        <AvatarFallback className="bg-muted text-[8px] leading-none">
-          {initials(actorName)}
-        </AvatarFallback>
-      </Avatar>
+      {icon ? (
+        <span
+          aria-hidden
+          className="relative z-10 flex size-4 shrink-0 items-center justify-center rounded-full bg-background ring-2 ring-background"
+        >
+          {icon}
+        </span>
+      ) : (
+        <Avatar className="relative z-10 size-4 ring-2 ring-background after:hidden">
+          {actorAvatar ? <AvatarImage src={actorAvatar} alt="" /> : null}
+          <AvatarFallback className="bg-muted text-[8px] leading-none">
+            {initials(actorName)}
+          </AvatarFallback>
+        </Avatar>
+      )}
       <p className="min-w-0 flex-1 truncate text-xs leading-4 text-muted-foreground">
         {children}
         {" · "}
@@ -352,6 +367,91 @@ function IssueFeedActivityRow({
       </p>
     </div>
   );
+}
+
+function relationshipAddedCopy(
+  intl: ReturnType<typeof useIntl>,
+  actor: ReactNode,
+  activity: Extract<IssueActivity, { type: "relationship_added" }>,
+) {
+  const relatedIssue = activityName(
+    activity.relatedIssue.title ?? intl.formatMessage(messages.unknownIssue),
+  );
+  switch (activity.relationshipKind) {
+    case "related":
+      return (
+        <FormattedMessage {...messages.relationshipAddedRelated} values={{ actor, relatedIssue }} />
+      );
+    case "blocks":
+      return (
+        <FormattedMessage {...messages.relationshipAddedBlocks} values={{ actor, relatedIssue }} />
+      );
+    case "blocked_by":
+      return (
+        <FormattedMessage
+          {...messages.relationshipAddedBlockedBy}
+          values={{ actor, relatedIssue }}
+        />
+      );
+    case "duplicate_of":
+      return (
+        <FormattedMessage
+          {...messages.relationshipAddedDuplicateOf}
+          values={{ actor, relatedIssue }}
+        />
+      );
+    default:
+      return assertNever(activity.relationshipKind);
+  }
+}
+
+function relationshipRemovedCopy(
+  intl: ReturnType<typeof useIntl>,
+  actor: ReactNode,
+  activity: Extract<IssueActivity, { type: "relationship_removed" }>,
+) {
+  const relatedIssue = activityName(
+    activity.relatedIssue.title ?? intl.formatMessage(messages.unknownIssue),
+  );
+  switch (activity.relationshipKind) {
+    case "related":
+      return (
+        <FormattedMessage
+          {...messages.relationshipRemovedRelated}
+          values={{ actor, relatedIssue }}
+        />
+      );
+    case "blocks":
+      return (
+        <FormattedMessage
+          {...messages.relationshipRemovedBlocks}
+          values={{ actor, relatedIssue }}
+        />
+      );
+    case "blocked_by":
+      return (
+        <FormattedMessage
+          {...messages.relationshipRemovedBlockedBy}
+          values={{ actor, relatedIssue }}
+        />
+      );
+    case "duplicate_of":
+      return (
+        <FormattedMessage
+          {...messages.relationshipRemovedDuplicateOf}
+          values={{ actor, relatedIssue }}
+        />
+      );
+    case "duplicate":
+      return (
+        <FormattedMessage
+          {...messages.relationshipRemovedDuplicate}
+          values={{ actor, relatedIssue }}
+        />
+      );
+    default:
+      return assertNever(activity.relationshipKind);
+  }
 }
 
 function IssueActivityRow({
@@ -369,33 +469,51 @@ function IssueActivityRow({
   const actor = activityName(actorName);
 
   let copy: ReactNode;
-  if (activity.type === "issue_created") {
-    copy = <FormattedMessage {...messages.issueCreated} values={{ actor }} />;
-  } else if (activity.type === "status_changed") {
-    copy = (
-      <FormattedMessage
-        {...messages.statusChanged}
-        values={{
-          actor,
-          previousStatus: activityName(issueStatusLabel(intl, activity.previousStatus)),
-          nextStatus: activityName(issueStatusLabel(intl, activity.nextStatus)),
-        }}
-      />
-    );
-  } else if (!activity.nextAssignee) {
-    copy = <FormattedMessage {...messages.unassigned} values={{ actor }} />;
-  } else if (activity.actor?.userId && activity.nextAssignee.userId === activity.actor.userId) {
-    copy = <FormattedMessage {...messages.assignedToSelf} values={{ actor }} />;
-  } else {
-    copy = (
-      <FormattedMessage
-        {...messages.assignedTo}
-        values={{
-          actor,
-          assignee: activityName(activity.nextAssignee.displayName),
-        }}
-      />
-    );
+  let icon: ReactNode;
+  switch (activity.type) {
+    case "issue_created":
+      copy = <FormattedMessage {...messages.issueCreated} values={{ actor }} />;
+      break;
+    case "status_changed":
+      copy = (
+        <FormattedMessage
+          {...messages.statusChanged}
+          values={{
+            actor,
+            previousStatus: activityName(issueStatusLabel(intl, activity.previousStatus)),
+            nextStatus: activityName(issueStatusLabel(intl, activity.nextStatus)),
+          }}
+        />
+      );
+      icon = <IssueStatusIcon status={activity.nextStatus} className="size-3.5" />;
+      break;
+    case "assignee_changed":
+      if (!activity.nextAssignee) {
+        copy = <FormattedMessage {...messages.unassigned} values={{ actor }} />;
+      } else if (activity.actor?.userId && activity.nextAssignee.userId === activity.actor.userId) {
+        copy = <FormattedMessage {...messages.assignedToSelf} values={{ actor }} />;
+      } else {
+        copy = (
+          <FormattedMessage
+            {...messages.assignedTo}
+            values={{
+              actor,
+              assignee: activityName(activity.nextAssignee.displayName),
+            }}
+          />
+        );
+      }
+      break;
+    case "relationship_added":
+      copy = relationshipAddedCopy(intl, actor, activity);
+      icon = <IssueRelationshipKindIcon kind={activity.relationshipKind} />;
+      break;
+    case "relationship_removed":
+      copy = relationshipRemovedCopy(intl, actor, activity);
+      icon = <IssueRelationshipKindIcon kind={activity.relationshipKind} />;
+      break;
+    default:
+      assertNever(activity);
   }
 
   return (
@@ -405,6 +523,7 @@ function IssueActivityRow({
       createdAt={activity.createdAt}
       connectAbove={connectAbove}
       connectBelow={connectBelow}
+      icon={icon}
     >
       {copy}
     </IssueFeedActivityRow>

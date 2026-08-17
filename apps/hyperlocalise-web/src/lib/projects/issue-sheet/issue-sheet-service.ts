@@ -73,12 +73,25 @@ export {
 export const ISSUE_SHEET_ACTIVITY_ASSIGNEE_CHANGED = "assignee_changed" as const;
 export const ISSUE_SHEET_ACTIVITY_ISSUE_CREATED = "issue_created" as const;
 export const ISSUE_SHEET_ACTIVITY_STATUS_CHANGED = "status_changed" as const;
+export const ISSUE_SHEET_ACTIVITY_RELATIONSHIP_ADDED = "relationship_added" as const;
+export const ISSUE_SHEET_ACTIVITY_RELATIONSHIP_REMOVED = "relationship_removed" as const;
 
 export type IssueSheetActivityUserSummary = {
   userId: string;
   displayName: string;
   email: string | null;
   avatarUrl: string | null;
+};
+
+/**
+ * Deliberately title-less when the related issue is in a different project than
+ * the feed being rendered — hydrateActivityRows only resolves a title for
+ * same-project targets, since this feed has no access check of its own and a
+ * cross-project related issue may not be one the viewer can see.
+ */
+export type IssueSheetActivityRelatedIssueSummary = {
+  issueId: string;
+  title: string | null;
 };
 
 type IssueSheetActivityBase = {
@@ -100,6 +113,16 @@ export type IssueSheetActivity =
       type: typeof ISSUE_SHEET_ACTIVITY_STATUS_CHANGED;
       previousStatus: string;
       nextStatus: string;
+    })
+  | (IssueSheetActivityBase & {
+      type: typeof ISSUE_SHEET_ACTIVITY_RELATIONSHIP_ADDED;
+      relationshipKind: string;
+      relatedIssue: IssueSheetActivityRelatedIssueSummary;
+    })
+  | (IssueSheetActivityBase & {
+      type: typeof ISSUE_SHEET_ACTIVITY_RELATIONSHIP_REMOVED;
+      relationshipKind: string;
+      relatedIssue: IssueSheetActivityRelatedIssueSummary;
     });
 
 export type IssueSheetFeedItem =
@@ -882,7 +905,7 @@ export class IssueSheetService {
             .from(schema.issueSheetActivities)
             .where(inArray(schema.issueSheetActivities.id, activityIds));
 
-    const activities = await this.hydrateActivityRows(activityRows);
+    const activities = await this.hydrateActivityRows(activityRows, input.projectId);
     const activitiesById = new Map(activities.map((activity) => [activity.id, activity] as const));
 
     const actor = { userId: input.actorUserId, role: input.role };
@@ -969,8 +992,12 @@ export class IssueSheetService {
     return { items, total, nextCursor };
   }
 
-  private async hydrateActivityRows(rows: ActivityRow[]): Promise<IssueSheetActivity[]> {
+  private async hydrateActivityRows(
+    rows: ActivityRow[],
+    projectId: string,
+  ): Promise<IssueSheetActivity[]> {
     const userIds = new Set<string>();
+    const relatedIssueIds = new Set<string>();
     for (const row of rows) {
       if (row.actorUserId) {
         userIds.add(row.actorUserId);
@@ -992,6 +1019,18 @@ export class IssueSheetService {
           userIds.add(payload.nextAssigneeUserId);
         }
       }
+      if (
+        (row.type === ISSUE_SHEET_ACTIVITY_RELATIONSHIP_ADDED ||
+          row.type === ISSUE_SHEET_ACTIVITY_RELATIONSHIP_REMOVED) &&
+        row.payload &&
+        typeof row.payload === "object" &&
+        "relatedIssueId" in row.payload
+      ) {
+        const payload = row.payload as { relatedIssueId?: unknown };
+        if (typeof payload.relatedIssueId === "string") {
+          relatedIssueIds.add(payload.relatedIssueId);
+        }
+      }
     }
 
     const userRows =
@@ -1009,6 +1048,23 @@ export class IssueSheetService {
             .where(inArray(schema.users.id, [...userIds]));
 
     const usersById = new Map(userRows.map((row) => [row.id, row] as const));
+
+    // Only resolve titles for related issues in the same project as this feed — a
+    // related issue can live in a different project the feed's viewer may not be
+    // able to see, and this query has no access check of its own to guard that.
+    const relatedIssueRows =
+      relatedIssueIds.size === 0
+        ? []
+        : await this.database
+            .select({ id: schema.issueSheetIssues.id, title: schema.issueSheetIssues.title })
+            .from(schema.issueSheetIssues)
+            .where(
+              and(
+                eq(schema.issueSheetIssues.projectId, projectId),
+                inArray(schema.issueSheetIssues.id, [...relatedIssueIds]),
+              ),
+            );
+    const relatedIssueTitlesById = new Map(relatedIssueRows.map((row) => [row.id, row.title]));
 
     const activities: IssueSheetActivity[] = [];
     for (const row of rows) {
@@ -1054,6 +1110,33 @@ export class IssueSheetService {
           actor,
           previousStatus,
           nextStatus,
+          createdAt,
+        });
+        continue;
+      }
+
+      if (
+        row.type === ISSUE_SHEET_ACTIVITY_RELATIONSHIP_ADDED ||
+        row.type === ISSUE_SHEET_ACTIVITY_RELATIONSHIP_REMOVED
+      ) {
+        const relatedIssueId =
+          "relatedIssueId" in payload && typeof payload.relatedIssueId === "string"
+            ? payload.relatedIssueId
+            : null;
+        const relationshipKind =
+          "kind" in payload && typeof payload.kind === "string" ? payload.kind : null;
+        if (!relatedIssueId || !relationshipKind) {
+          continue;
+        }
+        activities.push({
+          id: row.id,
+          type: row.type,
+          actor,
+          relationshipKind,
+          relatedIssue: {
+            issueId: relatedIssueId,
+            title: relatedIssueTitlesById.get(relatedIssueId) ?? null,
+          },
           createdAt,
         });
         continue;

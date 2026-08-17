@@ -59,6 +59,7 @@ const queueFilterMessageByValue: Record<
   reviewed: catQueuePanelMessages.filterReviewed,
   has_issues: catQueuePanelMessages.filterHasIssues,
   skipped: catQueuePanelMessages.filterSkipped,
+  hidden: catQueuePanelMessages.filterHidden,
 };
 
 export function CatQueuePanel({
@@ -78,6 +79,8 @@ export function CatQueuePanel({
   onClearChecked,
   onBulkApprove,
   onBulkSkip,
+  onBulkHide,
+  onBulkUnhide,
   isBulkActionPending = false,
   isFetchingPage = false,
   isQueueLoading = false,
@@ -103,6 +106,8 @@ export function CatQueuePanel({
   onClearChecked?: () => void;
   onBulkApprove?: () => void;
   onBulkSkip?: () => void;
+  onBulkHide?: () => void;
+  onBulkUnhide?: () => void;
   isBulkActionPending?: boolean;
   isFetchingPage?: boolean;
   isQueueLoading?: boolean;
@@ -116,7 +121,9 @@ export function CatQueuePanel({
   const [selectionMode, setSelectionMode] = useCatQueueSelectionMode();
   const loadedCount = segments.length;
   const selectedCount = checkedSegmentIds?.size ?? 0;
-  const hasBulkActions = Boolean(onToggleSegmentChecked && (onBulkApprove || onBulkSkip));
+  const hasBulkActions = Boolean(
+    onToggleSegmentChecked && (onBulkApprove || onBulkSkip || onBulkHide || onBulkUnhide),
+  );
   const showSelection = selectionMode && Boolean(onToggleSegmentChecked);
   const hasActiveFilter = queueFilter !== "all";
   const hasSearch = search.trim().length > 0;
@@ -310,6 +317,16 @@ export function CatQueuePanel({
                   {onBulkSkip ? (
                     <DropdownMenuItem onClick={onBulkSkip} disabled={selectedCount === 0}>
                       <FormattedMessage {...catQueuePanelMessages.bulkSkip} />
+                    </DropdownMenuItem>
+                  ) : null}
+                  {onBulkHide ? (
+                    <DropdownMenuItem onClick={onBulkHide} disabled={selectedCount === 0}>
+                      <FormattedMessage {...catQueuePanelMessages.bulkHide} />
+                    </DropdownMenuItem>
+                  ) : null}
+                  {onBulkUnhide ? (
+                    <DropdownMenuItem onClick={onBulkUnhide} disabled={selectedCount === 0}>
+                      <FormattedMessage {...catQueuePanelMessages.bulkUnhide} />
                     </DropdownMenuItem>
                   ) : null}
                 </DropdownMenuGroup>

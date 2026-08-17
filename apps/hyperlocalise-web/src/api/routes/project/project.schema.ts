@@ -252,6 +252,7 @@ export const projectFileCatQueueFilterSchema = z.enum([
   "needs_review",
   "reviewed",
   "has_issues",
+  "hidden",
 ]);
 
 export const projectFileCatQuerySchema = z.object({
@@ -313,6 +314,22 @@ export const projectFileCatStatusBodySchema = z.object({
   targetLocale: z.string().trim().min(1).max(32),
   externalStringId: z.string().trim().min(1).max(128),
   status: z.enum(["needs_review", "approved", "rejected"]),
+});
+
+export const maxNativeCatHiddenStringBatch = 200;
+
+export const projectFileCatHiddenStringsBodySchema = z.object({
+  sourcePath: z.string().trim().min(1).max(2048),
+  externalStringIds: z
+    .array(z.string().trim().min(1).max(128))
+    .min(1)
+    .max(maxNativeCatHiddenStringBatch),
+  isHidden: z.boolean(),
+});
+
+export const projectFileCatHiddenStringsResponseSchema = z.object({
+  updatedCount: z.number().int().min(0),
+  isHidden: z.boolean(),
 });
 
 export const projectFileCatImageRegenerateBodySchema = z.object({
@@ -636,7 +653,7 @@ export const projectFileCatSegmentSchema = z.object({
   context: z.string().nullable(),
   type: z.string().nullable(),
   maxLength: z.number().int().positive().optional(),
-  /** Crowdin (and similar TMS) hidden/unavailable-for-translators flag. */
+  /** Hidden source string. Native TMS and Crowdin-style providers keep it visible to managers. */
   isHidden: z.boolean().optional(),
   contentKind: projectFileCatContentKindSchema.optional(),
   sourceAssetUrl: z.string().nullable().optional(),
@@ -714,6 +731,10 @@ export type ProjectFileCatQuery = z.infer<typeof projectFileCatQuerySchema>;
 export type ProjectFileCatExportQuery = z.infer<typeof projectFileCatExportQuerySchema>;
 export type ProjectFileCatQueueFilter = z.infer<typeof projectFileCatQueueFilterSchema>;
 export type ProjectFileCatTranslationBody = z.infer<typeof projectFileCatTranslationBodySchema>;
+export type ProjectFileCatHiddenStringsBody = z.infer<typeof projectFileCatHiddenStringsBodySchema>;
+export type ProjectFileCatHiddenStringsResponse = z.infer<
+  typeof projectFileCatHiddenStringsResponseSchema
+>;
 export type ProjectFileCatImageRegenerateBody = z.infer<
   typeof projectFileCatImageRegenerateBodySchema
 >;

@@ -11,7 +11,7 @@
  * Version 2.0 or later.
  */
 "use client";
-import { useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { ClipboardListIcon, PlusSignIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -41,9 +41,12 @@ import { TypographyP } from "@/components/ui/typography";
 import { readApiResponseError } from "@/lib/api-error";
 
 import { buildIssueDetailHref } from "../../../../_components/issue-detail/issue-detail-utils";
+import { IssueBulkActionBar } from "../../../../_components/issue-bulk-action-bar";
 import { IssueGroupedList } from "../../../../_components/issue-grouped-list";
 import { IssueListToolbar } from "../../../../_components/issue-list-toolbar";
 import { issueListStateToApiQuery } from "../../../../_components/issue-list-url-state";
+import { useIssueBulkActions } from "../../../../_components/use-issue-bulk-actions";
+import { useIssueListSelection } from "../../../../_components/use-issue-list-selection";
 import { useIssueListUrlState } from "../../../../_components/use-issue-list-url-state";
 import { issueSheetPageContentMessages as messages } from "./issue-sheet-page-content.messages";
 import { issueSheetSharedMessages as sharedMessages } from "./issue-sheet-shared.messages";
@@ -151,9 +154,11 @@ function columnTypeLabel(intl: IntlShape, value: ColumnTypeValue) {
 export function IssueSheetPageContent({
   organizationSlug,
   projectId,
+  canEditIssues = false,
 }: {
   organizationSlug: string;
   projectId: string;
+  canEditIssues?: boolean;
 }) {
   const projectQuery = useProjectPageQuery(organizationSlug, projectId);
   const intl = useIntl();
@@ -199,6 +204,23 @@ export function IssueSheetPageContent({
     [data?.issues, projectId],
   );
 
+  const selection = useIssueListSelection(listIssues);
+  const filterKey = useMemo(() => JSON.stringify(apiQuery), [apiQuery]);
+  const filterKeyRef = useRef(filterKey);
+  useEffect(() => {
+    if (filterKeyRef.current !== filterKey) {
+      filterKeyRef.current = filterKey;
+      selection.resetSelectionForFilterChange();
+    }
+  }, [filterKey, selection.resetSelectionForFilterChange]);
+
+  const { runBulkAction, isPending: isBulkPending } = useIssueBulkActions({
+    organizationSlug,
+    onSettled: selection.applyBulkResult,
+  });
+
+  const bulkIssues = selection.selectedTargets;
+
   return (
     <ProjectPageShell>
       <div className="space-y-6">
@@ -232,6 +254,32 @@ export function IssueSheetPageContent({
           locales={projectQuery.data?.targetLocales ?? []}
         />
 
+        {canEditIssues ? (
+          <IssueBulkActionBar
+            organizationSlug={organizationSlug}
+            selectedCount={selection.selectedCount}
+            allLoadedSelected={selection.allLoadedSelected}
+            selectedProjectIds={selection.selectedProjectIds}
+            selectionLimitReached={selection.selectionLimitReached}
+            isPending={isBulkPending}
+            onSelectAllLoaded={selection.selectAllLoaded}
+            onClearSelection={selection.clearSelection}
+            onAssign={(assigneeUserId) =>
+              runBulkAction({ action: "assign", assigneeUserId, issues: bulkIssues })
+            }
+            onUnassign={() => runBulkAction({ action: "unassign", issues: bulkIssues })}
+            onSetStatus={(status) =>
+              runBulkAction({ action: "set_status", status, issues: bulkIssues })
+            }
+            onSetPriority={(priority) =>
+              runBulkAction({ action: "set_priority", priority, issues: bulkIssues })
+            }
+            onSetIssueType={(issueType) =>
+              runBulkAction({ action: "set_issue_type", issueType, issues: bulkIssues })
+            }
+          />
+        ) : null}
+
         <IssueGroupedList
           organizationSlug={organizationSlug}
           issues={listIssues}
@@ -239,6 +287,11 @@ export function IssueSheetPageContent({
           activeStatus={state.status}
           isLoading={issueSheetQuery.isLoading}
           isError={issueSheetQuery.isError}
+          selectionEnabled={canEditIssues}
+          isIssueSelected={(issue) => selection.isIssueSelected(issue)}
+          selectionDisabled={isBulkPending}
+          disableInlineEdits={canEditIssues && (selection.someSelected || isBulkPending)}
+          onIssueSelectionChange={(issue, checked) => selection.toggleIssue(issue, checked)}
           onIssueActivate={(issue) => {
             router.push(
               buildIssueDetailHref({

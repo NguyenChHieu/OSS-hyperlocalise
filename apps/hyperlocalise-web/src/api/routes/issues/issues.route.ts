@@ -12,18 +12,27 @@
  */
 import { Hono } from "hono";
 
+import { isWriteBackTranslationAllowed } from "@/api/auth/capability-guards";
 import { hasCapability } from "@/api/auth/policy";
 import { createZodValidator } from "@/api/errors";
 import { forbiddenResponse } from "@/api/response.schema";
 import { workosAuthMiddleware, type AuthVariables } from "@/api/auth/workos";
 import { organizationIssueService } from "@/lib/projects/issue-sheet/organization-issue-service";
+import { issueBulkUpdateService } from "@/lib/projects/issue-sheet/issue-bulk-update-service";
 
+import { issueBulkActionBodySchema } from "./issues-bulk.schema";
 import { organizationIssuesQuerySchema } from "./issues.schema";
 
 const validateOrganizationIssuesQuery = createZodValidator(
   "query",
   organizationIssuesQuerySchema,
   "invalid_organization_issues_query",
+);
+
+const validateIssueBulkActionBody = createZodValidator(
+  "json",
+  issueBulkActionBodySchema,
+  "invalid_issue_bulk_action",
 );
 
 export function createOrganizationIssuesRoutes() {
@@ -37,5 +46,14 @@ export function createOrganizationIssuesRoutes() {
       const query = c.req.valid("query");
       const result = await organizationIssueService.list(c.var.auth, query);
       return c.json(result, 200);
+    })
+    .post("/bulk-actions", validateIssueBulkActionBody, async (c) => {
+      if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {
+        return forbiddenResponse(c, "forbidden");
+      }
+
+      const body = c.req.valid("json");
+      const bulkAction = await issueBulkUpdateService.run(c.var.auth, body);
+      return c.json({ bulkAction }, 200);
     });
 }

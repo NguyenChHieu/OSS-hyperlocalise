@@ -257,6 +257,136 @@ describe("Organization issues routes", () => {
   });
 });
 
+function organizationIssuesBulkUrl(organizationSlug: string) {
+  return `${organizationIssuesUrl(organizationSlug)}/bulk-actions`;
+}
+
+describe("Organization issues bulk actions", () => {
+  it("bulk sets status with partial success semantics and activity", async () => {
+    const { identity, project } = await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const organizationSlug = identity.organization.slug ?? "missing-slug";
+
+    const createOpen = await requestJson(issueSheetUrl(organizationSlug, project.id), {
+      method: "POST",
+      headers,
+      body: { title: "Bulk open", issueType: "general_question", status: "open" },
+    });
+    expect(createOpen.status).toBe(201);
+    const openIssue = (await createOpen.json()) as { issue: { id: string } };
+
+    const createResolved = await requestJson(issueSheetUrl(organizationSlug, project.id), {
+      method: "POST",
+      headers,
+      body: { title: "Bulk resolved", issueType: "general_question", status: "resolved" },
+    });
+    expect(createResolved.status).toBe(201);
+    const resolvedIssue = (await createResolved.json()) as { issue: { id: string } };
+
+    const bulkResponse = await requestJson(organizationIssuesBulkUrl(organizationSlug), {
+      method: "POST",
+      headers,
+      body: {
+        action: "set_status",
+        status: "in_progress",
+        issues: [
+          { projectId: project.id, issueId: openIssue.issue.id },
+          { projectId: project.id, issueId: resolvedIssue.issue.id },
+        ],
+      },
+    });
+    expect(bulkResponse.status).toBe(200);
+    const bulkBody = (await bulkResponse.json()) as {
+      bulkAction: {
+        succeeded: number;
+        unchanged: number;
+        failed: number;
+        results: Array<{ issueId: string; outcome: string }>;
+      };
+    };
+    expect(bulkBody.bulkAction.succeeded).toBe(2);
+    expect(bulkBody.bulkAction.failed).toBe(0);
+    expect(bulkBody.bulkAction.results).toHaveLength(2);
+
+    const unchangedResponse = await requestJson(organizationIssuesBulkUrl(organizationSlug), {
+      method: "POST",
+      headers,
+      body: {
+        action: "set_status",
+        status: "in_progress",
+        issues: [{ projectId: project.id, issueId: openIssue.issue.id }],
+      },
+    });
+    expect(unchangedResponse.status).toBe(200);
+    const unchangedBody = (await unchangedResponse.json()) as {
+      bulkAction: { unchanged: number; succeeded: number };
+    };
+    expect(unchangedBody.bulkAction.unchanged).toBe(1);
+    expect(unchangedBody.bulkAction.succeeded).toBe(0);
+  });
+
+  it("returns issue_not_found for inaccessible issues without leaking existence", async () => {
+    const owner = await projectFixture.createStoredProjectFixture();
+    const outsider = await projectFixture.createStoredProjectFixture();
+    const ownerHeaders = await projectFixture.authHeadersFor(owner.identity);
+    const outsiderHeaders = await projectFixture.authHeadersFor(outsider.identity);
+    const ownerSlug = owner.identity.organization.slug ?? "missing-slug";
+
+    const createResponse = await requestJson(issueSheetUrl(ownerSlug, owner.project.id), {
+      method: "POST",
+      headers: ownerHeaders,
+      body: { title: "Private issue", issueType: "general_question" },
+    });
+    expect(createResponse.status).toBe(201);
+    const created = (await createResponse.json()) as { issue: { id: string } };
+
+    const bulkResponse = await requestJson(organizationIssuesBulkUrl(ownerSlug), {
+      method: "POST",
+      headers: outsiderHeaders,
+      body: {
+        action: "unassign",
+        issues: [{ projectId: owner.project.id, issueId: created.issue.id }],
+      },
+    });
+    expect(bulkResponse.status).toBe(200);
+    const bulkBody = (await bulkResponse.json()) as {
+      bulkAction: {
+        failed: number;
+        results: Array<{ outcome: string; error?: { code: string } }>;
+      };
+    };
+    expect(bulkBody.bulkAction.failed).toBe(1);
+    expect(bulkBody.bulkAction.results[0]).toMatchObject({
+      outcome: "failed",
+      error: { code: "issue_not_found" },
+    });
+  });
+
+  it("rejects bulk payloads over the item limit", async () => {
+    const { identity, project } = await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const organizationSlug = identity.organization.slug ?? "missing-slug";
+
+    const issues = Array.from({ length: 101 }, (_, index) => ({
+      projectId: project.id,
+      issueId: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    }));
+
+    const bulkResponse = await requestJson(organizationIssuesBulkUrl(organizationSlug), {
+      method: "POST",
+      headers,
+      body: {
+        action: "unassign",
+        issues,
+      },
+    });
+    expect(bulkResponse.status).toBe(400);
+    await expect(bulkResponse.json()).resolves.toMatchObject({
+      error: "invalid_issue_bulk_action",
+    });
+  });
+});
+
 describe("Organization issue-sheet GET", () => {
   function organizationIssueSheetUrl(organizationSlug: string, issueId: string) {
     return `/api/orgs/${encodeURIComponent(organizationSlug)}/issue-sheet/${encodeURIComponent(issueId)}`;

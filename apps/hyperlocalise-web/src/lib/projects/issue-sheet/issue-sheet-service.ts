@@ -73,6 +73,8 @@ export {
 export const ISSUE_SHEET_ACTIVITY_ASSIGNEE_CHANGED = "assignee_changed" as const;
 export const ISSUE_SHEET_ACTIVITY_ISSUE_CREATED = "issue_created" as const;
 export const ISSUE_SHEET_ACTIVITY_STATUS_CHANGED = "status_changed" as const;
+export const ISSUE_SHEET_ACTIVITY_ISSUE_TYPE_CHANGED = "issue_type_changed" as const;
+export const ISSUE_SHEET_ACTIVITY_PRIORITY_CHANGED = "priority_changed" as const;
 export const ISSUE_SHEET_ACTIVITY_RELATIONSHIP_ADDED = "relationship_added" as const;
 export const ISSUE_SHEET_ACTIVITY_RELATIONSHIP_REMOVED = "relationship_removed" as const;
 
@@ -113,6 +115,16 @@ export type IssueSheetActivity =
       type: typeof ISSUE_SHEET_ACTIVITY_STATUS_CHANGED;
       previousStatus: string;
       nextStatus: string;
+    })
+  | (IssueSheetActivityBase & {
+      type: typeof ISSUE_SHEET_ACTIVITY_ISSUE_TYPE_CHANGED;
+      previousIssueType: string;
+      nextIssueType: string;
+    })
+  | (IssueSheetActivityBase & {
+      type: typeof ISSUE_SHEET_ACTIVITY_PRIORITY_CHANGED;
+      previousPriority: string | null;
+      nextPriority: string;
     })
   | (IssueSheetActivityBase & {
       type: typeof ISSUE_SHEET_ACTIVITY_RELATIONSHIP_ADDED;
@@ -1115,6 +1127,52 @@ export class IssueSheetService {
         continue;
       }
 
+      if (row.type === ISSUE_SHEET_ACTIVITY_ISSUE_TYPE_CHANGED) {
+        const previousIssueType =
+          "previousIssueType" in payload && typeof payload.previousIssueType === "string"
+            ? payload.previousIssueType
+            : null;
+        const nextIssueType =
+          "nextIssueType" in payload && typeof payload.nextIssueType === "string"
+            ? payload.nextIssueType
+            : null;
+        if (!previousIssueType || !nextIssueType) {
+          continue;
+        }
+        activities.push({
+          id: row.id,
+          type: ISSUE_SHEET_ACTIVITY_ISSUE_TYPE_CHANGED,
+          actor,
+          previousIssueType,
+          nextIssueType,
+          createdAt,
+        });
+        continue;
+      }
+
+      if (row.type === ISSUE_SHEET_ACTIVITY_PRIORITY_CHANGED) {
+        const previousPriority =
+          "previousPriority" in payload && typeof payload.previousPriority === "string"
+            ? payload.previousPriority
+            : null;
+        const nextPriority =
+          "nextPriority" in payload && typeof payload.nextPriority === "string"
+            ? payload.nextPriority
+            : null;
+        if (!nextPriority) {
+          continue;
+        }
+        activities.push({
+          id: row.id,
+          type: ISSUE_SHEET_ACTIVITY_PRIORITY_CHANGED,
+          actor,
+          previousPriority,
+          nextPriority,
+          createdAt,
+        });
+        continue;
+      }
+
       if (
         row.type === ISSUE_SHEET_ACTIVITY_RELATIONSHIP_ADDED ||
         row.type === ISSUE_SHEET_ACTIVITY_RELATIONSHIP_REMOVED
@@ -1393,6 +1451,7 @@ export class IssueSheetService {
         .select({
           id: schema.issueSheetIssues.id,
           status: schema.issueSheetIssues.status,
+          issueType: schema.issueSheetIssues.issueType,
           assigneeUserId: schema.issueSheetIssues.assigneeUserId,
         })
         .from(schema.issueSheetIssues)
@@ -1417,7 +1476,12 @@ export class IssueSheetService {
         Object.hasOwn(input.body, "status") &&
         input.body.status != null &&
         input.body.status !== current.status;
+      const issueTypeChanging =
+        Object.hasOwn(input.body, "issueType") &&
+        input.body.issueType != null &&
+        input.body.issueType !== current.issueType;
       const nextStatusValue = statusChanging ? input.body.status! : current.status;
+      const nextIssueTypeValue = issueTypeChanging ? input.body.issueType! : current.issueType;
       const assigneeActuallyChanged =
         assigneeChanging && current.assigneeUserId !== nextAssigneeUserId;
 
@@ -1457,6 +1521,18 @@ export class IssueSheetService {
           actorUserId: input.actorUserId,
           previousStatus: current.status,
           nextStatus: nextStatusValue,
+        });
+      }
+
+      if (issueTypeChanging) {
+        await this.insertIssueTypeChangedActivity({
+          database: tx,
+          organizationId: input.organizationId,
+          projectId: input.projectId,
+          issueId: input.issueId,
+          actorUserId: input.actorUserId,
+          previousIssueType: current.issueType,
+          nextIssueType: nextIssueTypeValue,
         });
       }
 
@@ -1531,6 +1607,15 @@ export class IssueSheetService {
     body: IssueSheetImportBody;
   }): Promise<IssueSheetImportResult> {
     return runIssueSheetCsvImport(this, input);
+  }
+
+  async getIssueForActor(input: {
+    organizationId: string;
+    projectId: string;
+    issueId: string;
+    actorUserId: string;
+  }): Promise<IssueSheetIssue | null> {
+    return this.getIssueById(input);
   }
 
   async setValue(input: {
@@ -1692,6 +1777,159 @@ export class IssueSheetService {
         nextStatus: input.nextStatus,
       },
     });
+  }
+
+  private async insertIssueTypeChangedActivity(input: {
+    database: DatabaseClient;
+    organizationId: string;
+    projectId: string;
+    issueId: string;
+    actorUserId: string;
+    previousIssueType: string;
+    nextIssueType: string;
+  }) {
+    await input.database.insert(schema.issueSheetActivities).values({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      issueId: input.issueId,
+      actorUserId: input.actorUserId,
+      type: ISSUE_SHEET_ACTIVITY_ISSUE_TYPE_CHANGED,
+      payload: {
+        previousIssueType: input.previousIssueType,
+        nextIssueType: input.nextIssueType,
+      },
+    });
+  }
+
+  private async insertPriorityChangedActivity(input: {
+    database: DatabaseClient;
+    organizationId: string;
+    projectId: string;
+    issueId: string;
+    actorUserId: string;
+    previousPriority: string | null;
+    nextPriority: string;
+  }) {
+    await input.database.insert(schema.issueSheetActivities).values({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      issueId: input.issueId,
+      actorUserId: input.actorUserId,
+      type: ISSUE_SHEET_ACTIVITY_PRIORITY_CHANGED,
+      payload: {
+        previousPriority: input.previousPriority,
+        nextPriority: input.nextPriority,
+      },
+    });
+  }
+
+  async setPriority(input: {
+    organizationId: string;
+    projectId: string;
+    issueId: string;
+    actorUserId: string;
+    priority: "P0" | "P1" | "P2";
+  }): Promise<{ outcome: "updated" | "unchanged" } | null> {
+    await this.ensureStarterColumns({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      actorUserId: input.actorUserId,
+    });
+
+    const result = await this.database.transaction(async (tx) => {
+      const [current] = await tx
+        .select({
+          id: schema.issueSheetIssues.id,
+        })
+        .from(schema.issueSheetIssues)
+        .where(
+          and(
+            eq(schema.issueSheetIssues.organizationId, input.organizationId),
+            eq(schema.issueSheetIssues.projectId, input.projectId),
+            eq(schema.issueSheetIssues.id, input.issueId),
+          ),
+        )
+        .limit(1)
+        .for("update");
+
+      if (!current) {
+        return null;
+      }
+
+      const [column] = await tx
+        .select({
+          id: schema.issueSheetColumns.id,
+          key: schema.issueSheetColumns.key,
+          type: schema.issueSheetColumns.type,
+          config: schema.issueSheetColumns.config,
+        })
+        .from(schema.issueSheetColumns)
+        .where(
+          and(
+            eq(schema.issueSheetColumns.organizationId, input.organizationId),
+            eq(schema.issueSheetColumns.projectId, input.projectId),
+            eq(schema.issueSheetColumns.key, "priority"),
+          ),
+        )
+        .limit(1);
+
+      if (!column) {
+        throw new Error("issue_sheet_column_not_found");
+      }
+
+      const [existingValue] = await tx
+        .select({ value: schema.issueSheetRowValues.value })
+        .from(schema.issueSheetRowValues)
+        .where(
+          and(
+            eq(schema.issueSheetRowValues.issueId, input.issueId),
+            eq(schema.issueSheetRowValues.columnId, column.id),
+          ),
+        )
+        .limit(1);
+
+      const previousPriority =
+        existingValue?.value != null && typeof existingValue.value === "string"
+          ? existingValue.value
+          : null;
+
+      if (previousPriority === input.priority) {
+        return { outcome: "unchanged" as const };
+      }
+
+      const value = this.normalizeValue(column, input.priority);
+      await tx
+        .insert(schema.issueSheetRowValues)
+        .values({
+          organizationId: input.organizationId,
+          projectId: input.projectId,
+          issueId: input.issueId,
+          columnId: column.id,
+          value,
+          computedAt: null,
+        })
+        .onConflictDoUpdate({
+          target: [schema.issueSheetRowValues.issueId, schema.issueSheetRowValues.columnId],
+          set: {
+            value,
+            updatedAt: new Date(),
+          },
+        });
+
+      await this.insertPriorityChangedActivity({
+        database: tx,
+        organizationId: input.organizationId,
+        projectId: input.projectId,
+        issueId: input.issueId,
+        actorUserId: input.actorUserId,
+        previousPriority,
+        nextPriority: input.priority,
+      });
+
+      return { outcome: "updated" as const };
+    });
+
+    return result;
   }
 
   private async assertTranslationKeyInProject(input: {

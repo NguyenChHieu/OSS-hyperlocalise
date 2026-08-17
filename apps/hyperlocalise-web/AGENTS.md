@@ -331,3 +331,9 @@ For GitHub Actions, consider using [`voidzero-dev/setup-vp`](https://github.com/
 - [ ] Run `vp check --fix` and `vp test` to validate changes.
 
 <!--VITE PLUS END-->
+
+## Learned Workspace Facts
+
+- Base UI `DropdownMenuItem` handlers use `onClick`, not Radix-style `onSelect`; menu actions silently no-op if `onSelect` is used.
+- Browser E2E loads `.env` then overrides with `.env.e2e` (WorkOS emulator). Placeholder `AUTUMN_API_KEY` from `.env.e2e.example` causes project creation to fail with 503; seed test data via DB in E2E fixtures instead of UI project create when billing is not configured.
+- When `vp` is unavailable in agent shells, run E2E with `vp run test:e2e` after fixing PATH, or invoke vitest through the project's `vite-plus` dependency with `--config vite.e2e.config.ts`.

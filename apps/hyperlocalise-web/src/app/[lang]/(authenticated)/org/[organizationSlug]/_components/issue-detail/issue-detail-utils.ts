@@ -110,6 +110,10 @@ export function issueStatusVariant(status: string) {
   return "secondary" as const;
 }
 
+export function issuePriorityLabel(_intl: IntlShape, priority: string) {
+  return priority;
+}
+
 export function issuePriorityVariant(priority: string) {
   switch (priority as IssuePriorityValue) {
     case "P0":

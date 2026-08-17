@@ -47,7 +47,12 @@ import { formatRelativeTimestamp } from "../workspace-files-shared";
 import { IssueCommentComposer } from "./issue-comment-composer";
 import { issueCommentMessages as messages } from "./issue-comment.messages";
 import { useIssueDetailGuardedNavigate } from "./issue-detail-navigation-guard";
-import { buildIssueDetailHref, issueStatusLabel } from "./issue-detail-utils";
+import {
+  buildIssueDetailHref,
+  issuePriorityLabel,
+  issueStatusLabel,
+  issueTypeLabel,
+} from "./issue-detail-utils";
 import { IssueRelationshipKindIcon } from "./issue-relationship-kind";
 import { IssueStatusIcon } from "./issue-status-icon";
 import { useIssueCommentMutations, type IssueComment } from "./use-issue-comments";
@@ -486,6 +491,44 @@ function IssueActivityRow({
         />
       );
       icon = <IssueStatusIcon status={activity.nextStatus} className="size-3.5" />;
+      break;
+    case "issue_type_changed":
+      copy = (
+        <FormattedMessage
+          {...messages.issueTypeChanged}
+          values={{
+            actor,
+            previousIssueType: activityName(issueTypeLabel(intl, activity.previousIssueType)),
+            nextIssueType: activityName(issueTypeLabel(intl, activity.nextIssueType)),
+          }}
+        />
+      );
+      break;
+    case "priority_changed":
+      if (activity.previousPriority) {
+        copy = (
+          <FormattedMessage
+            {...messages.priorityChanged}
+            values={{
+              actor,
+              previousPriority: activityName(
+                issuePriorityLabel(intl, activity.previousPriority),
+              ),
+              nextPriority: activityName(issuePriorityLabel(intl, activity.nextPriority)),
+            }}
+          />
+        );
+      } else {
+        copy = (
+          <FormattedMessage
+            {...messages.prioritySet}
+            values={{
+              actor,
+              nextPriority: activityName(issuePriorityLabel(intl, activity.nextPriority)),
+            }}
+          />
+        );
+      }
       break;
     case "assignee_changed":
       if (!activity.nextAssignee) {

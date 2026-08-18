@@ -49,6 +49,16 @@ export type IssueActivity =
       nextStatus: string;
     })
   | (IssueActivityBase & {
+      type: "issue_type_changed";
+      previousIssueType: string;
+      nextIssueType: string;
+    })
+  | (IssueActivityBase & {
+      type: "priority_changed";
+      previousPriority: string | null;
+      nextPriority: string;
+    })
+  | (IssueActivityBase & {
       type: "relationship_added";
       relationshipKind: IssueRelationshipRequestKind;
       relatedIssue: IssueActivityRelatedIssue;

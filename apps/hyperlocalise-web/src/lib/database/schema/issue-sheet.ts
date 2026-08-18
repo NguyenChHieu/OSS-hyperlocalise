@@ -241,6 +241,16 @@ export type IssueSheetActivityStatusChangedPayload = {
   nextStatus: string;
 };
 
+export type IssueSheetActivityIssueTypeChangedPayload = {
+  previousIssueType: string;
+  nextIssueType: string;
+};
+
+export type IssueSheetActivityPriorityChangedPayload = {
+  previousPriority: string | null;
+  nextPriority: string;
+};
+
 export type IssueSheetActivityRelationshipAddedPayload = {
   relatedIssueId: string;
   kind: string;
@@ -255,6 +265,8 @@ export type IssueSheetActivityPayload =
   | IssueSheetActivityAssigneeChangedPayload
   | IssueSheetActivityIssueCreatedPayload
   | IssueSheetActivityStatusChangedPayload
+  | IssueSheetActivityIssueTypeChangedPayload
+  | IssueSheetActivityPriorityChangedPayload
   | IssueSheetActivityRelationshipAddedPayload
   | IssueSheetActivityRelationshipRemovedPayload;
 

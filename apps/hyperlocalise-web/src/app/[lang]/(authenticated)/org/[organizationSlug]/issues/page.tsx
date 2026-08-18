@@ -12,6 +12,7 @@
  */
 import { Suspense } from "react";
 
+import { hasCapability } from "@/api/auth/policy";
 import { TypographyP } from "@/components/ui/typography";
 import { getIntlShape } from "@/lib/app-i18n/intl";
 import { getAppLocale } from "@/lib/app-i18n/server-locale";
@@ -25,8 +26,9 @@ export default async function IssuesPage({
   params: Promise<{ organizationSlug: string }>;
 }) {
   const { organizationSlug } = await params;
-  await requireAppAuthContext({ organizationSlug });
+  const auth = await requireAppAuthContext({ organizationSlug });
   const intl = getIntlShape(await getAppLocale());
+  const canEditIssues = hasCapability(auth.membership.role, "write_back:translation");
 
   return (
     <Suspense
@@ -40,7 +42,7 @@ export default async function IssuesPage({
         </TypographyP>
       }
     >
-      <IssuesPageContent organizationSlug={organizationSlug} />
+      <IssuesPageContent organizationSlug={organizationSlug} canEditIssues={canEditIssues} />
     </Suspense>
   );
 }

@@ -162,6 +162,11 @@ const CatWorkspaceContainerObserver = observer(function CatWorkspaceContainerObs
     }
   }, [queueSearch, store]);
 
+  // Cache hits make the query look ready before CatQueryBridge writes the
+  // snapshot. Block bulk targets until both the query and the store agree.
+  const isQueueBulkBlocked =
+    Boolean(isQueueLoading) || !store.hasIngestedQueueSnapshot(queueSnapshot ?? null);
+
   return (
     <>
       <CatChatDockPageContextBridge projectId={lazySegment?.projectId} />
@@ -182,14 +187,48 @@ const CatWorkspaceContainerObserver = observer(function CatWorkspaceContainerObs
         onQueueSortChange={onQueueSortChange}
         availableQueueSorts={availableQueueSorts}
         isSearching={isQueueSearchPending}
-        visibleCount={controller.queueSegments.length}
-        onSelectAllVisible={() =>
-          store.selectAllVisible(controller.queueSegments.map((segment) => segment.id))
+        isQueueLoading={isQueueBulkBlocked}
+        visibleCount={isQueueBulkBlocked ? 0 : controller.queueSegments.length}
+        onSelectAllVisible={() => {
+          // Placeholder or not-yet-ingested pages still expose the previous
+          // filter's segment ids.
+          if (isQueueBulkBlocked) {
+            return;
+          }
+          store.selectAllVisible(controller.queueSegments.map((segment) => segment.id));
+        }}
+        onBulkApprove={() => {
+          if (isQueueBulkBlocked) {
+            return;
+          }
+          void controller.handleBulkApprove();
+        }}
+        onBulkSkip={() => {
+          if (isQueueBulkBlocked) {
+            return;
+          }
+          void controller.handleBulkSkip();
+        }}
+        onBulkHide={
+          review?.onBulkHide
+            ? () => {
+                if (isQueueBulkBlocked) {
+                  return;
+                }
+                void controller.handleBulkHide();
+              }
+            : undefined
         }
-        onBulkApprove={() => void controller.handleBulkApprove()}
-        onBulkSkip={() => void controller.handleBulkSkip()}
-        onBulkHide={review?.onBulkHide ? () => void controller.handleBulkHide() : undefined}
-        onBulkUnhide={review?.onBulkUnhide ? () => void controller.handleBulkUnhide() : undefined}
+        onBulkUnhide={
+          review?.onBulkUnhide
+            ? () => {
+                if (isQueueBulkBlocked) {
+                  return;
+                }
+                void controller.handleBulkUnhide();
+              }
+            : undefined
+        }
         onDownloadFilteredView={onDownloadFilteredView}
         isDownloadingFilteredView={isDownloadingFilteredView}
       />

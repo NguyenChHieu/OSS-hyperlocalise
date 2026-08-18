@@ -23,6 +23,7 @@ import { isServerQueueFilter, type CatQueueFilter } from "@/components/cat/queue
 import { mergeCatQueuePages } from "@/components/cat/queue/merge-cat-queue-pages";
 
 import {
+  canReuseCatQueuePlaceholderData,
   defaultCatPageLimit,
   fetchProjectFileCatQueuePage,
   projectFileCatBaseQueryKey,
@@ -118,6 +119,17 @@ export function useCatSegmentQuery(input: {
   >({
     queryKey: baseQueryKey,
     enabled: input.enabled !== false && Boolean(input.targetLocale) && Boolean(input.sourcePath),
+    placeholderData: (previousData, previousQuery) => {
+      if (
+        previousData === undefined ||
+        previousQuery === undefined ||
+        !canReuseCatQueuePlaceholderData(previousQuery.queryKey, baseQueryKey)
+      ) {
+        return undefined;
+      }
+
+      return previousData;
+    },
     initialPageParam: { offset: 0 },
     getNextPageParam: (lastPage) => {
       const pagePagination = lastPage.pagination;

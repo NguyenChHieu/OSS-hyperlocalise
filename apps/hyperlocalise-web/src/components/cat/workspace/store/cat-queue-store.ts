@@ -13,11 +13,17 @@
 import { makeAutoObservable } from "mobx";
 
 import type { CatQueueFilter } from "@/components/cat/queue/cat-queue-filter";
+import {
+  readCatQueueSelectionModePreference,
+  writeCatQueueSelectionModePreference,
+} from "@/components/cat/queue/use-cat-queue-selection-mode";
 import type { CatQueueSegment } from "@/components/cat/shared/types";
 
 export class CatQueueStore {
   selectedSegmentId = "";
   filter: CatQueueFilter = "all";
+  search = "";
+  selectionMode = readCatQueueSelectionModePreference();
   checkedSegmentIds = new Set<string>();
   segmentMeta = new Map<string, CatQueueSegment>();
 
@@ -55,6 +61,18 @@ export class CatQueueStore {
     this.clearChecked();
   }
 
+  setSearch(search: string) {
+    this.search = search;
+  }
+
+  setSelectionMode(enabled: boolean) {
+    this.selectionMode = enabled;
+    writeCatQueueSelectionModePreference(enabled);
+    if (!enabled) {
+      this.clearChecked();
+    }
+  }
+
   toggleChecked(segmentId: string, checked: boolean) {
     if (checked) {
       this.checkedSegmentIds.add(segmentId);
@@ -69,6 +87,23 @@ export class CatQueueStore {
 
   clearChecked() {
     this.checkedSegmentIds.clear();
+  }
+
+  setHidden(segmentIds: string[], isHidden: boolean) {
+    for (const segmentId of segmentIds) {
+      const existing = this.segmentMeta.get(segmentId);
+      if (!existing) {
+        continue;
+      }
+
+      if (isHidden) {
+        this.segmentMeta.set(segmentId, { ...existing, isHidden: true });
+        continue;
+      }
+
+      const { isHidden: _ignored, ...rest } = existing;
+      this.segmentMeta.set(segmentId, rest);
+    }
   }
 
   reconcileVisibleIds(visibleIds: ReadonlySet<string>) {

@@ -40,6 +40,7 @@ import { cn } from "@/lib/primitives/cn";
 
 import {
   resolveAvailableCatQueueFilters,
+  isServerQueueFilter,
   type CatQueueFilter,
 } from "@/components/cat/queue/cat-queue-filter";
 import { glossaryFormatChecksForSegment } from "@/components/cat/intelligence/cat-glossary-checks";
@@ -62,7 +63,10 @@ import {
   readCatWorkspaceViewMode,
 } from "@/components/cat/workspace/cat-workspace-view-mode";
 
-import { resolveCatLinkedIssueTranslationKeyId } from "@/components/cat/issues/cat-linked-issue-translation-key";
+import {
+  isFileBackedCatSegment,
+  resolveCatLinkedIssueTranslationKeyId,
+} from "@/components/cat/issues/cat-linked-issue-translation-key";
 import {
   CatLinkedIssuesDialog,
   type CatLinkedIssueSegmentContext,
@@ -73,6 +77,9 @@ import { projectFileCatWorkspaceMessages } from "./project-file-cat-workspace.me
 import { fetchCatSegmentValidation } from "./project-file-cat-validation";
 import { useCatMutations } from "./use-cat-mutations";
 import { useCatSegmentQuery } from "./use-cat-segment-query";
+import { useCatWorkspaceQuerySync } from "./use-cat-workspace-query-sync";
+import { downloadProjectFileCatExport } from "./project-file-cat-export";
+import type { CatFilteredExportFormat } from "@/lib/projects/cat/cat-filtered-export";
 
 function initialTargetLocale(targetLocales: string[], highlightLocale: string | null) {
   if (highlightLocale && targetLocales.includes(highlightLocale)) {
@@ -80,6 +87,10 @@ function initialTargetLocale(targetLocales: string[], highlightLocale: string | 
   }
 
   return targetLocales[0] ?? "";
+}
+
+function toServerQueueFilterForExport(filter: CatQueueFilter) {
+  return isServerQueueFilter(filter) ? filter : "all";
 }
 
 export function ProjectFileCatWorkspace({
@@ -96,6 +107,7 @@ export function ProjectFileCatWorkspace({
   canLookupFreshContext = true,
   initialSegmentKey = null,
   initialQueueFilter = "all",
+  initialSearch = "",
   sourcePathsFilter = null,
   layout = "default",
   className,
@@ -114,6 +126,7 @@ export function ProjectFileCatWorkspace({
   canLookupFreshContext?: boolean;
   initialSegmentKey?: string | null;
   initialQueueFilter?: CatQueueFilter;
+  initialSearch?: string;
   sourcePathsFilter?: string | null;
   layout?: "default" | "fullscreen";
   className?: string;
@@ -158,6 +171,7 @@ export function ProjectFileCatWorkspace({
     setSearch,
     queueFilter,
     setQueueFilter,
+    debouncedSearch,
     isSearchPending,
     pagination,
     loadNextPage,
@@ -172,10 +186,63 @@ export function ProjectFileCatWorkspace({
     targetLocale,
     enabled: Boolean(targetLocale),
     initialQueueFilter,
+    initialSearch,
     pageLimit,
     sourcePaths: sourcePathsFilter,
   });
 
+  useCatWorkspaceQuerySync({
+    queueFilter,
+    search,
+    debouncedSearch,
+  });
+
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleDownloadFilteredView = useCallback(
+    async (format: CatFilteredExportFormat) => {
+      if (!targetLocale || isExporting) {
+        return;
+      }
+
+      setIsExporting(true);
+      try {
+        await downloadProjectFileCatExport({
+          organizationSlug,
+          projectId,
+          sourcePath,
+          targetLocale,
+          sourceLocale,
+          format,
+          search: debouncedSearch,
+          queueFilter: toServerQueueFilterForExport(queueFilter),
+          externalResourceId,
+          resourceType,
+          sourcePaths: sourcePathsFilter,
+          intl,
+        });
+      } catch (error) {
+        // Surface via console; queue UI already has empty/error states for load failures.
+        console.error(error);
+      } finally {
+        setIsExporting(false);
+      }
+    },
+    [
+      debouncedSearch,
+      externalResourceId,
+      intl,
+      isExporting,
+      organizationSlug,
+      projectId,
+      queueFilter,
+      resourceType,
+      sourceLocale,
+      sourcePath,
+      sourcePathsFilter,
+      targetLocale,
+    ],
+  );
   const availableQueueFilters = useMemo(
     () => resolveAvailableCatQueueFilters(catFile?.provider?.kind),
     [catFile?.provider?.kind],
@@ -197,6 +264,7 @@ export function ProjectFileCatWorkspace({
     uploadImage,
     treatAsImage,
     treatAsVideo,
+    setStringsHidden,
     isImageBusy,
   } = useCatMutations({
     organizationSlug,
@@ -259,6 +327,9 @@ export function ProjectFileCatWorkspace({
   );
 
   const isNativeProject = !catFile?.provider;
+  const canHideNativeStrings =
+    isNativeProject &&
+    Boolean(catFile?.segments.some((segment) => !isFileBackedCatSegment(segment.contentKind)));
 
   const handleApprove = useCallback(
     async (segmentId: string, targetText: string) => {
@@ -362,6 +433,38 @@ export function ProjectFileCatWorkspace({
       await resolveComment({ externalStringId: segmentId, externalCommentId: commentId });
     },
     [catFile?.canEditTranslations, intl, resolveComment],
+  );
+
+  const handleSetStringsHidden = useCallback(
+    async (segmentIds: string[], isHidden: boolean) => {
+      if (!catFile?.canEditTranslations) {
+        throw new Error(
+          intl.formatMessage(projectFileCatWorkspaceMessages.cannotWriteTranslations),
+        );
+      }
+
+      const externalStringIds = isNativeProject
+        ? segmentIds.filter((segmentId) => {
+            const segment = catFile.segments.find((item) => item.externalStringId === segmentId);
+            return (
+              resolveCatLinkedIssueTranslationKeyId({
+                isNativeProject: true,
+                segmentId,
+                contentKind: segment?.contentKind,
+              }) != null
+            );
+          })
+        : segmentIds;
+      if (externalStringIds.length === 0) {
+        return;
+      }
+
+      await setStringsHidden({
+        externalStringIds,
+        isHidden,
+      });
+    },
+    [catFile?.canEditTranslations, catFile?.segments, intl, isNativeProject, setStringsHidden],
   );
 
   const handleAddToIssueSheet = useCallback(
@@ -551,7 +654,8 @@ export function ProjectFileCatWorkspace({
 
   const isFullscreen = layout === "fullscreen";
 
-  const isQueueLoading = isSearchPending || (catQuery.isLoading && !catFile);
+  const isQueueLoading =
+    isSearchPending || (catQuery.isLoading && !catFile) || catQuery.isPlaceholderData;
 
   if (catQuery.isLoading && !catFile) {
     return (
@@ -697,6 +801,12 @@ export function ProjectFileCatWorkspace({
           onAddToIssueSheet: handleAddToIssueSheet,
           onResolveComment:
             catFile?.provider?.kind === "crowdin" ? handleResolveComment : undefined,
+          ...(canHideNativeStrings || catFile?.provider?.kind === "crowdin"
+            ? {
+                onBulkHide: (segmentIds: string[]) => handleSetStringsHidden(segmentIds, true),
+                onBulkUnhide: (segmentIds: string[]) => handleSetStringsHidden(segmentIds, false),
+              }
+            : {}),
         }}
         initialSegmentKeyOrId={initialSegmentKey}
         buildSegmentShareUrl={buildSegmentShareUrl}
@@ -715,6 +825,8 @@ export function ProjectFileCatWorkspace({
         canLookupFreshContext={canLookupFreshContext}
         onPageLimitChange={setPageLimit}
         nativeIssuesEnabled={isNativeProject}
+        onDownloadFilteredView={handleDownloadFilteredView}
+        isDownloadingFilteredView={isExporting}
       />
       <CatLinkedIssuesDialog
         open={linkedIssuesOpen}

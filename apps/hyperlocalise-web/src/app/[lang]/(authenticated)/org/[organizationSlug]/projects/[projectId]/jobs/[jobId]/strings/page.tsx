@@ -12,6 +12,7 @@
  */
 import { requireAppAuthContext } from "@/lib/workos/app-auth";
 import { isReleaseCatAllFilesEnabled } from "@/lib/flags/release-flags";
+import { parseCatWorkspaceSearchParam } from "@/lib/projects/cat/cat-workspace-query-params";
 import { resolveJobCatInitialQueueFilter } from "@/lib/projects/resolve-job-cat-initial-queue-filter";
 import {
   catAllFilesProviderKindFromTarget,
@@ -32,10 +33,11 @@ export default async function ProjectJobStringsPage({
     targetLocale?: string;
     segment?: string;
     queueFilter?: string;
+    search?: string;
   }>;
 }) {
   const { organizationSlug, projectId, jobId } = await params;
-  const { sourcePath, storedFileId, sourcePaths, targetLocale, segment, queueFilter } =
+  const { sourcePath, storedFileId, sourcePaths, targetLocale, segment, queueFilter, search } =
     await searchParams;
   const auth = await requireAppAuthContext({ organizationSlug });
   const target = await resolveProjectResourceTarget(auth, projectId);
@@ -60,6 +62,7 @@ export default async function ProjectJobStringsPage({
       targetLocale={targetLocale ?? null}
       initialSegmentKey={segment ?? null}
       initialQueueFilter={initialQueueFilter}
+      initialSearch={parseCatWorkspaceSearchParam(search)}
       catAllFilesEnabled={catAllFilesEnabled}
     />
   );

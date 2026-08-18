@@ -46,6 +46,18 @@ describe("segmentMatchesQueueFilter", () => {
     ).toBe(false);
   });
 
+  it("does not treat hidden pending segments as untranslated work", () => {
+    expect(
+      segmentMatchesQueueFilter(
+        createSegment({ status: "pending", isHidden: true }),
+        "untranslated",
+      ),
+    ).toBe(false);
+    expect(
+      segmentMatchesQueueFilter(createSegment({ status: "pending", isHidden: true }), "all"),
+    ).toBe(true);
+  });
+
   it("matches reviewed segments", () => {
     expect(segmentMatchesQueueFilter(createSegment({ status: "reviewed" }), "reviewed")).toBe(true);
   });
@@ -107,22 +119,25 @@ describe("segmentMatchesQueueFilter", () => {
     expect(segmentMatchesQueueFilter(withResolvedIssue, "needs_review")).toBe(true);
   });
 
-  it("filters segment lists", () => {
-    const segments = [
-      createSegment({ id: "a", status: "pending" }),
-      createSegment({ id: "b", status: "reviewed" }),
-      createSegment({ id: "c", status: "skipped" }),
-    ];
+  it("filters hidden segments", () => {
+    const segments = [createSegment({ id: "a", isHidden: true }), createSegment({ id: "b" })];
 
-    expect(filterCatQueueSegments(segments, "reviewed").map((segment) => segment.id)).toEqual([
-      "b",
-    ]);
+    expect(filterCatQueueSegments(segments, "hidden").map((segment) => segment.id)).toEqual(["a"]);
+  });
+
+  it("matches hidden source strings", () => {
+    expect(segmentMatchesQueueFilter(createSegment({ isHidden: true }), "hidden")).toBe(true);
+    expect(segmentMatchesQueueFilter(createSegment(), "hidden")).toBe(false);
   });
 });
 
 describe("resolveAvailableCatQueueFilters", () => {
-  it("includes has issues for native projects", () => {
-    expect(resolveAvailableCatQueueFilters(null)).toContain("has_issues");
+  it("includes hidden for native and Crowdin projects", () => {
+    expect(resolveAvailableCatQueueFilters(null)).toContain("hidden");
+    expect(resolveAvailableCatQueueFilters("crowdin")).toContain("hidden");
+    expect(resolveAvailableCatQueueFilters("phrase")).not.toContain("hidden");
+    expect(resolveAvailableCatQueueFilters("lokalise")).not.toContain("hidden");
+    expect(resolveAvailableCatQueueFilters("smartling")).not.toContain("hidden");
   });
 
   it("includes has issues for Crowdin projects", () => {

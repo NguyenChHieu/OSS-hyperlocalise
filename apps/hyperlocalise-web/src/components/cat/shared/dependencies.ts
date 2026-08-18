@@ -70,6 +70,8 @@ export interface CatWorkspaceReview {
   onSkip: (segmentId: string) => void;
   onBulkApprove?: (segmentIds: string[]) => void | Promise<void>;
   onBulkSkip?: (segmentIds: string[]) => void | Promise<void>;
+  onBulkHide?: (segmentIds: string[]) => void | Promise<void>;
+  onBulkUnhide?: (segmentIds: string[]) => void | Promise<void>;
 }
 
 export interface CatWorkspaceServices {
@@ -134,8 +136,6 @@ export interface CatWorkspaceViewProps {
   dirtySegmentIds?: ReadonlySet<string>;
   className?: string;
   queueSearch?: string;
-  onQueueSearchChange?: (value: string) => void;
-  isQueueSearchPending?: boolean;
   isQueueFetchingPage?: boolean;
   isQueueLoading?: boolean;
   queuePagination?: {
@@ -151,15 +151,8 @@ export interface CatWorkspaceViewProps {
   isSegmentTargetLoading?: boolean;
   isImageBusy?: boolean;
   queueFilter?: CatQueueFilter;
-  onQueueFilterChange?: (filter: CatQueueFilter) => void;
-  availableQueueFilters?: CatQueueFilter[];
   checkedSegmentIds?: ReadonlySet<string>;
   onToggleSegmentChecked?: (segmentId: string, checked: boolean) => void;
-  onSelectAllVisible?: () => void;
-  onClearChecked?: () => void;
-  onBulkApprove?: () => void;
-  onBulkSkip?: () => void;
-  isBulkActionPending?: boolean;
   buildSegmentShareUrl?: (segment: CatSegment) => string | null;
   onIntelligencePanelVisible?: (segmentId: string) => void;
   organizationSlug?: string;

@@ -69,6 +69,21 @@ export const catQueuePanelMessages = defineMessages({
     id: "Kjim0yzISM",
     description: "Accessible label for CAT queue search input",
   },
+  downloadFiltered: {
+    defaultMessage: "Download",
+    id: "kUl1Jpz/6B",
+    description: "Button label to download the filtered CAT queue view",
+  },
+  downloadFilteredAria: {
+    defaultMessage: "Download filtered view",
+    id: "2B2vocYfiC",
+    description: "Accessible label for downloading the filtered CAT queue",
+  },
+  downloadFilteredFormatLabel: {
+    defaultMessage: "Format",
+    id: "D/arw4JcTP",
+    description: "Label above download format options in the CAT queue",
+  },
   emptySearchResults: {
     defaultMessage: "No segments match your search.",
     id: "ypyJIGOXrt",
@@ -119,6 +134,11 @@ export const catQueuePanelMessages = defineMessages({
     id: "75tLVTlfqV",
     description: "CAT queue filter option for skipped segments",
   },
+  filterHidden: {
+    defaultMessage: "Hidden",
+    id: "FEprezMr/U",
+    description: "CAT queue filter option for hidden source strings",
+  },
   emptyFilterResults: {
     defaultMessage: "No segments match this filter.",
     id: "oY/dfpDvR7",
@@ -133,6 +153,17 @@ export const catQueuePanelMessages = defineMessages({
     defaultMessage: "Skip selected",
     id: "zCn3UqvqWI",
     description: "Bulk action to skip all selected CAT segments",
+  },
+  bulkHide: {
+    defaultMessage: "Hide selected",
+    id: "wz/8hP0meZ",
+    description: "Bulk action to hide selected native CAT source strings from translation jobs",
+  },
+  bulkUnhide: {
+    defaultMessage: "Unhide selected",
+    id: "/CNawd2WG2",
+    description:
+      "Bulk action to make selected native CAT source strings visible to translation jobs",
   },
   bulkSelectAll: {
     defaultMessage: "Select all visible",

@@ -60,6 +60,7 @@ import {
   listTmsProviderLiveProjectBranches,
   saveTmsProviderLiveCatTranslation,
   saveTmsProviderLiveCatComment,
+  setTmsProviderLiveCatStringsHidden,
   resolveTmsProviderLiveCatComment,
 } from "@/lib/providers/jobs/tms-provider-live";
 import { listOrganizationProjects } from "@/lib/projects/organization/organization-project-service";
@@ -70,6 +71,7 @@ import {
   resolveNativeProjectCatLegacyIssueComment,
   saveNativeProjectCatComment,
   saveNativeProjectCatTranslation,
+  setNativeProjectCatStringsHidden,
   updateNativeProjectTranslationStatus,
 } from "@/lib/projects/cat/native-cat-service";
 import {
@@ -81,6 +83,11 @@ import {
   cleanupFailedExternalCatImageUpload,
 } from "@/lib/projects/cat/external-cat-string-overlay-service";
 import { resolveProjectFileCatPagination } from "@/lib/projects/cat/project-file-cat-pagination";
+import {
+  buildCatFilteredExportPayload,
+  collectCatFilteredExportRows,
+} from "@/lib/projects/cat/cat-filtered-export-service";
+import { maxCatFilteredExportSegments } from "@/lib/projects/cat/cat-filtered-export";
 import {
   getProjectFileDetail,
   listFilteredProjectFiles,
@@ -135,9 +142,11 @@ import {
   projectFileCatSegmentParamsSchema,
   projectFileCatSegmentQuerySchema,
   projectFileCatQuerySchema,
+  projectFileCatExportQuerySchema,
   projectFileCatConcordanceBodySchema,
   projectFileCatCommentBodySchema,
   projectFileCatCommentResolveBodySchema,
+  projectFileCatHiddenStringsBodySchema,
   projectFileCatImageRegenerateBodySchema,
   projectFileCatImageStatusBodySchema,
   projectFileCatRecommendationBodySchema,
@@ -493,6 +502,16 @@ const validateProjectFileCatQuery = validator("query", (value, c) => {
   return parsed.data;
 });
 
+const validateProjectFileCatExportQuery = validator("query", (value, c) => {
+  const parsed = projectFileCatExportQuerySchema.safeParse(value);
+
+  if (!parsed.success) {
+    return invalidProjectPayloadResponse(c);
+  }
+
+  return parsed.data;
+});
+
 const validateProjectFileCatTranslationBody = validator("json", (value, c) => {
   const parsed = projectFileCatTranslationBodySchema.safeParse(value);
 
@@ -555,6 +574,16 @@ const validateProjectFileCatRecommendationBody = validator("json", (value, c) =>
 
 const validateProjectFileCatStatusBody = validator("json", (value, c) => {
   const parsed = projectFileCatStatusBodySchema.safeParse(value);
+
+  if (!parsed.success) {
+    return invalidProjectPayloadResponse(c);
+  }
+
+  return parsed.data;
+});
+
+const validateProjectFileCatHiddenStringsBody = validator("json", (value, c) => {
+  const parsed = projectFileCatHiddenStringsBodySchema.safeParse(value);
 
   if (!parsed.success) {
     return invalidProjectPayloadResponse(c);
@@ -715,7 +744,7 @@ type CreateProjectRoutesOptions = {
   translationFileImportQueue?: TranslationFileImportQueue;
 };
 
-async function loadProjectFileCatQueue(
+export async function loadProjectFileCatQueue(
   auth: AuthVariables["auth"],
   projectId: string,
   query: ProjectFileCatQuery,
@@ -898,6 +927,87 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         }
 
         return c.json({ catQueue: result.catQueue }, 200);
+      },
+    )
+    .get(
+      "/:projectId/files/detail/cat/export",
+      validateProjectParams,
+      validateProjectFileCatExportQuery,
+      async (c) => {
+        const params = c.req.valid("param");
+        const query = c.req.valid("query");
+        const target = await resolveProjectResourceTarget(c.var.auth, params.projectId);
+        if (target.kind === "provider_unavailable") {
+          return providerProjectUnavailableResponse(c, target);
+        }
+
+        let sourceLocale = query.sourceLocale?.trim() || "";
+        if (!sourceLocale) {
+          if (target.kind === "provider") {
+            sourceLocale = "en";
+          } else {
+            const project = await getOwnedProjectRecord(c.var.auth, params.projectId);
+            if (!project) {
+              return projectNotFoundResponse(c);
+            }
+            sourceLocale = project.sourceLocale?.trim() || "en";
+          }
+        }
+
+        const { format, sourceLocale: _sourceLocale, ...catQuery } = query;
+        const collected = await collectCatFilteredExportRows({
+          auth: c.var.auth,
+          projectId: params.projectId,
+          query: catQuery,
+          sourceLocale,
+          loadCatQueue: loadProjectFileCatQueue,
+          externalProjectId: target.kind === "provider" ? target.externalProjectId : null,
+        });
+
+        if (collected.kind === "feature_unavailable") {
+          return sharedForbiddenResponse(
+            c,
+            "feature_unavailable",
+            "All Files CAT is not enabled for this organization",
+          );
+        }
+        if (collected.kind === "provider_unavailable") {
+          return providerProjectUnavailableResponse(c, collected.target);
+        }
+        if (collected.kind === "project_not_found") {
+          return projectNotFoundResponse(c);
+        }
+        if (collected.kind === "source_file_not_found") {
+          return badRequestResponse(
+            c,
+            "source_file_not_found",
+            "Source file not found for the given path",
+          );
+        }
+        if (collected.kind === "provider_error") {
+          return tmsProviderLiveErrorResponse(c, collected.error);
+        }
+        if (collected.kind === "empty") {
+          return notFoundResponse(c, "cat_export_empty", "No segments match the current filters.");
+        }
+
+        const payload = buildCatFilteredExportPayload({
+          format,
+          rows: collected.rows,
+          sourcePath: query.sourcePath,
+          targetLocale: query.targetLocale,
+        });
+
+        return c.body(payload.body, 200, {
+          "Content-Type": payload.contentType,
+          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(payload.filename)}`,
+          ...(collected.truncated
+            ? {
+                "X-Hyperlocalise-Export-Truncated": "true",
+                "X-Hyperlocalise-Export-Limit": String(maxCatFilteredExportSegments),
+              }
+            : {}),
+        });
       },
     )
     .get(
@@ -1499,6 +1609,76 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         }
 
         return c.json({ translation }, 200);
+      },
+    )
+    .post(
+      "/:projectId/files/detail/cat/strings/hidden",
+      validateProjectParams,
+      validateProjectFileCatHiddenStringsBody,
+      async (c) => {
+        if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {
+          return projectForbiddenResponse(c);
+        }
+
+        const params = c.req.valid("param");
+        const body = c.req.valid("json");
+        const target = await resolveProjectResourceTarget(c.var.auth, params.projectId);
+        if (target.kind === "provider_unavailable") {
+          return providerProjectUnavailableResponse(c, target);
+        }
+
+        if (target.kind === "provider") {
+          if (target.providerKind !== "crowdin") {
+            return badRequestResponse(
+              c,
+              "provider_cat_unsupported",
+              "Hidden strings can only be updated for Crowdin CAT.",
+            );
+          }
+
+          try {
+            const result = await setTmsProviderLiveCatStringsHidden(
+              c.var.auth.organization.localOrganizationId,
+              target.externalProjectId,
+              {
+                externalStringIds: body.externalStringIds,
+                isHidden: body.isHidden,
+              },
+              { actorUserId: c.var.auth.user.localUserId },
+            );
+
+            return c.json(
+              {
+                updatedCount: result.updatedCount,
+                isHidden: result.isHidden,
+              },
+              200,
+            );
+          } catch (error) {
+            return tmsProviderLiveErrorResponse(c, error);
+          }
+        }
+
+        const project = await getOwnedProject(c.var.auth, params.projectId);
+        if (!project) {
+          return projectNotFoundResponse(c);
+        }
+
+        const result = await setNativeProjectCatStringsHidden({
+          organizationId: c.var.auth.organization.localOrganizationId,
+          projectId: params.projectId,
+          translationKeyIds: body.externalStringIds,
+          isHidden: body.isHidden,
+          sourcePath: body.sourcePath,
+        });
+
+        return c.json(
+          {
+            updatedCount: result.updatedCount,
+            isHidden: body.isHidden,
+          },
+          200,
+        );
       },
     )
     .post(

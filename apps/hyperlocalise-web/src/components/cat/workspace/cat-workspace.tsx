@@ -83,8 +83,6 @@ export const CatWorkspaceView = observer(function CatWorkspaceView({
   dirtySegmentIds,
   className,
   queueSearch,
-  onQueueSearchChange,
-  isQueueSearchPending = false,
   isQueueFetchingPage = false,
   isQueueLoading = false,
   isCommentsLoading = false,
@@ -94,15 +92,8 @@ export const CatWorkspaceView = observer(function CatWorkspaceView({
   hasMoreQueue = false,
   onLoadMoreQueue,
   queueFilter,
-  onQueueFilterChange,
-  availableQueueFilters,
   checkedSegmentIds,
   onToggleSegmentChecked,
-  onSelectAllVisible,
-  onClearChecked,
-  onBulkApprove,
-  onBulkSkip,
-  isBulkActionPending = false,
   buildSegmentShareUrl,
   onIntelligencePanelVisible,
   organizationSlug,
@@ -164,11 +155,8 @@ export const CatWorkspaceView = observer(function CatWorkspaceView({
             selectedSegmentId=""
             onSelectSegment={() => undefined}
             search={queueSearch}
-            onSearchChange={onQueueSearchChange}
-            isSearching={isQueueSearchPending}
             queueFilter={queueFilter}
-            onQueueFilterChange={onQueueFilterChange}
-            availableQueueFilters={availableQueueFilters}
+            showSelection={store.selectionMode}
             isFetchingPage={isQueueFetchingPage}
             isQueueLoading
             pagination={queuePagination}
@@ -194,18 +182,10 @@ export const CatWorkspaceView = observer(function CatWorkspaceView({
             selectedSegmentId=""
             onSelectSegment={dependencies.navigation.onSelectSegment}
             search={queueSearch}
-            onSearchChange={onQueueSearchChange}
-            isSearching={isQueueSearchPending}
             queueFilter={queueFilter}
-            onQueueFilterChange={onQueueFilterChange}
-            availableQueueFilters={availableQueueFilters}
             checkedSegmentIds={checkedSegmentIds}
             onToggleSegmentChecked={onToggleSegmentChecked}
-            onSelectAllVisible={onSelectAllVisible}
-            onClearChecked={onClearChecked}
-            onBulkApprove={onBulkApprove}
-            onBulkSkip={onBulkSkip}
-            isBulkActionPending={isBulkActionPending}
+            showSelection={store.selectionMode}
             isFetchingPage={isQueueFetchingPage}
             isQueueLoading={isQueueLoading}
             pagination={queuePagination}
@@ -347,11 +327,7 @@ export const CatWorkspaceView = observer(function CatWorkspaceView({
           showVisualContext={showVisualContext}
           canLookupFreshContext={canLookupContext}
           search={queueSearch}
-          onSearchChange={onQueueSearchChange}
-          isSearching={isQueueSearchPending}
           queueFilter={queueFilter}
-          onQueueFilterChange={onQueueFilterChange}
-          availableQueueFilters={availableQueueFilters}
           isFetchingPage={isQueueFetchingPage}
           isQueueLoading={isQueueLoading}
           pagination={queuePagination}
@@ -606,18 +582,10 @@ export const CatWorkspaceView = observer(function CatWorkspaceView({
             }
           }}
           search={queueSearch}
-          onSearchChange={onQueueSearchChange}
-          isSearching={isQueueSearchPending}
           queueFilter={queueFilter}
-          onQueueFilterChange={onQueueFilterChange}
-          availableQueueFilters={availableQueueFilters}
           checkedSegmentIds={checkedSegmentIds}
           onToggleSegmentChecked={onToggleSegmentChecked}
-          onSelectAllVisible={onSelectAllVisible}
-          onClearChecked={onClearChecked}
-          onBulkApprove={onBulkApprove}
-          onBulkSkip={onBulkSkip}
-          isBulkActionPending={isBulkActionPending}
+          showSelection={store.selectionMode}
           isFetchingPage={isQueueFetchingPage}
           isQueueLoading={isQueueLoading}
           pagination={queuePagination}

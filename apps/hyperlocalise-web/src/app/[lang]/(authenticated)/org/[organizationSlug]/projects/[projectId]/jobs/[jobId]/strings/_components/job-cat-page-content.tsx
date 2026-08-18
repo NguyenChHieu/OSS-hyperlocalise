@@ -52,12 +52,14 @@ import {
 } from "./select-job-cat-repository";
 import { jobCatPageContentMessages } from "./job-cat-page-content.messages";
 import { ProjectFileCatWorkspace } from "@/components/cat/project-file/project-file-cat-workspace";
+import { CatQueueToolbarHost } from "@/components/cat/queue/cat-queue-toolbar-host";
 import {
   attemptCatPageNavigation,
   type CatPageNavigationGuardRef,
 } from "@/components/cat/workspace/cat-page-navigation-guard";
 import type { CatQueueFilter } from "@/components/cat/queue/cat-queue-filter";
-import { jobCatQueueFilterParam } from "@/lib/projects/job-cat-routing";
+import { jobCatQueueFilterParam, jobCatSearchParam } from "@/lib/projects/job-cat-routing";
+import { buildCatNavigationSearchParams } from "@/lib/projects/cat/cat-workspace-query-params";
 import {
   CAT_ALL_FILES_SOURCE_PATH,
   isCatAllFilesSourcePath,
@@ -130,6 +132,7 @@ function stringsPageHref(input: {
   targetLocale: string;
   segment?: string | null;
   queueFilter?: CatQueueFilter;
+  search?: string | null;
 }) {
   const params = new URLSearchParams({
     targetLocale: input.targetLocale,
@@ -155,6 +158,10 @@ function stringsPageHref(input: {
     params.set(jobCatQueueFilterParam, input.queueFilter);
   }
 
+  if (input.search?.trim()) {
+    params.set(jobCatSearchParam, input.search.trim());
+  }
+
   return `/org/${input.organizationSlug}/projects/${encodeURIComponent(input.projectId)}/jobs/${encodeURIComponent(input.jobId)}/strings?${params.toString()}`;
 }
 
@@ -168,6 +175,7 @@ export function JobCatPageContent({
   targetLocale,
   initialSegmentKey = null,
   initialQueueFilter = "untranslated",
+  initialSearch = "",
   catAllFilesEnabled = false,
 }: {
   organizationSlug: string;
@@ -179,6 +187,7 @@ export function JobCatPageContent({
   targetLocale: string | null;
   initialSegmentKey?: string | null;
   initialQueueFilter?: CatQueueFilter;
+  initialSearch?: string;
   catAllFilesEnabled?: boolean;
 }) {
   const intl = useIntl();
@@ -343,17 +352,11 @@ export function JobCatPageContent({
     }
 
     const navigate = () => {
+      const params = buildCatNavigationSearchParams(window.location.search, {
+        targetLocale: nextLocale,
+      });
       router.push(
-        stringsPageHref({
-          organizationSlug,
-          projectId,
-          jobId,
-          sourcePath: sourcePath ?? undefined,
-          storedFileId: storedFileId ?? undefined,
-          targetLocale: nextLocale,
-          segment: initialSegmentKey,
-          queueFilter: initialQueueFilter,
-        }),
+        `/org/${organizationSlug}/projects/${encodeURIComponent(projectId)}/jobs/${encodeURIComponent(jobId)}/strings?${params.toString()}`,
       );
     };
 
@@ -539,17 +542,14 @@ export function JobCatPageContent({
         return;
       }
       attemptCatPageNavigation(pageNavigationGuardRef, () => {
+        const params = buildCatNavigationSearchParams(window.location.search, {
+          targetLocale: nextLocale,
+          sourcePath: CAT_ALL_FILES_SOURCE_PATH,
+          sourcePaths: serializeCatSourcePathsFilter(jobSourcePaths),
+          storedFileId: null,
+        });
         router.push(
-          stringsPageHref({
-            organizationSlug,
-            projectId,
-            jobId,
-            sourcePath: CAT_ALL_FILES_SOURCE_PATH,
-            sourcePaths: jobSourcePaths,
-            targetLocale: nextLocale,
-            segment: initialSegmentKey,
-            queueFilter: initialQueueFilter,
-          }),
+          `/org/${organizationSlug}/projects/${encodeURIComponent(projectId)}/jobs/${encodeURIComponent(jobId)}/strings?${params.toString()}`,
         );
       });
     };
@@ -619,6 +619,8 @@ export function JobCatPageContent({
               onTargetLocaleChange={handleAllFilesLocaleChange}
             />
           ) : null}
+
+          <CatQueueToolbarHost />
         </div>
 
         {repositoryBanner}
@@ -639,6 +641,7 @@ export function JobCatPageContent({
             )}
             initialSegmentKey={initialSegmentKey}
             initialQueueFilter={initialQueueFilter}
+            initialSearch={initialSearch}
             sourcePathsFilter={serializeCatSourcePathsFilter(jobSourcePaths)}
             layout="fullscreen"
             className="min-h-0 flex-1"
@@ -794,6 +797,8 @@ export function JobCatPageContent({
               onRepositoryChange={handleRepositoryChange}
             />
           ) : null}
+
+          <CatQueueToolbarHost />
         </div>
 
         {repositoryBanner}
@@ -814,6 +819,7 @@ export function JobCatPageContent({
             )}
             initialSegmentKey={initialSegmentKey}
             initialQueueFilter={initialQueueFilter}
+            initialSearch={initialSearch}
             layout="fullscreen"
             className="min-h-0 flex-1"
             pageNavigationGuardRef={pageNavigationGuardRef}
@@ -941,6 +947,8 @@ export function JobCatPageContent({
               intl.formatMessage(jobCatPageContentMessages.fileFormatFallback),
           })}
         </TypographyP>
+
+        <CatQueueToolbarHost />
       </div>
 
       {repositoryBanner}
@@ -962,6 +970,7 @@ export function JobCatPageContent({
           )}
           initialSegmentKey={initialSegmentKey}
           initialQueueFilter={initialQueueFilter}
+          initialSearch={initialSearch}
           layout="fullscreen"
           className="min-h-0 flex-1"
           pageNavigationGuardRef={pageNavigationGuardRef}

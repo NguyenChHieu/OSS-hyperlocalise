@@ -38,10 +38,7 @@ function selectionKey(target: { issueId?: string; id?: string; projectId: string
 export function useIssueListSelection(issues: IssueGroupedListItem[]) {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
 
-  const loadedKeys = useMemo(
-    () => new Set(issues.map((issue) => selectionKey(issue))),
-    [issues],
-  );
+  const loadedKeys = useMemo(() => new Set(issues.map((issue) => selectionKey(issue))), [issues]);
 
   const loadedTargets = useMemo(
     () =>
@@ -70,19 +67,21 @@ export function useIssueListSelection(issues: IssueGroupedListItem[]) {
   const toggleIssue = useCallback(
     (target: { issueId?: string; id?: string; projectId: string }, checked: boolean) => {
       const key = selectionKey(target);
-    setSelectedKeys((current) => {
-      const next = new Set(current);
-      if (checked) {
-        if (next.size >= ISSUE_BULK_ACTION_MAX_ITEMS) {
-          return current;
+      setSelectedKeys((current) => {
+        const next = new Set(current);
+        if (checked) {
+          if (next.size >= ISSUE_BULK_ACTION_MAX_ITEMS) {
+            return current;
+          }
+          next.add(key);
+        } else {
+          next.delete(key);
         }
-        next.add(key);
-      } else {
-        next.delete(key);
-      }
-      return next;
-    });
-  }, []);
+        return next;
+      });
+    },
+    [],
+  );
 
   const selectAllLoaded = useCallback(() => {
     setSelectedKeys(new Set([...loadedKeys].slice(0, ISSUE_BULK_ACTION_MAX_ITEMS)));

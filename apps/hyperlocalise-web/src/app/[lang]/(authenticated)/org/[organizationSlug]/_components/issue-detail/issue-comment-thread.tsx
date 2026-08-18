@@ -511,9 +511,7 @@ function IssueActivityRow({
             {...messages.priorityChanged}
             values={{
               actor,
-              previousPriority: activityName(
-                issuePriorityLabel(intl, activity.previousPriority),
-              ),
+              previousPriority: activityName(issuePriorityLabel(intl, activity.previousPriority)),
               nextPriority: activityName(issuePriorityLabel(intl, activity.nextPriority)),
             }}
           />

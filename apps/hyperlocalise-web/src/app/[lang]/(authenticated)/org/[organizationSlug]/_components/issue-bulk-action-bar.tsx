@@ -24,12 +24,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/primitives/cn";
 
 import { IssueAssigneePicker } from "./issue-detail/issue-assignee-picker";
@@ -79,8 +74,7 @@ export function IssueBulkActionBar({
   onSetIssueType: (issueType: IssueTypeValue) => void;
 }) {
   const intl = useIntl();
-  const singleProjectId =
-    selectedProjectIds.size === 1 ? [...selectedProjectIds][0] : undefined;
+  const singleProjectId = selectedProjectIds.size === 1 ? [...selectedProjectIds][0] : undefined;
   const assignDisabled = selectedProjectIds.size !== 1;
   const membersQuery = useAssignableIssueMembersQuery({
     organizationSlug,
@@ -132,13 +126,15 @@ export function IssueBulkActionBar({
         {assignDisabled ? (
           <TooltipProvider>
             <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button type="button" size="sm" variant="outline" disabled>
-                    <FormattedMessage {...messages.assign} />
-                  </Button>
-                </span>
-              </TooltipTrigger>
+              <TooltipTrigger
+                render={
+                  <span>
+                    <Button type="button" size="sm" variant="outline" disabled>
+                      <FormattedMessage {...messages.assign} />
+                    </Button>
+                  </span>
+                }
+              />
               <TooltipContent>
                 <FormattedMessage {...messages.assignDisabledMixedProjects} />
               </TooltipContent>
@@ -165,11 +161,13 @@ export function IssueBulkActionBar({
         </Button>
 
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" size="sm" variant="outline" disabled={isPending}>
-              <FormattedMessage {...messages.setStatus} />
-            </Button>
-          </DropdownMenuTrigger>
+          <DropdownMenuTrigger
+            render={
+              <Button type="button" size="sm" variant="outline" disabled={isPending}>
+                <FormattedMessage {...messages.setStatus} />
+              </Button>
+            }
+          />
           <DropdownMenuContent align="start">
             {issueStatusValues.map((status) => (
               <DropdownMenuItem key={status} onClick={() => onSetStatus(status)}>
@@ -180,11 +178,13 @@ export function IssueBulkActionBar({
         </DropdownMenu>
 
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" size="sm" variant="outline" disabled={isPending}>
-              <FormattedMessage {...messages.setPriority} />
-            </Button>
-          </DropdownMenuTrigger>
+          <DropdownMenuTrigger
+            render={
+              <Button type="button" size="sm" variant="outline" disabled={isPending}>
+                <FormattedMessage {...messages.setPriority} />
+              </Button>
+            }
+          />
           <DropdownMenuContent align="start">
             {issuePriorityValues.map((priority) => (
               <DropdownMenuItem key={priority} onClick={() => onSetPriority(priority)}>
@@ -195,11 +195,13 @@ export function IssueBulkActionBar({
         </DropdownMenu>
 
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button type="button" size="sm" variant="outline" disabled={isPending}>
-              <FormattedMessage {...messages.setIssueType} />
-            </Button>
-          </DropdownMenuTrigger>
+          <DropdownMenuTrigger
+            render={
+              <Button type="button" size="sm" variant="outline" disabled={isPending}>
+                <FormattedMessage {...messages.setIssueType} />
+              </Button>
+            }
+          />
           <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
             {issueTypeValues.map((issueType) => (
               <DropdownMenuItem key={issueType} onClick={() => onSetIssueType(issueType)}>

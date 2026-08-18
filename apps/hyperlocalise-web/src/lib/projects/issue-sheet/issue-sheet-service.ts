@@ -287,6 +287,11 @@ export type IssueSheetIssue = {
   isWatching: boolean;
 };
 
+export type IssueSheetUpdateIssueOutcome = {
+  outcome: "updated" | "unchanged";
+  issue: IssueSheetIssue;
+};
+
 export type IssueSheetListResult = {
   issues: IssueSheetIssue[];
   columns: IssueSheetColumn[];
@@ -1413,7 +1418,8 @@ export class IssueSheetService {
     issueId: string;
     actorUserId: string;
     body: IssueSheetUpdateIssueBody;
-  }): Promise<IssueSheetIssue | null> {
+    returnOutcome?: boolean;
+  }): Promise<IssueSheetIssue | IssueSheetUpdateIssueOutcome | null> {
     const nextStatus = input.body.status;
     const resolvedAt =
       nextStatus === "resolved" || nextStatus === "wont_fix"
@@ -1550,6 +1556,7 @@ export class IssueSheetService {
 
       return {
         statusChanging,
+        issueTypeChanging,
         previousStatus: current.status,
         nextStatus: nextStatusValue,
         assigneeActuallyChanged,
@@ -1597,7 +1604,21 @@ export class IssueSheetService {
       );
     }
 
-    return this.getIssueById(input);
+    const issue = await this.getIssueById(input);
+    if (!issue) {
+      return null;
+    }
+
+    if (input.returnOutcome) {
+      const changed =
+        found.assigneeActuallyChanged || found.statusChanging || found.issueTypeChanging;
+      return {
+        outcome: changed ? "updated" : "unchanged",
+        issue,
+      };
+    }
+
+    return issue;
   }
 
   async importFromCsv(input: {

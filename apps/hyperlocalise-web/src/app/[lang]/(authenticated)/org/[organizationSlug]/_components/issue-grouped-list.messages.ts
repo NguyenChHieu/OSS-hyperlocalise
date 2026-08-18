@@ -37,7 +37,7 @@ export const issueGroupedListMessages = defineMessages({
   },
   rowSelectAria: {
     defaultMessage: "Select issue {title}",
-    id: "HL498GroupedListRowSelect",
+    id: "82drjDfpox",
     description: "Accessible label for selecting an issue row for bulk actions",
   },
 });

@@ -52,17 +52,17 @@ export const issueCommentMessages = defineMessages({
   },
   issueTypeChanged: {
     defaultMessage: "{actor} changed type from {previousIssueType} to {nextIssueType}",
-    id: "HL498IssueTypeChanged",
+    id: "b9pqYzF7KI",
     description: "Activity line when an issue type changes",
   },
   priorityChanged: {
     defaultMessage: "{actor} changed priority from {previousPriority} to {nextPriority}",
-    id: "HL498PriorityChanged",
+    id: "ByKnEF5329",
     description: "Activity line when an issue priority changes",
   },
   prioritySet: {
     defaultMessage: "{actor} set priority to {nextPriority}",
-    id: "HL498PrioritySet",
+    id: "cVNMp4yAc9",
     description: "Activity line when an issue priority is set for the first time",
   },
   unknownActor: {

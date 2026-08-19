@@ -65,7 +65,7 @@ describe("workspace template manifest", () => {
     expect(getTemplateCategoryFromSkill("translate-on-source-upload")).toBe("popular");
   });
 
-  it("keeps summarize changes daily template content from base definition", () => {
+  it("merges summarize changes daily skill onto the gallery template", () => {
     const [template] = mergeWorkspaceTemplateSkills(WORKSPACE_AUTOMATION_TEMPLATES_BASE).filter(
       (entry) => entry.id === "summarize-changes-daily",
     );
@@ -73,15 +73,15 @@ describe("workspace template manifest", () => {
     expect(template).toMatchObject({
       name: "Summarize changes daily",
       category: "popular",
-      activatable: false,
+      activatable: true,
       defaultForm: expect.objectContaining({
         githubMode: "agent",
         triggerMode: "scheduled",
         scheduledCadence: "daily",
       }),
     });
-    expect(template?.description).toContain("GitHub repository");
-    expect(template?.instructions).toContain("You are a daily engineering briefing agent");
+    expect(template?.description).toContain("localisation-related changes");
+    expect(template?.instructions).toContain("You are a daily localisation briefing agent");
   });
 
   it("merges daily code-review and web-research skills onto gallery templates", () => {
@@ -94,13 +94,33 @@ describe("workspace template manifest", () => {
       category: "popular",
       activatable: true,
     });
-    expect(review?.instructions).toContain("You are a staff code reviewer");
+    expect(review?.description).toContain("localisation and translation risk");
+    expect(review?.instructions).toContain("You are a localisation-focused code reviewer");
     expect(research).toMatchObject({
       name: "Daily web research",
       category: "popular",
       activatable: true,
     });
     expect(research?.instructions).toContain("You are a localisation research analyst");
+  });
+
+  it("merges notify-on-push-blockers skill onto the gallery template", () => {
+    const [template] = mergeWorkspaceTemplateSkills(WORKSPACE_AUTOMATION_TEMPLATES_BASE).filter(
+      (entry) => entry.id === "notify-on-push-blockers",
+    );
+
+    expect(template).toMatchObject({
+      name: "Notify on push blockers",
+      category: "popular",
+      activatable: true,
+      defaultForm: expect.objectContaining({
+        githubMode: "agent",
+        triggerMode: "github",
+        githubCommentEnabled: true,
+      }),
+    });
+    expect(template?.description).toContain("comment on the pull request");
+    expect(template?.instructions).toContain("sticky GitHub pull request comment");
   });
 
   it("keeps untested templates coming soon after skill merge", () => {
@@ -111,8 +131,10 @@ describe("workspace template manifest", () => {
     expect(activatableIds).toEqual([
       "translate-on-source-upload",
       "translate-contentful-article",
+      "summarize-changes-daily",
       "review-code-daily",
       "daily-web-research",
+      "notify-on-push-blockers",
     ]);
   });
 });

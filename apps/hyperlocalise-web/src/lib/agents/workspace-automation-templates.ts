@@ -160,19 +160,30 @@ export const WORKSPACE_AUTOMATION_TEMPLATES_BASE: WorkspaceAutomationTemplate[] 
     category: "popular",
     name: "Summarize changes daily",
     description:
-      "Read a GitHub repository each day and post a concise digest of what changed to Slack.",
+      "Read a GitHub repository each day and post a concise Slack digest of localisation-related changes.",
     instructions: formatWorkspaceAutomationTemplateInstructions({
-      role: "a daily engineering briefing agent",
+      role: "a daily localisation briefing agent",
       capabilities: [
         "Read recent commits, diffs, and surrounding files in the lookback window",
-        "Group changes by theme: features, fixes, refactors, docs, and infrastructure",
+        "Keep the digest scoped to localisation, i18n, and translation work",
         "Cite commit SHAs and file paths for specific claims",
-        "Call out follow-ups such as missing tests, rollout risk, or incomplete migrations",
-        "Ignore dependency-only bumps and formatting-only churn unless they change runtime behavior",
+        "Call out coverage gaps, ICU or placeholder risk, and incomplete translation syncs",
+        "Ignore unrelated feature, infrastructure, and formatting work unless it changes user-facing copy or locale files",
       ],
-      goal: "Post a concise digest of what changed so the team can stay aligned without reading every commit.",
+      goal: "Post a concise digest of localisation-related changes so the team can stay aligned without reading every commit.",
+      extraSections: [
+        {
+          heading: "Digest focus",
+          items: [
+            "New or updated source strings and message catalogs",
+            "Translation file, locale resource, and coverage changes",
+            "ICU, placeholder, glossary, and i18n config updates",
+            "Localisation-related PRs, syncs, and release risks",
+          ],
+        },
+      ],
     }),
-    activatable: false,
+    activatable: true,
     defaultForm: {
       name: "Summarize changes daily",
       triggerMode: "scheduled",
@@ -193,25 +204,25 @@ export const WORKSPACE_AUTOMATION_TEMPLATES_BASE: WorkspaceAutomationTemplate[] 
     category: "popular",
     name: "Review code daily",
     description:
-      "Read recent repository changes each day, review them for defects, and post findings to Slack.",
+      "Read recent repository changes each day, review them for localisation and translation risk, and post findings to Slack.",
     instructions: formatWorkspaceAutomationTemplateInstructions({
-      role: "a staff code reviewer for this repository",
+      role: "a localisation-focused code reviewer for this repository",
       capabilities: [
         "Read recent commits, diffs, and surrounding code in the lookback window",
-        "Judge correctness, regressions, missing tests, security, and rollout risk",
+        "Judge localisation, translation, and locale-compliance risk in the changed code",
         "Cite commit SHAs and file paths for each finding",
-        "Separate blocking defects from non-blocking follow-ups",
-        "Ignore formatting-only churn unless it hides a real defect",
+        "Separate blocking localisation defects from non-blocking follow-ups",
+        "Ignore unrelated logic, security, and formatting issues unless they affect user-facing copy or locale behavior",
       ],
-      goal: "Surface the highest-risk changes from the last day so the team can act before they ship further.",
+      goal: "Surface localisation and translation risks from the last day so the team can act before they ship further.",
       extraSections: [
         {
           heading: "Review focus",
           items: [
-            "Logic bugs, broken contracts, and missing error handling",
-            "Security, auth, and data-exposure risks",
-            "Missing or weakened tests around the changed behavior",
-            "Rollout, migration, and backwards-compatibility risk",
+            "Hard-coded copy, missing keys, and source strings that cannot be translated",
+            "Broken ICU, placeholders, plurals, and locale-sensitive formatting",
+            "Translation coverage, fallback, and writeback regressions",
+            "Localisation compliance: locale, RTL, legal, and market-language constraints",
           ],
         },
       ],
@@ -612,25 +623,43 @@ export const WORKSPACE_AUTOMATION_TEMPLATES_BASE: WorkspaceAutomationTemplate[] 
     id: "notify-on-push-blockers",
     category: "popular",
     name: "Notify on push blockers",
-    description: "Validate every push and ping Slack when localisation blockers are found.",
+    description:
+      "Review each GitHub push for localisation and translation risk, then comment on the pull request.",
     instructions: formatWorkspaceAutomationTemplateInstructions({
-      role: "a localisation incident notifier",
+      role: "a localisation-focused code reviewer for this repository",
       capabilities: [
-        "Validate localisation changes on every push",
-        "Notify Slack when required locales lose coverage",
-        "Notify Slack when placeholders, ICU syntax, or unsafe markup fail validation",
-        "Skip notifications for clean runs unless configured otherwise",
+        "Read the pushed commits, diffs, and surrounding code",
+        "Judge localisation, translation, and locale-compliance risk in the changed code",
+        "Cite commit SHAs and file paths for each finding",
+        "Separate blocking localisation defects from non-blocking follow-ups",
+        "Ignore unrelated logic, security, and formatting issues unless they affect user-facing copy or locale behavior",
+        "Post findings as a sticky GitHub pull request comment and update it on later pushes",
       ],
-      goal: "Alert the team only when a push introduces localisation blockers.",
+      goal: "Surface localisation and translation risks from this push on the pull request before they merge.",
+      extraSections: [
+        {
+          heading: "Review focus",
+          items: [
+            "Hard-coded copy, missing keys, and source strings that cannot be translated",
+            "Broken ICU, placeholders, plurals, and locale-sensitive formatting",
+            "Translation coverage, fallback, and writeback regressions",
+            "Localisation compliance: locale, RTL, legal, and market-language constraints",
+          ],
+        },
+      ],
     }),
-    activatable: false,
+    activatable: true,
     defaultForm: {
       name: "Notify on push blockers",
       triggerMode: "github",
       pushBranches: ["main"],
       githubEnabled: true,
-      validationEnabled: true,
-      slackEnabled: true,
+      githubMode: "agent",
+      repositoryTargetKind: "github",
+      pushSourceEnabled: false,
+      pullTranslationsEnabled: false,
+      validationEnabled: false,
+      githubCommentEnabled: true,
     },
   },
   {
@@ -899,6 +928,10 @@ export function getWorkspaceAutomationTemplateFlow(
 
   if (form.emailEnabled) {
     tools.push({ id: "email", label: "Email" });
+  }
+
+  if (form.githubCommentEnabled) {
+    tools.push({ id: "github-comment", label: "GitHub comment" });
   }
 
   if (form.contentfulEnabled) {

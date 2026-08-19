@@ -59,9 +59,6 @@ describe("workspace automation view model", () => {
       ),
     ).toBe(null);
     expect(
-      createWorkspaceAutomationFormStateFromTemplate("summarize-changes-daily", mergedTemplates),
-    ).toBe(null);
-    expect(
       createWorkspaceAutomationFormStateFromTemplate(
         "create-localisation-job-brief",
         mergedTemplates,
@@ -196,17 +193,25 @@ describe("workspace automation view model", () => {
     expect(form?.instructions).toContain("You are a Contentful localisation editor");
   });
 
-  it("keeps summarize changes daily as coming soon", () => {
-    const template = getWorkspaceAutomationTemplate("summarize-changes-daily", mergedTemplates);
-    expect(template).toMatchObject({
+  it("prefills the summarize changes daily template", () => {
+    const form = createWorkspaceAutomationFormStateFromTemplate(
+      "summarize-changes-daily",
+      mergedTemplates,
+    );
+
+    expect(form).toMatchObject({
       name: "Summarize changes daily",
-      activatable: false,
-      defaultForm: {
-        triggerMode: "scheduled",
-        githubMode: "agent",
-      },
+      triggerMode: "scheduled",
+      scheduledCadence: "daily",
+      githubEnabled: true,
+      githubMode: "agent",
+      slackEnabled: true,
+      pushSourceEnabled: false,
+      pullTranslationsEnabled: false,
+      validationEnabled: false,
     });
-    expect(template?.instructions).toContain("You are a daily engineering briefing agent");
+    expect(form?.instructions).toContain("You are a daily localisation briefing agent");
+    expect(form?.instructions).toContain("Digest focus:");
   });
 
   it("prefills the daily code-review template", () => {
@@ -224,7 +229,8 @@ describe("workspace automation view model", () => {
       slackEnabled: true,
       webSearchEnabled: false,
     });
-    expect(form?.instructions).toContain("You are a staff code reviewer");
+    expect(form?.instructions).toContain("You are a localisation-focused code reviewer");
+    expect(form?.instructions).toContain("Review focus:");
     expect(
       validateWorkspaceAutomationFormState({
         ...form!,
@@ -253,6 +259,68 @@ describe("workspace automation view model", () => {
     expect(formStateToWorkspaceAutomationPayload(form!).toolConfig.webSearch).toEqual({
       enabled: true,
       provider: "auto",
+    });
+  });
+
+  it("prefills the notify on push blockers template", () => {
+    const form = createWorkspaceAutomationFormStateFromTemplate(
+      "notify-on-push-blockers",
+      mergedTemplates,
+    );
+
+    expect(form).toMatchObject({
+      name: "Notify on push blockers",
+      triggerMode: "github",
+      pushBranches: ["main"],
+      githubEnabled: true,
+      githubMode: "agent",
+      githubCommentEnabled: true,
+      slackEnabled: false,
+      validationEnabled: false,
+    });
+    expect(form?.instructions).toContain("You are a localisation-focused code reviewer");
+    expect(form?.instructions).toContain("Review focus:");
+    expect(
+      validateWorkspaceAutomationFormState({
+        ...form!,
+        githubInstallationRepositoryId: "11111111-1111-4111-8111-111111111111",
+      }),
+    ).toEqual({});
+    expect(formStateToWorkspaceAutomationPayload(form!).toolConfig.githubComment).toEqual({
+      enabled: true,
+    });
+  });
+
+  it("allows GitHub agent mode with a GitHub push trigger", () => {
+    const form = {
+      ...createDefaultWorkspaceAutomationFormState(),
+      name: "Notify on push blockers",
+      instructions: "Review localisation risk on this push.",
+      triggerMode: "github" as const,
+      pushBranches: ["main"],
+      githubEnabled: true,
+      githubMode: "agent" as const,
+      githubInstallationRepositoryId: "11111111-1111-4111-8111-111111111111",
+      githubCommentEnabled: true,
+    };
+
+    expect(validateWorkspaceAutomationFormState(form)).toEqual({});
+    expect(formStateToWorkspaceAutomationPayload(form)).toMatchObject({
+      triggerConfig: { mode: "github", branches: ["main"] },
+      repositoryTarget: {
+        kind: "github",
+        githubInstallationRepositoryId: "11111111-1111-4111-8111-111111111111",
+      },
+      toolConfig: {
+        github: {
+          enabled: true,
+          mode: "agent",
+          pushSource: false,
+          pullTranslations: false,
+          validation: false,
+        },
+        githubComment: { enabled: true },
+      },
     });
   });
 

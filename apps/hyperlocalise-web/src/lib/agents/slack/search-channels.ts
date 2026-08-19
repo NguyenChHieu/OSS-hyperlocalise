@@ -64,7 +64,6 @@ type SlackChannel = {
   name?: string;
   name_normalized?: string;
   is_private?: boolean;
-  is_archived?: boolean;
 };
 
 type SlackConversationsListResponse = {
@@ -109,7 +108,7 @@ function parseRetryAfterMs(response: Response) {
 
 function toChannelListItem(channel: SlackChannel): SlackChannelListItem | null {
   const name = channel.name || channel.name_normalized;
-  if (!channel.id || !name || channel.is_archived) {
+  if (!channel.id || !name) {
     return null;
   }
 
@@ -265,9 +264,8 @@ async function listSlackChannelPage(
   Result<{ channels: SlackChannelListItem[]; nextCursor: string }, SlackChannelSearchError>
 > {
   const url = new URL("https://slack.com/api/conversations.list");
-  // Slack applies exclude_archived after filling a virtual page of `limit`, so a
-  // page can return fewer than `limit` channels while next_cursor still has more.
-  url.searchParams.set("exclude_archived", "true");
+  // Omit exclude_archived. Slack applies that filter after filling a virtual page
+  // of `limit`, which can shrink pages and skip later channels.
   url.searchParams.set("limit", String(input.limit));
   url.searchParams.set("types", "public_channel,private_channel");
   if (input.cursor) {

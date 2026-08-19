@@ -11,6 +11,8 @@
  * Version 2.0 or later.
  */
 import { useState, type ReactNode } from "react";
+import { PlayIcon, SaveIcon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { expect, fn } from "storybook/test";
 
@@ -24,7 +26,9 @@ import {
   createDetailAutomationFormFixture,
   createEmptyAutomationFormFixture,
   createGithubAutomationFormFixture,
+  createManualAutomationFormFixture,
   createMemoriesAutomationFormFixture,
+  createScheduledAutomationFormFixture,
 } from "./automation-editor.fixture";
 import { automationEditorMswHandlers } from "./automation-msw-handlers";
 import { WorkspaceAutomationEditor } from "./workspace-automation-form";
@@ -181,21 +185,65 @@ export const DetailDefault: Story = {
     mode: "detail",
     form: createDetailAutomationFormFixture(),
     actions: (
+      <Button type="button" disabled>
+        <HugeiconsIcon icon={SaveIcon} strokeWidth={1.8} data-icon="inline-start" />
+        Save changes
+      </Button>
+    ),
+  },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByDisplayValue("Validate localisation on push")).toBeInTheDocument();
+    await expect(canvas.getByRole("tab", { name: "Run History" })).toBeInTheDocument();
+    await expect(canvas.queryByRole("button", { name: "Run now" })).not.toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  },
+};
+
+export const DetailScheduled: Story = {
+  args: {
+    mode: "detail",
+    form: createScheduledAutomationFormFixture(),
+    actions: (
       <>
         <Button type="button" variant="outline" onClick={fn()}>
+          <HugeiconsIcon icon={PlayIcon} strokeWidth={1.8} data-icon="inline-start" />
           Run now
         </Button>
-        <Button type="button" onClick={fn()}>
+        <Button type="button" disabled>
+          <HugeiconsIcon icon={SaveIcon} strokeWidth={1.8} data-icon="inline-start" />
           Save changes
         </Button>
       </>
     ),
   },
   play: async ({ canvas }) => {
-    await expect(canvas.getByDisplayValue("Validate localisation on push")).toBeInTheDocument();
-    await expect(canvas.getByRole("tab", { name: "Run History" })).toBeInTheDocument();
+    await expect(canvas.getByDisplayValue("Weekly translation sync")).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "Run now" })).toBeInTheDocument();
-    await expect(canvas.getByRole("button", { name: "Save changes" })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Save changes" })).toBeDisabled();
+  },
+};
+
+export const DetailManual: Story = {
+  args: {
+    mode: "detail",
+    form: createManualAutomationFormFixture(),
+    actions: (
+      <>
+        <Button type="button" variant="outline" onClick={fn()}>
+          <HugeiconsIcon icon={PlayIcon} strokeWidth={1.8} data-icon="inline-start" />
+          Run now
+        </Button>
+        <Button type="button" disabled>
+          <HugeiconsIcon icon={SaveIcon} strokeWidth={1.8} data-icon="inline-start" />
+          Save changes
+        </Button>
+      </>
+    ),
+  },
+  play: async ({ canvas }) => {
+    await expect(canvas.getByDisplayValue("Manual release checklist")).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Run now" })).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Save changes" })).toBeDisabled();
   },
 };
 
@@ -207,7 +255,8 @@ export const DetailPaused: Story = {
       status: "paused",
     },
     actions: (
-      <Button type="button" onClick={fn()}>
+      <Button type="button" disabled>
+        <HugeiconsIcon icon={SaveIcon} strokeWidth={1.8} data-icon="inline-start" />
         Save changes
       </Button>
     ),
@@ -223,7 +272,8 @@ export const DetailRunHistory: Story = {
     form: createDetailAutomationFormFixture(),
     runHistory: automationRunsFixture,
     actions: (
-      <Button type="button" onClick={fn()}>
+      <Button type="button" disabled>
+        <HugeiconsIcon icon={SaveIcon} strokeWidth={1.8} data-icon="inline-start" />
         Save changes
       </Button>
     ),
@@ -242,7 +292,8 @@ export const DetailRunHistoryEmpty: Story = {
     form: createDetailAutomationFormFixture(),
     runHistory: [],
     actions: (
-      <Button type="button" onClick={fn()}>
+      <Button type="button" disabled>
+        <HugeiconsIcon icon={SaveIcon} strokeWidth={1.8} data-icon="inline-start" />
         Save changes
       </Button>
     ),
@@ -260,6 +311,7 @@ export const ReadOnly: Story = {
     disabled: true,
     actions: (
       <Button type="button" disabled>
+        <HugeiconsIcon icon={SaveIcon} strokeWidth={1.8} data-icon="inline-start" />
         Save changes
       </Button>
     ),

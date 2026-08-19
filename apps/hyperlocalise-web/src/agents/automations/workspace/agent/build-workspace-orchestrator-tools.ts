@@ -26,6 +26,7 @@ import { createRunContentfulTranslationTool } from "./tools/run_contentful_trans
 import { createRunGithubWorkflowsTool } from "./tools/run_github_workflows";
 import { createSaveMemoryTool } from "./tools/save_memory";
 import { createUseAhrefsTool } from "./tools/use_ahrefs";
+import { createUseCrowdinTool } from "./tools/use_crowdin";
 import { createUseGithubRepositoryTool } from "./tools/use_github_repository";
 import { createUseSemrushTool } from "./tools/use_semrush";
 import { createUseWebSearchTool } from "./tools/use_web_search";
@@ -41,6 +42,7 @@ const TOOL_BUILDERS: Record<
   assign_translate_with_agent: createAssignTranslateWithAgentTool,
   list_issues: createListIssuesTool,
   create_issue: createCreateIssueTool,
+  use_crowdin: createUseCrowdinTool,
   use_semrush: createUseSemrushTool,
   use_ahrefs: createUseAhrefsTool,
   use_web_search: createUseWebSearchTool,

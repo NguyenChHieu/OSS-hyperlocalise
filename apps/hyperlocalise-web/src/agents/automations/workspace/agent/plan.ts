@@ -35,6 +35,7 @@ export const WORKSPACE_ORCHESTRATOR_TOOL_NAMES = [
   "assign_translate_with_agent",
   "list_issues",
   "create_issue",
+  "use_crowdin",
   "use_semrush",
   "use_ahrefs",
   "use_web_search",
@@ -63,6 +64,7 @@ const WORKFLOW_TOOLS: WorkspaceOrchestratorToolName[] = [
   "assign_translate_with_agent",
   "list_issues",
   "create_issue",
+  "use_crowdin",
   "use_semrush",
   "use_ahrefs",
   "use_web_search",
@@ -99,6 +101,8 @@ function workflowToolEnabled(
       return hasWorkspaceAutomationListIssuesTool(toolConfig);
     case "create_issue":
       return hasWorkspaceAutomationCreateIssueTool(toolConfig);
+    case "use_crowdin":
+      return Boolean(toolConfig.crowdin?.enabled && toolConfig.crowdin.projectId?.trim());
     case "use_semrush":
       return Boolean(toolConfig.semrush?.enabled && toolConfig.semrush.connectionId);
     case "use_ahrefs":
@@ -152,6 +156,7 @@ function orderWorkflowTools(input: {
       ...enabled.filter((tool) => tool === "assign_translate_with_agent"),
       ...enabled.filter((tool) => tool === "list_issues"),
       ...enabled.filter((tool) => tool === "create_issue"),
+      ...enabled.filter((tool) => tool === "use_crowdin"),
       ...enabled.filter((tool) => tool === "use_semrush"),
       ...enabled.filter((tool) => tool === "use_ahrefs"),
       ...enabled.filter((tool) => tool === "use_web_search"),
@@ -166,6 +171,7 @@ function orderWorkflowTools(input: {
     ...enabled.filter((tool) => tool === "assign_translate_with_agent"),
     ...enabled.filter((tool) => tool === "list_issues"),
     ...enabled.filter((tool) => tool === "create_issue"),
+    ...enabled.filter((tool) => tool === "use_crowdin"),
     ...enabled.filter((tool) => tool === "use_semrush"),
     ...enabled.filter((tool) => tool === "use_ahrefs"),
     ...enabled.filter((tool) => tool === "use_web_search"),

@@ -34,6 +34,7 @@ import {
   CrowdinApiClient,
   CrowdinApiError,
   escapeCrowdinCroqlString,
+  type CrowdinAiPrompt,
   type CrowdinBranch,
   type CrowdinCreateTaskRequest,
   type CrowdinDirectory,
@@ -110,6 +111,11 @@ export {
 
 const implemented = { state: "implemented" } as const satisfies TmsProviderFeature;
 const logger = createLogger("crowdin-provider");
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
 const CROWDIN_GLOSSARY_FETCH_CONCURRENCY = 5;
 const CROWDIN_TM_FETCH_CONCURRENCY = 5;
 const MAX_SEGMENTS_PER_MEMORY = 2_000;
@@ -198,6 +204,43 @@ type CrowdinGlossarySearchError =
   | { code: "crowdin_not_configured"; message: string }
   | { code: "crowdin_api_error"; message: string };
 
+type CrowdinReviewLookupError =
+  | { code: "crowdin_not_configured"; message: string }
+  | { code: "crowdin_api_error"; message: string };
+
+/** Agent-facing Crowdin TM concordance match. */
+export type CrowdinAgentTranslationMemoryMatch = {
+  memoryId: number;
+  memoryName: string;
+  recordId: number;
+  sourceText: string;
+  targetText: string;
+  matchScore: number;
+};
+
+/** Combined glossary and TM concordance for workspace automation review. */
+export type SearchCrowdinConcordanceResult = {
+  crowdinProjectId: number;
+  glossaryMatches: CrowdinAgentGlossaryMatch[];
+  translationMemoryMatches: CrowdinAgentTranslationMemoryMatch[];
+};
+
+/** Crowdin AI prompt fields that act as a style guide for review. */
+export type CrowdinAgentStylePrompt = {
+  id: number;
+  name: string;
+  action: string;
+  companyDescription: string | null;
+  projectDescription: string | null;
+  audienceDescription: string | null;
+  prompt: string | null;
+};
+
+export type LoadCrowdinStyleGuideResult = {
+  crowdinProjectId: number;
+  prompts: CrowdinAgentStylePrompt[];
+};
+
 /**
  * Crowdin implementation of the shared TMS provider contract.
  *
@@ -259,11 +302,13 @@ export class CrowdinTmsProvider extends TmsProvider {
     credential: { baseUrl?: string | null };
     secretMaterial: string;
     fetchFn?: typeof fetch;
+    signal?: AbortSignal;
   }) {
     return new CrowdinApiClient({
       token: input.secretMaterial,
       baseUrl: input.credential.baseUrl ?? undefined,
       fetchFn: input.fetchFn,
+      signal: input.signal,
     });
   }
 
@@ -1817,6 +1862,217 @@ export class CrowdinTmsProvider extends TmsProvider {
   }
 
   /**
+   * Agent concordance search: glossary plus translation memory for one or more expressions.
+   */
+  async searchConcordanceForAgent(input: {
+    organizationId: string;
+    actorUserId?: string | null;
+    projectId: string;
+    sourceLocale: string;
+    targetLocale: string;
+    expressions: string[];
+    glossaryLimit?: number;
+    translationMemoryLimit?: number;
+    signal?: AbortSignal;
+  }): Promise<Result<SearchCrowdinConcordanceResult, CrowdinReviewLookupError>> {
+    const expressions = [
+      ...new Set(input.expressions.map((expression) => expression.trim()).filter(Boolean)),
+    ].slice(0, 20);
+    const glossaryLimit = Math.min(Math.max(input.glossaryLimit ?? 20, 1), 50);
+    const translationMemoryLimit = Math.min(Math.max(input.translationMemoryLimit ?? 10, 1), 50);
+
+    const clientResult = await this.createProgressClient({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      actorUserId: input.actorUserId,
+      signal: input.signal,
+    });
+    if (isErr(clientResult)) {
+      return err({
+        code:
+          clientResult.error.code === "crowdin_not_configured"
+            ? "crowdin_not_configured"
+            : "crowdin_api_error",
+        message: clientResult.error.message,
+      });
+    }
+
+    const { client, crowdinProjectId } = clientResult.value;
+    if (expressions.length === 0) {
+      return ok({
+        crowdinProjectId,
+        glossaryMatches: [],
+        translationMemoryMatches: [],
+      });
+    }
+
+    try {
+      const [glossaryResults, translationMemoryResults] = await Promise.all([
+        client.glossaryConcordanceSearch(crowdinProjectId, {
+          sourceLanguageId: input.sourceLocale,
+          targetLanguageId: input.targetLocale,
+          expressions,
+        }),
+        client.concordanceSearch(crowdinProjectId, {
+          sourceLanguageId: input.sourceLocale,
+          targetLanguageId: input.targetLocale,
+          expressions,
+          minRelevant: 50,
+          autoSubstitution: false,
+        }),
+      ]);
+
+      const glossaryMatches: CrowdinAgentGlossaryMatch[] = [];
+      resultsLoop: for (const result of glossaryResults) {
+        const sourceTerms = result.sourceTerms
+          .filter((term) => term.languageId === input.sourceLocale)
+          .map((term) => ({ ...term, text: term.text.trim() }))
+          .filter((term) => term.text);
+        const targetTerms = result.targetTerms
+          .filter((term) => term.languageId === input.targetLocale)
+          .map((term) => ({ ...term, text: term.text.trim() }))
+          .filter((term) => term.text);
+        if (sourceTerms.length === 0 || targetTerms.length === 0) {
+          continue;
+        }
+
+        for (const sourceTerm of sourceTerms) {
+          for (const targetTerm of targetTerms) {
+            const description = targetTerm.description ?? sourceTerm.description ?? null;
+            glossaryMatches.push({
+              glossaryId: result.glossary.id,
+              glossaryName: result.glossary.name,
+              sourceTerm: sourceTerm.text,
+              targetTerm: targetTerm.text,
+              status: targetTerm.status ?? sourceTerm.status ?? null,
+              description: description?.trim() ? description.trim() : null,
+            });
+            if (glossaryMatches.length >= glossaryLimit) {
+              break resultsLoop;
+            }
+          }
+        }
+      }
+
+      const translationMemoryMatches = translationMemoryResults
+        .slice(0, translationMemoryLimit)
+        .map((result) => ({
+          memoryId: result.tm.id,
+          memoryName: result.tm.name,
+          recordId: result.recordId,
+          sourceText: result.source,
+          targetText: result.target,
+          matchScore: result.relevant,
+        }));
+
+      return ok({
+        crowdinProjectId,
+        glossaryMatches,
+        translationMemoryMatches,
+      });
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+
+      if (error instanceof CrowdinApiError && error.status === 401) {
+        return err({
+          code: "crowdin_api_error",
+          message: "Crowdin authentication failed. Reconnect Crowdin and try again.",
+        });
+      }
+
+      return err({
+        code: "crowdin_api_error",
+        message: error instanceof Error ? error.message : "Crowdin concordance search failed.",
+      });
+    }
+  }
+
+  /**
+   * Agent style-guide lookup: Crowdin AI prompts that apply to the linked project.
+   * Missing AI access returns an empty prompt list rather than failing the review.
+   */
+  async loadStyleGuideForAgent(input: {
+    organizationId: string;
+    actorUserId?: string | null;
+    projectId: string;
+    signal?: AbortSignal;
+  }): Promise<Result<LoadCrowdinStyleGuideResult, CrowdinReviewLookupError>> {
+    const clientResult = await this.createProgressClient({
+      organizationId: input.organizationId,
+      projectId: input.projectId,
+      actorUserId: input.actorUserId,
+      signal: input.signal,
+    });
+    if (isErr(clientResult)) {
+      return err({
+        code:
+          clientResult.error.code === "crowdin_not_configured"
+            ? "crowdin_not_configured"
+            : "crowdin_api_error",
+        message: clientResult.error.message,
+      });
+    }
+
+    const { client, crowdinProjectId } = clientResult.value;
+    try {
+      const prompts = await client.listAiPrompts({ projectId: crowdinProjectId });
+      return ok({
+        crowdinProjectId,
+        prompts: this.mapEnabledStylePrompts(prompts, crowdinProjectId),
+      });
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+
+      if (error instanceof CrowdinApiError && (error.status === 401 || error.status === 403)) {
+        return err({
+          code: "crowdin_api_error",
+          message: "Crowdin authentication failed. Reconnect Crowdin and try again.",
+        });
+      }
+
+      logger.info(
+        {
+          organizationId: input.organizationId,
+          crowdinProjectId,
+          status: error instanceof CrowdinApiError ? error.status : null,
+        },
+        "crowdin ai prompt listing unavailable; returning empty style prompts",
+      );
+      return ok({
+        crowdinProjectId,
+        prompts: [],
+      });
+    }
+  }
+
+  private mapEnabledStylePrompts(
+    prompts: CrowdinAiPrompt[],
+    crowdinProjectId: number,
+  ): CrowdinAgentStylePrompt[] {
+    return prompts
+      .filter((prompt) => {
+        if (!prompt.isEnabled) {
+          return false;
+        }
+        const enabledProjectIds = prompt.enabledProjectIds ?? [];
+        return enabledProjectIds.length === 0 || enabledProjectIds.includes(crowdinProjectId);
+      })
+      .map((prompt) => ({
+        id: prompt.id,
+        name: prompt.name,
+        action: prompt.action,
+        companyDescription: prompt.config?.companyDescription?.trim() || null,
+        projectDescription: prompt.config?.projectDescription?.trim() || null,
+        audienceDescription: prompt.config?.audienceDescription?.trim() || null,
+        prompt: prompt.config?.prompt?.trim() || null,
+      }));
+  }
+
+  /**
    * Live CAT concordance: parallel glossary and TM search for a source expression.
    *
    * Throws {@link TmsProviderLiveError} on auth, permission, or fetch failures.
@@ -2064,6 +2320,7 @@ export class CrowdinTmsProvider extends TmsProvider {
     organizationId: string;
     projectId: string;
     actorUserId?: string | null;
+    signal?: AbortSignal;
   }): Promise<
     Result<
       { client: CrowdinApiClient; crowdinProjectId: number },
@@ -2111,6 +2368,7 @@ export class CrowdinTmsProvider extends TmsProvider {
     const client = this.createClient({
       credential: projectCredential.credential,
       secretMaterial: token,
+      signal: input.signal,
     });
     return ok({ client, crowdinProjectId });
   }

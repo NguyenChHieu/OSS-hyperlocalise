@@ -235,6 +235,11 @@ export const glossaryDetailPageContentMessages = defineMessages({
     id: "Fn04QYq5Dy",
     description: "Fallback error when a glossary concept save fails",
   },
+  partOfSpeechRequired: {
+    defaultMessage: "Select a valid part of speech for every term before saving.",
+    id: "+/N0T0rYIa",
+    description: "Validation error when a glossary term is missing a valid part of speech",
+  },
   deleteConceptFailed: {
     defaultMessage: "Unable to delete concept",
     id: "4jUxO+lMSa",
@@ -369,6 +374,46 @@ export const glossaryDetailPageContentMessages = defineMessages({
     defaultMessage: "Delete this term?",
     id: "IdceAsRVCE",
     description: "Confirmation prompt before deleting a term",
+  },
+  expandTerm: {
+    defaultMessage: "Expand term details",
+    id: "k15HfZEC8T",
+    description: "Accessible label for expanding a glossary term row",
+  },
+  collapseTerm: {
+    defaultMessage: "Collapse term details",
+    id: "Hw68LI4OZD",
+    description: "Accessible label for collapsing a glossary term row",
+  },
+  termDescriptionPlaceholder: {
+    defaultMessage: "Definition, context, or example sentence",
+    id: "ykDxLMM1xO",
+    description: "Placeholder for term-level glossary description",
+  },
+  termUrlPlaceholder: {
+    defaultMessage: "https://example.com",
+    id: "QmSbWirtRR",
+    description: "Placeholder for a term reference URL",
+  },
+  termNotePlaceholder: {
+    defaultMessage: "Internal note visible only to editors",
+    id: "HKQdop1A9u",
+    description: "Placeholder for a term-level editor note",
+  },
+  openTermUrl: {
+    defaultMessage: "Open term URL",
+    id: "/2Rg3XAZX2",
+    description: "Accessible label for opening a term reference URL",
+  },
+  confirmDeleteTermTitle: {
+    defaultMessage: "Delete this term?",
+    id: "hnEkxD1cWI",
+    description: "Title of the term deletion confirmation dialog",
+  },
+  confirmDeleteTermDescription: {
+    defaultMessage: "This term will be removed from the concept and cannot be restored.",
+    id: "tQnEG79lWB",
+    description: "Description of the term deletion confirmation dialog",
   },
   noConcepts: {
     defaultMessage: "No concepts yet.",

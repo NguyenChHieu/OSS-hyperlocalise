@@ -46,6 +46,7 @@ import {
   type CrowdinTask,
   type CrowdinTaskComment,
   type CrowdinTaskDetails,
+  type CrowdinGlossaryTerm,
 } from "@/lib/providers/adapters/crowdin/crowdin-api";
 import { crowdinAuth } from "@/lib/providers/adapters/crowdin/crowdin-auth";
 import {
@@ -198,6 +199,72 @@ export type SearchCrowdinGlossaryResult = {
   scope: "organization" | "project";
   crowdinProjectId: number | null;
   matches: CrowdinAgentGlossaryMatch[];
+};
+
+export type CrowdinGlossaryTermInput = {
+  languageId: string;
+  text: string;
+  description?: string;
+  partOfSpeech?: string;
+  status?: string;
+  type?: string;
+  gender?: string;
+  note?: string;
+  url?: string;
+  lemma?: string;
+};
+
+export type CrowdinGlossaryConceptTerm = CrowdinGlossaryTermInput & {
+  id?: number | string;
+  conceptId?: number;
+  userId?: number;
+  type?: string;
+  gender?: string;
+  url?: string;
+  lemma?: string;
+  description?: string;
+  partOfSpeech?: string;
+  status?: string;
+  note?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type CrowdinGlossaryLanguageDetails = {
+  languageId: string;
+  userId: number | null;
+  definition: string;
+  note: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+export type CrowdinGlossaryConcept = {
+  conceptId?: number;
+  primaryTerm: string;
+  sourceLocale: string;
+  subject?: string;
+  definition?: string;
+  translatable?: boolean;
+  note?: string;
+  url?: string | null;
+  figure?: string | null;
+  externalKey?: string;
+  externalUserId?: string | null;
+  languageDetails?: CrowdinGlossaryLanguageDetails[];
+  externalCreatedAt?: string | null;
+  externalUpdatedAt?: string | null;
+  terms: CrowdinGlossaryConceptTerm[];
+};
+
+type CrowdinLiveGlossaryScope = Pick<
+  TmsProviderProjectScope,
+  "organizationId" | "credential" | "secretMaterial" | "signal"
+> & {
+  projectId: string;
+  externalProjectId: string;
+  sourceLocale: string;
+  fetchFn?: typeof fetch;
 };
 
 type CrowdinGlossarySearchError =
@@ -588,6 +655,291 @@ export class CrowdinTmsProvider extends TmsProvider {
     );
 
     return results.flat();
+  }
+
+  async fetchLiveGlossary(scope: CrowdinLiveGlossaryScope, glossaryId: number) {
+    return this.createClient(scope).getGlossary(glossaryId);
+  }
+
+  async updateLiveGlossary(
+    scope: CrowdinLiveGlossaryScope,
+    glossaryId: number,
+    patches: Array<{ op: "replace" | "add" | "remove"; path: string; value?: unknown }>,
+  ) {
+    return this.createClient(scope).updateGlossary(glossaryId, patches);
+  }
+
+  async deleteLiveGlossary(scope: CrowdinLiveGlossaryScope, glossaryId: number) {
+    return this.createClient(scope).deleteGlossary(glossaryId);
+  }
+
+  async listLiveGlossaryConcepts(scope: CrowdinLiveGlossaryScope, glossaryId: number) {
+    const client = this.createClient(scope);
+    const sourceLocale = scope.sourceLocale;
+    const [concepts, terms] = await Promise.all([
+      client.listGlossaryConcepts(glossaryId),
+      client.listGlossaryTerms(glossaryId),
+    ]);
+    const termsByConcept = new Map<number, CrowdinGlossaryTerm[]>();
+    for (const term of terms) {
+      const conceptId = term.conceptId || term.id;
+      const current = termsByConcept.get(conceptId) ?? [];
+      current.push(term);
+      termsByConcept.set(conceptId, current);
+    }
+    const mapped: CrowdinGlossaryConcept[] = concepts.map((concept) => ({
+      conceptId: concept.id,
+      primaryTerm:
+        termsByConcept.get(concept.id)?.find((term) => term.languageId === sourceLocale)?.text ??
+        "",
+      sourceLocale,
+      subject: concept.subject,
+      definition: concept.definition,
+      translatable: concept.translatable,
+      note: concept.note,
+      url: concept.url,
+      figure: concept.figure,
+      externalKey: String(concept.id),
+      externalUserId: String(concept.userId),
+      languageDetails: concept.languagesDetails,
+      externalCreatedAt: concept.createdAt,
+      externalUpdatedAt: concept.updatedAt,
+      terms: termsByConcept.get(concept.id) ?? [],
+    }));
+    const knownIds = new Set(concepts.map((concept) => concept.id));
+    for (const [conceptId, conceptTerms] of termsByConcept) {
+      if (knownIds.has(conceptId)) continue;
+      mapped.push({
+        conceptId,
+        primaryTerm: conceptTerms.find((term) => term.languageId === sourceLocale)?.text ?? "",
+        sourceLocale,
+        subject: "",
+        definition: "",
+        translatable: true,
+        note: "",
+        url: "",
+        figure: "",
+        externalKey: String(conceptId),
+        externalUserId: null,
+        languageDetails: [],
+        externalCreatedAt: null,
+        externalUpdatedAt: null,
+        terms: conceptTerms,
+      });
+    }
+    return mapped;
+  }
+
+  async getLiveGlossaryConcept(
+    scope: CrowdinLiveGlossaryScope,
+    glossaryId: number,
+    conceptId: number,
+  ) {
+    const concepts = await this.listLiveGlossaryConcepts(scope, glossaryId);
+    return concepts.find((concept) => concept.externalKey === String(conceptId)) ?? null;
+  }
+
+  async createLiveGlossaryConcept(
+    scope: CrowdinLiveGlossaryScope,
+    glossaryId: number,
+    input: CrowdinGlossaryConcept,
+  ) {
+    const client = this.createClient(scope);
+    const remoteConcept = await client.addGlossaryConcept(glossaryId, {
+      subject: input.subject,
+      definition: input.definition,
+      translatable: input.translatable,
+      note: input.note,
+      url: input.url ?? undefined,
+      figure: input.figure ?? undefined,
+      languagesDetails: input.languageDetails?.map((detail) => ({
+        languageId: detail.languageId,
+        definition: detail.definition,
+        note: detail.note,
+      })),
+    });
+    const source = input.terms.find((term) => term.languageId === input.sourceLocale) ?? {
+      languageId: input.sourceLocale,
+      text: input.primaryTerm,
+    };
+    const createdSource = await client.addGlossaryTerm(glossaryId, {
+      languageId: source.languageId,
+      text: source.text,
+      description: source.description ?? input.definition,
+      partOfSpeech: source.partOfSpeech ?? input.subject,
+      status: source.status ?? "preferred",
+      type: source.type,
+      gender: source.gender,
+      note: source.note ?? input.note,
+      url: source.url,
+      conceptId: remoteConcept.id,
+    });
+    const conceptId = remoteConcept.id || createdSource.conceptId || createdSource.id;
+    for (const term of input.terms.filter((item) => item !== source)) {
+      await client.addGlossaryTerm(glossaryId, {
+        languageId: term.languageId,
+        text: term.text,
+        description: term.description,
+        partOfSpeech: term.partOfSpeech,
+        status: term.status,
+        type: term.type,
+        gender: term.gender,
+        note: term.note,
+        url: term.url,
+        conceptId,
+      });
+    }
+    return this.getLiveGlossaryConcept(scope, glossaryId, conceptId);
+  }
+
+  async updateLiveGlossaryConcept(
+    scope: CrowdinLiveGlossaryScope,
+    glossaryId: number,
+    conceptId: number,
+    input: CrowdinGlossaryConcept,
+  ) {
+    const client = this.createClient(scope);
+    const existing = await this.getLiveGlossaryConcept(scope, glossaryId, conceptId);
+    if (!existing) return null;
+    await client.updateGlossaryConcept(glossaryId, conceptId, {
+      subject: input.subject ?? "",
+      definition: input.definition ?? "",
+      translatable: input.translatable ?? true,
+      note: input.note ?? "",
+      url: input.url ?? "",
+      figure: input.figure ?? "",
+    });
+    const existingById = new Map(existing.terms.map((term) => [String(term.id), term]));
+    for (const term of input.terms) {
+      const existingTerm = term.id ? existingById.get(String(term.id)) : undefined;
+      if (existingTerm && typeof existingTerm.id === "number") {
+        if (term.languageId !== existingTerm.languageId) {
+          await client.addGlossaryTerm(glossaryId, {
+            languageId: term.languageId,
+            text: term.text,
+            description: term.description,
+            partOfSpeech: term.partOfSpeech,
+            status: term.status,
+            type: term.type,
+            gender: term.gender,
+            note: term.note,
+            url: term.url,
+            conceptId,
+          });
+          await client.deleteGlossaryTerm(glossaryId, existingTerm.id);
+          continue;
+        }
+        await client.updateGlossaryTerm(glossaryId, existingTerm.id, [
+          { op: "replace", path: "/text", value: term.text },
+          { op: "replace", path: "/description", value: term.description ?? "" },
+          { op: "replace", path: "/partOfSpeech", value: term.partOfSpeech ?? "" },
+          { op: "replace", path: "/status", value: term.status ?? "draft" },
+          { op: "replace", path: "/type", value: term.type ?? "" },
+          { op: "replace", path: "/gender", value: term.gender ?? "" },
+          { op: "replace", path: "/note", value: term.note ?? "" },
+          { op: "replace", path: "/url", value: term.url ?? "" },
+        ]);
+      } else {
+        await client.addGlossaryTerm(glossaryId, {
+          languageId: term.languageId,
+          text: term.text,
+          description: term.description,
+          partOfSpeech: term.partOfSpeech,
+          status: term.status,
+          type: term.type,
+          gender: term.gender,
+          note: term.note,
+          url: term.url,
+          conceptId,
+        });
+      }
+    }
+    return this.getLiveGlossaryConcept(scope, glossaryId, conceptId);
+  }
+
+  async deleteLiveGlossaryConcept(
+    scope: CrowdinLiveGlossaryScope,
+    glossaryId: number,
+    conceptId: number,
+  ) {
+    const client = this.createClient(scope);
+    const existing = await this.getLiveGlossaryConcept(scope, glossaryId, conceptId);
+    if (!existing) return false;
+    await client.deleteGlossaryConcept(glossaryId, conceptId);
+    return true;
+  }
+
+  async createLiveGlossaryTerm(
+    scope: CrowdinLiveGlossaryScope,
+    glossaryId: number,
+    conceptId: number,
+    input: CrowdinGlossaryTermInput,
+  ) {
+    const client = this.createClient(scope);
+    return client.addGlossaryTerm(glossaryId, {
+      languageId: input.languageId,
+      text: input.text,
+      description: input.description,
+      partOfSpeech: input.partOfSpeech,
+      status: input.status,
+      type: input.type,
+      gender: input.gender,
+      note: input.note,
+      url: input.url,
+      conceptId,
+    });
+  }
+
+  async updateLiveGlossaryTerm(
+    scope: CrowdinLiveGlossaryScope,
+    glossaryId: number,
+    conceptId: number,
+    termId: number,
+    input: CrowdinGlossaryTermInput,
+  ) {
+    const client = this.createClient(scope);
+    const existing = await this.getLiveGlossaryConcept(scope, glossaryId, conceptId);
+    const existingTerm = existing?.terms.find((term) => String(term.id) === String(termId));
+    if (!existingTerm) return null;
+    if (input.languageId !== existingTerm.languageId) {
+      const replacement = await client.addGlossaryTerm(glossaryId, {
+        languageId: input.languageId,
+        text: input.text,
+        description: input.description,
+        partOfSpeech: input.partOfSpeech,
+        status: input.status,
+        type: input.type,
+        gender: input.gender,
+        note: input.note,
+        url: input.url,
+        conceptId,
+      });
+      await client.deleteGlossaryTerm(glossaryId, termId);
+      return replacement;
+    }
+    return client.updateGlossaryTerm(glossaryId, termId, [
+      { op: "replace", path: "/text", value: input.text },
+      { op: "replace", path: "/description", value: input.description ?? "" },
+      { op: "replace", path: "/partOfSpeech", value: input.partOfSpeech ?? "" },
+      { op: "replace", path: "/status", value: input.status ?? "draft" },
+      { op: "replace", path: "/type", value: input.type ?? "" },
+      { op: "replace", path: "/gender", value: input.gender ?? "" },
+      { op: "replace", path: "/note", value: input.note ?? "" },
+      { op: "replace", path: "/url", value: input.url ?? "" },
+    ]);
+  }
+
+  async deleteLiveGlossaryTerm(
+    scope: CrowdinLiveGlossaryScope,
+    glossaryId: number,
+    conceptId: number,
+    termId: number,
+  ) {
+    const existing = await this.getLiveGlossaryConcept(scope, glossaryId, conceptId);
+    if (!existing || !existing.terms.some((term) => String(term.id) === String(termId)))
+      return false;
+    await this.createClient(scope).deleteGlossaryTerm(glossaryId, termId);
+    return true;
   }
 
   /**

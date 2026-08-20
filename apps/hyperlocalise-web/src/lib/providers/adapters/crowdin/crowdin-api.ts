@@ -485,15 +485,79 @@ export interface CrowdinGlossary {
 
 export interface CrowdinGlossaryTerm {
   id: number;
+  userId: number;
   glossaryId: number;
   languageId: string;
   text: string;
   description: string;
   partOfSpeech: string;
   status: string;
-  conceptId: number;
+  type: string;
+  gender: string;
   note: string;
+  url: string;
+  conceptId: number;
+  lemma: string;
+  createdAt: string;
+  updatedAt: string;
 }
+
+export interface CrowdinGlossaryConceptLanguageDetails {
+  languageId: string;
+  userId: number;
+  definition: string;
+  note: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CrowdinGlossaryConcept {
+  id: number;
+  userId: number;
+  glossaryId: number;
+  subject: string;
+  definition: string;
+  translatable: boolean;
+  note: string;
+  url: string;
+  figure: string;
+  languagesDetails: CrowdinGlossaryConceptLanguageDetails[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CrowdinGlossaryPatch = {
+  op: "replace" | "add" | "remove";
+  path: string;
+  value?: unknown;
+};
+
+export type CrowdinGlossaryTermInput = {
+  languageId: string;
+  text: string;
+  description?: string;
+  partOfSpeech?: string;
+  status?: string;
+  type?: string;
+  gender?: string;
+  note?: string;
+  url?: string;
+  conceptId?: number;
+};
+
+export type CrowdinGlossaryConceptInput = {
+  subject?: string;
+  definition?: string;
+  translatable?: boolean;
+  note?: string;
+  url?: string;
+  figure?: string;
+  languagesDetails?: Array<{
+    languageId: string;
+    definition?: string;
+    note?: string;
+  }>;
+};
 
 export interface CrowdinTranslationMemory {
   id: number;
@@ -2109,6 +2173,93 @@ export class CrowdinApiClient {
 
   async listGlossaryTerms(glossaryId: number): Promise<CrowdinGlossaryTerm[]> {
     return this.listPaginated<CrowdinGlossaryTerm>(`/glossaries/${glossaryId}/terms`);
+  }
+
+  async listGlossaryConcepts(glossaryId: number): Promise<CrowdinGlossaryConcept[]> {
+    return this.listPaginated<CrowdinGlossaryConcept>(`/glossaries/${glossaryId}/concepts`);
+  }
+
+  async getGlossaryConcept(glossaryId: number, conceptId: number): Promise<CrowdinGlossaryConcept> {
+    const response = await this.get<CrowdinGetResponse<CrowdinGlossaryConcept>>(
+      `/glossaries/${glossaryId}/concepts/${conceptId}`,
+    );
+    return response.data;
+  }
+
+  async addGlossaryConcept(
+    glossaryId: number,
+    input: CrowdinGlossaryConceptInput,
+  ): Promise<CrowdinGlossaryConcept> {
+    const response = await this.post<CrowdinGetResponse<CrowdinGlossaryConcept>>(
+      `/glossaries/${glossaryId}/concepts`,
+      input,
+    );
+    return response.data;
+  }
+
+  async updateGlossaryConcept(
+    glossaryId: number,
+    conceptId: number,
+    input: CrowdinGlossaryConceptInput,
+  ): Promise<CrowdinGlossaryConcept> {
+    const response = await this.put<CrowdinGetResponse<CrowdinGlossaryConcept>>(
+      `/glossaries/${glossaryId}/concepts/${conceptId}`,
+      input,
+    );
+    return response.data;
+  }
+
+  async deleteGlossaryConcept(glossaryId: number, conceptId: number): Promise<void> {
+    await this.delete(`/glossaries/${glossaryId}/concepts/${conceptId}`);
+  }
+
+  async getGlossary(glossaryId: number): Promise<CrowdinGlossary> {
+    const response = await this.get<CrowdinGetResponse<CrowdinGlossary>>(
+      `/glossaries/${glossaryId}`,
+    );
+    return response.data;
+  }
+
+  async updateGlossary(
+    glossaryId: number,
+    patches: CrowdinGlossaryPatch[],
+  ): Promise<CrowdinGlossary> {
+    const response = await this.patch<CrowdinGetResponse<CrowdinGlossary>>(
+      `/glossaries/${glossaryId}`,
+      patches,
+    );
+    return response.data;
+  }
+
+  async deleteGlossary(glossaryId: number): Promise<void> {
+    await this.delete(`/glossaries/${glossaryId}`);
+  }
+
+  async addGlossaryTerm(
+    glossaryId: number,
+    input: CrowdinGlossaryTermInput,
+  ): Promise<CrowdinGlossaryTerm> {
+    const response = await this.post<CrowdinGetResponse<CrowdinGlossaryTerm>>(
+      `/glossaries/${glossaryId}/terms`,
+      input,
+    );
+    return response.data;
+  }
+
+  async updateGlossaryTerm(
+    glossaryId: number,
+    termId: number,
+    patches: CrowdinGlossaryPatch[],
+  ): Promise<CrowdinGlossaryTerm> {
+    const response = await this.patch<CrowdinGetResponse<CrowdinGlossaryTerm>>(
+      `/glossaries/${glossaryId}/terms/${termId}`,
+      patches,
+    );
+    return response.data;
+  }
+
+  async deleteGlossaryTerm(glossaryId: number, termId: number): Promise<void> {
+    await this.delete(`/glossaries/${glossaryId}/terms/${termId}`);
   }
 
   async listTranslationMemories(): Promise<CrowdinTranslationMemory[]> {

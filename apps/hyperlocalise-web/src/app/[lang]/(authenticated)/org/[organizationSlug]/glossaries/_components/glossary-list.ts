@@ -13,6 +13,7 @@
 import type { IntlShape } from "@formatjs/intl";
 
 import type { GlossaryRecord } from "@/api/routes/glossary/glossary.schema";
+import { getLocaleLabel } from "@/lib/i18n/locales";
 import type { ExternalTmsProviderKind } from "@/lib/providers/credentials/organization-external-tms-provider-credentials";
 import { encodeProviderProjectId } from "@/lib/providers/jobs/tms-provider-resource-id";
 import type { TmsProviderLiveGlossary } from "@/lib/providers/jobs/tms-provider-live";
@@ -41,6 +42,7 @@ function resolveMessage(
 
 export type GlossaryListRow = {
   id: string;
+  detailId: string | null;
   name: string;
   description: string;
   source: "native" | "external_tms";
@@ -55,6 +57,8 @@ export type GlossaryListRow = {
   localeCoverage: string[];
   languages: ApiGlossary["languages"];
   localeSummary: string;
+  sourceLocaleLabel: string;
+  secondaryLocaleSummary: string;
   termCount: number | null;
   termCountLabel: string;
   syncState: string | null;
@@ -110,10 +114,14 @@ function formatLocaleCoverage(
   targetLocale: string | null,
   intl?: GlossaryListIntl,
 ) {
-  const coverage = locales.length > 0 ? locales : [sourceLocale, targetLocale].filter(Boolean);
+  const coverage =
+    locales.length > 0
+      ? locales
+      : [sourceLocale, targetLocale].filter((locale): locale is string => Boolean(locale));
   if (coverage.length === 0) return resolveMessage(intl, glossaryListMessages.noLocalesListed);
-  if (coverage.length <= 3) return coverage.join(", ");
-  const preview = coverage.slice(0, 3).join(", ");
+  const coverageLabels = coverage.map(getLocaleLabel);
+  if (coverageLabels.length <= 3) return coverageLabels.join(", ");
+  const preview = coverageLabels.slice(0, 3).join(", ");
   const overflowCount = coverage.length - 3;
   if (intl) {
     return intl.formatMessage(glossaryListMessages.localeCoverageOverflow, {
@@ -203,6 +211,7 @@ export function mapGlossaryToListRow(
 
   return {
     id: glossary.id,
+    detailId: glossary.id,
     name: glossary.name,
     description:
       glossary.description.trim() || resolveMessage(intl, glossaryListMessages.noDescription),
@@ -228,6 +237,13 @@ export function mapGlossaryToListRow(
             glossary.targetLocale,
             intl,
           ),
+    sourceLocaleLabel: getLocaleLabel(glossary.sourceLocale),
+    secondaryLocaleSummary: formatLocaleCoverage(
+      glossary.localeCoverage.filter((locale) => locale !== glossary.sourceLocale),
+      "",
+      glossary.targetLocale,
+      intl,
+    ),
     termCount: glossary.termCount,
     termCountLabel: formatTermCount(glossary.termCount, intl),
     syncState: glossary.syncState,
@@ -251,6 +267,7 @@ export function mapLiveTmsProviderGlossaryToListRow(
 ): GlossaryListRow {
   return {
     id: glossary.id,
+    detailId: glossary.providerKind === "crowdin" ? glossary.id : null,
     name: glossary.name,
     description:
       glossary.description?.trim() || resolveMessage(intl, glossaryListMessages.noDescription),
@@ -267,12 +284,12 @@ export function mapLiveTmsProviderGlossaryToListRow(
     languages: [
       {
         locale: glossary.sourceLocale,
-        name: glossary.sourceLocale,
+        name: getLocaleLabel(glossary.sourceLocale),
         isSource: true,
       },
       ...glossary.localeCoverage
         .filter((locale) => locale !== glossary.sourceLocale)
-        .map((locale) => ({ locale, name: locale, isSource: false })),
+        .map((locale) => ({ locale, name: getLocaleLabel(locale), isSource: false })),
     ],
     localeSummary: formatLocaleCoverage(
       glossary.localeCoverage,
@@ -280,10 +297,17 @@ export function mapLiveTmsProviderGlossaryToListRow(
       glossary.targetLocale,
       intl,
     ),
+    sourceLocaleLabel: getLocaleLabel(glossary.sourceLocale),
+    secondaryLocaleSummary: formatLocaleCoverage(
+      glossary.localeCoverage.filter((locale) => locale !== glossary.sourceLocale),
+      "",
+      glossary.targetLocale,
+      intl,
+    ),
     termCount: glossary.termCount,
     termCountLabel: formatTermCount(glossary.termCount, intl),
     syncState: null,
-    termCapabilityLabel: resolveMessage(intl, glossaryListMessages.capabilityReadOnly),
+    termCapabilityLabel: resolveMessage(intl, glossaryListMessages.capabilityLiveApi),
     termCapabilityTone: "safe",
     externalUrl: glossary.externalUrl,
     lastSyncedAt: null,

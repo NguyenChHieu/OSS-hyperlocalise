@@ -35,7 +35,8 @@ export type WorkspaceAutomationTriggerMode =
   | "scheduled"
   | "github"
   | "contentful"
-  | "source_upload";
+  | "source_upload"
+  | "web_chat";
 
 export type WorkspaceAutomationFormState = {
   name: string;
@@ -80,6 +81,7 @@ export type WorkspaceAutomationFormState = {
   createIssueEnabled: boolean;
   knowledgeEnabled: boolean;
   knowledgeAllowUpdates: boolean;
+  knowledgeFilesEnabled: boolean;
   mcpEnabled: boolean;
   mcpConnectionId: string;
   semrushEnabled: boolean;
@@ -235,6 +237,7 @@ export function createDefaultWorkspaceAutomationFormState(): WorkspaceAutomation
     createIssueEnabled: false,
     knowledgeEnabled: false,
     knowledgeAllowUpdates: false,
+    knowledgeFilesEnabled: false,
     mcpEnabled: false,
     mcpConnectionId: "",
     semrushEnabled: false,
@@ -260,6 +263,7 @@ export function createWorkspaceAutomationFormStateFromRecord(
   const listIssues = automation.toolConfig.listIssues;
   const createIssue = automation.toolConfig.createIssue;
   const knowledge = automation.toolConfig.knowledge;
+  const knowledgeFiles = automation.toolConfig.knowledgeFiles;
   const mcp = automation.toolConfig.mcp;
   const semrush = automation.toolConfig.semrush;
   const ahrefs = automation.toolConfig.ahrefs;
@@ -329,6 +333,7 @@ export function createWorkspaceAutomationFormStateFromRecord(
     createIssueEnabled: Boolean(createIssue?.enabled),
     knowledgeEnabled: Boolean(knowledge?.enabled),
     knowledgeAllowUpdates: Boolean(knowledge?.allowUpdates),
+    knowledgeFilesEnabled: Boolean(knowledgeFiles?.enabled),
     mcpEnabled: Boolean(mcp?.enabled),
     mcpConnectionId: mcp?.connectionId ?? "",
     semrushEnabled: Boolean(semrush?.enabled),
@@ -428,7 +433,9 @@ export function formStateToWorkspaceAutomationPayload(form: WorkspaceAutomationF
           ? { mode: "contentful" }
           : form.triggerMode === "source_upload"
             ? { mode: "source_upload" }
-            : { mode: "manual" };
+            : form.triggerMode === "web_chat"
+              ? { mode: "web_chat" }
+              : { mode: "manual" };
 
   const repositoryTarget: WorkspaceAutomationRepositoryTarget =
     (form.githubEnabled || form.githubCommentEnabled) && form.githubInstallationRepositoryId
@@ -528,6 +535,13 @@ export function formStateToWorkspaceAutomationPayload(form: WorkspaceAutomationF
             // Defense in depth: even if the UI's dependency between the two toggles ever drifts,
             // updates can never be serialized as allowed without recall also being enabled.
             allowUpdates: form.knowledgeAllowUpdates,
+          },
+        }
+      : {}),
+    ...(form.knowledgeFilesEnabled
+      ? {
+          knowledgeFiles: {
+            enabled: true,
           },
         }
       : {}),
@@ -774,6 +788,10 @@ export function workspaceAutomationFormHasChanges(
 }
 
 export function workspaceAutomationFormCanActivate(form: WorkspaceAutomationFormState) {
+  if (form.triggerMode === "web_chat") {
+    return true;
+  }
+
   return (
     form.githubEnabled ||
     form.slackEnabled ||
@@ -788,6 +806,7 @@ export function workspaceAutomationFormCanActivate(form: WorkspaceAutomationForm
     form.semrushEnabled ||
     form.ahrefsEnabled ||
     form.crowdinEnabled ||
-    form.webSearchEnabled
+    form.webSearchEnabled ||
+    form.knowledgeFilesEnabled
   );
 }

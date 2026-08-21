@@ -74,6 +74,15 @@ export type GlossaryTermRecord = {
   reviewStatus: string;
 };
 
+export type GlossaryProjectRecord = {
+  projectId: string;
+  projectName: string;
+  priority: number;
+  sourceLocale: string | null;
+  targetLocales: string[];
+  externalUrl: string | null;
+};
+
 export type GlossaryTermCreateInput = {
   sourceTerm: string;
   targetTerm: string;
@@ -103,7 +112,7 @@ export type GlossaryConceptImportEntry = {
 };
 
 export type NativeGlossaryTermInput = {
-  languageId: string;
+  locale: string;
   text: string;
   description?: string;
   partOfSpeech?: string;
@@ -124,7 +133,7 @@ export type GlossaryConceptTerm = NativeGlossaryTermInput & {
 };
 
 export type NativeGlossaryLanguageDetails = {
-  languageId: string;
+  locale: string;
   userId: number | null;
   definition: string;
   note: string;
@@ -152,7 +161,7 @@ export type GlossaryConcept = {
 
 export type GlossaryPrimaryTermCandidate = {
   id?: number | string;
-  languageId: string;
+  locale: string;
   text: string;
   status?: string | null;
 };
@@ -161,7 +170,7 @@ export function selectGlossaryPrimaryTerm<T extends GlossaryPrimaryTermCandidate
   terms: T[],
   sourceLocale: string,
 ): T | undefined {
-  const sourceTerms = terms.filter((term) => term.languageId === sourceLocale);
+  const sourceTerms = terms.filter((term) => term.locale === sourceLocale);
   return (
     sourceTerms.find(
       (term) => term.status?.trim().toLowerCase().replaceAll(" ", "_") === "preferred",
@@ -265,6 +274,7 @@ export function normalizeGlossaryTermStatus(value: string | null | undefined): G
 export abstract class Glossary {
   abstract readonly kind: "native" | "crowdin";
   abstract get(): Promise<NativeGlossary | null>;
+  abstract listProjects(): Promise<GlossaryProjectRecord[]>;
   abstract update(payload: { name?: string; description?: string }): Promise<NativeGlossary | null>;
   abstract delete(): Promise<boolean>;
   abstract listConcepts(): Promise<GlossaryConcept[]>;

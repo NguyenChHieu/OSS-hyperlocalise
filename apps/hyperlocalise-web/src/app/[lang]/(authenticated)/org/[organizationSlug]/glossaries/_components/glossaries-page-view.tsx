@@ -55,8 +55,11 @@ import {
   workspaceFilterTriggerClassName,
 } from "../../_components/workspace-resource-shared";
 import type { GlossaryListRow } from "./glossary-list";
-import { providerLabel } from "./glossary-list";
-import { GlossariesEmptyAction, GlossariesTable } from "./glossaries-table";
+import {
+  GlossariesEmptyAction,
+  GlossariesTable,
+  type GlossariesTableQuery,
+} from "./glossaries-table";
 import { glossariesPageViewMessages } from "./glossaries-page-view.messages";
 import { ProjectSourceLocalePicker } from "../../projects/_components/project-locale-picker";
 
@@ -71,30 +74,21 @@ export type GlossaryCreateForm = {
 
 export function GlossariesPageView({
   organizationSlug,
-  glossaries,
+  nativeGlossaries,
+  externalGlossaries,
   glossaryTotal,
-  isLoading,
-  isError,
-  isSuccess,
-  error,
+  nativeTotal,
+  externalTotal,
+  nativeQuery,
+  externalQuery,
   allowCreateGlossaries,
   hasConnectedProvider,
   useLiveProviderGlossaries,
+  useLiveCrowdinGlossaries,
   selectedExternalProjectId,
   onSelectedExternalProjectIdChange,
   searchQuery,
   onSearchQueryChange,
-  sourceFilter,
-  onSourceFilterChange,
-  providerFilter,
-  onProviderFilterChange,
-  resourceTypeFilter,
-  onResourceTypeFilterChange,
-  syncFilter,
-  onSyncFilterChange,
-  providerKinds,
-  hasExternalGlossaries,
-  hasResourceTypes,
   hasActiveFilters,
   activeFilterCount,
   onClearFilters,
@@ -103,6 +97,11 @@ export function GlossariesPageView({
   pageStart,
   pageEnd,
   onPageChange,
+  crowdinPage,
+  crowdinHasMore,
+  onCrowdinPageChange,
+  crowdinOrderBy,
+  onCrowdinOrderByChange,
   createDialogOpen,
   onCreateDialogOpenChange,
   createForm,
@@ -113,30 +112,21 @@ export function GlossariesPageView({
   onSubmitCreateGlossary,
 }: {
   organizationSlug: string;
-  glossaries: GlossaryListRow[];
+  nativeGlossaries: GlossaryListRow[];
+  externalGlossaries: GlossaryListRow[];
   glossaryTotal: number;
-  isLoading: boolean;
-  isError: boolean;
-  isSuccess: boolean;
-  error: Error | null;
+  nativeTotal: number;
+  externalTotal: number;
+  nativeQuery: GlossariesTableQuery;
+  externalQuery: GlossariesTableQuery;
   allowCreateGlossaries: boolean;
   hasConnectedProvider: boolean;
   useLiveProviderGlossaries: boolean;
+  useLiveCrowdinGlossaries: boolean;
   selectedExternalProjectId: string;
   onSelectedExternalProjectIdChange: (value: string) => void;
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
-  sourceFilter: string;
-  onSourceFilterChange: (value: string) => void;
-  providerFilter: string;
-  onProviderFilterChange: (value: string) => void;
-  resourceTypeFilter: string;
-  onResourceTypeFilterChange: (value: string) => void;
-  syncFilter: string;
-  onSyncFilterChange: (value: string) => void;
-  providerKinds: string[];
-  hasExternalGlossaries: boolean;
-  hasResourceTypes: boolean;
   hasActiveFilters: boolean;
   activeFilterCount: number;
   onClearFilters: () => void;
@@ -145,6 +135,11 @@ export function GlossariesPageView({
   pageStart: number;
   pageEnd: number;
   onPageChange: (page: number) => void;
+  crowdinPage: number;
+  crowdinHasMore: boolean;
+  onCrowdinPageChange: (page: number) => void;
+  crowdinOrderBy: string;
+  onCrowdinOrderByChange: (orderBy: string) => void;
   createDialogOpen: boolean;
   onCreateDialogOpenChange: (open: boolean) => void;
   createForm: GlossaryCreateForm;
@@ -156,7 +151,8 @@ export function GlossariesPageView({
 }) {
   const intl = useIntl();
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-  const liveProjectSelectionRequired = useLiveProviderGlossaries && !selectedExternalProjectId;
+  const liveProjectSelectionRequired =
+    useLiveProviderGlossaries && !useLiveCrowdinGlossaries && !selectedExternalProjectId;
   const selectableProjects = useMemo(
     () => projects.filter((project) => project.sourceLocale === createForm.sourceLocale),
     [createForm.sourceLocale, projects],
@@ -169,43 +165,30 @@ export function GlossariesPageView({
     [createForm.projectIds, selectableProjects],
   );
 
-  const sourceFilterLabels = {
-    all: intl.formatMessage(glossariesPageViewMessages.sourceAll),
-    native: intl.formatMessage(glossariesPageViewMessages.sourceNative),
-    external_tms: intl.formatMessage(glossariesPageViewMessages.sourceExternalTms),
-  } as const;
-
-  const resourceTypeFilterLabels = {
-    all: intl.formatMessage(glossariesPageViewMessages.resourceAll),
-    glossary: intl.formatMessage(glossariesPageViewMessages.resourceGlossary),
-    term_base: intl.formatMessage(glossariesPageViewMessages.resourceTermBase),
-  } as const;
-
-  const syncFilterLabels = {
-    all: intl.formatMessage(glossariesPageViewMessages.syncAll),
-    synced: intl.formatMessage(glossariesPageViewMessages.syncSynced),
-    stale: intl.formatMessage(glossariesPageViewMessages.syncStale),
-    syncing: intl.formatMessage(glossariesPageViewMessages.syncSyncing),
-    error: intl.formatMessage(glossariesPageViewMessages.syncError),
-  } as const;
-
-  const emptyTitle = hasConnectedProvider
+  const nativeEmptyTitle = allowCreateGlossaries
     ? intl.formatMessage(glossariesPageViewMessages.emptyTitle)
+    : intl.formatMessage(glossariesPageViewMessages.nativeEmptyTitle);
+  const nativeEmptyDescription = allowCreateGlossaries
+    ? intl.formatMessage(glossariesPageViewMessages.emptyDescriptionCreate)
+    : intl.formatMessage(glossariesPageViewMessages.nativeEmptyDescription);
+  const externalEmptyTitle = hasConnectedProvider
+    ? intl.formatMessage(glossariesPageViewMessages.externalEmptyTitle)
     : intl.formatMessage(glossariesPageViewMessages.emptyTitleConnectProvider);
-  const emptyDescription = hasConnectedProvider
+  const externalEmptyDescription = hasConnectedProvider
     ? intl.formatMessage(glossariesPageViewMessages.emptyDescriptionWithProvider)
     : intl.formatMessage(glossariesPageViewMessages.emptyDescriptionWithoutProvider);
-
+  const nativeSectionTitle = intl.formatMessage(glossariesPageViewMessages.nativeSectionTitle);
+  const externalSectionTitle = useLiveCrowdinGlossaries
+    ? intl.formatMessage(glossariesPageViewMessages.crowdinSectionTitle)
+    : intl.formatMessage(glossariesPageViewMessages.externalSectionTitle);
   const glossaryCountLabel =
-    isSuccess && glossaryTotal > 0
+    glossaryTotal > 0
       ? intl.formatMessage(glossariesPageViewMessages.glossaryCount, {
           count: glossaryTotal,
         })
       : undefined;
-
-  const glossariesQuery = { isLoading, isError, isSuccess, error };
-  const allProvidersLabel = intl.formatMessage(glossariesPageViewMessages.providerAll);
-
+  const hasAnyResults = nativeTotal > 0 || externalTotal > 0;
+  const queriesHaveNoResults = nativeQuery.isSuccess && externalQuery.isSuccess && !hasAnyResults;
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-col gap-6">
       <PageHeader
@@ -234,11 +217,55 @@ export function GlossariesPageView({
             organizationSlug={organizationSlug}
             value={selectedExternalProjectId}
             onValueChange={onSelectedExternalProjectIdChange}
+            allowAll={useLiveCrowdinGlossaries}
           />
+          {useLiveCrowdinGlossaries ? (
+            <WorkspaceFilterField
+              label={intl.formatMessage(glossariesPageViewMessages.sortLabel)}
+              className="w-full sm:w-44"
+            >
+              <Select
+                value={crowdinOrderBy}
+                onValueChange={(value) => {
+                  if (value) onCrowdinOrderByChange(value);
+                }}
+              >
+                <SelectTrigger className={workspaceFilterTriggerClassName}>
+                  <SelectValue>
+                    {crowdinOrderBy === "name asc"
+                      ? intl.formatMessage(glossariesPageViewMessages.sortNameAsc)
+                      : crowdinOrderBy === "name desc"
+                        ? intl.formatMessage(glossariesPageViewMessages.sortNameDesc)
+                        : intl.formatMessage(glossariesPageViewMessages.sortNewest)}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    value="createdAt desc,name"
+                    label={intl.formatMessage(glossariesPageViewMessages.sortNewest)}
+                  >
+                    <FormattedMessage {...glossariesPageViewMessages.sortNewest} />
+                  </SelectItem>
+                  <SelectItem
+                    value="name asc"
+                    label={intl.formatMessage(glossariesPageViewMessages.sortNameAsc)}
+                  >
+                    <FormattedMessage {...glossariesPageViewMessages.sortNameAsc} />
+                  </SelectItem>
+                  <SelectItem
+                    value="name desc"
+                    label={intl.formatMessage(glossariesPageViewMessages.sortNameDesc)}
+                  >
+                    <FormattedMessage {...glossariesPageViewMessages.sortNameDesc} />
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </WorkspaceFilterField>
+          ) : null}
         </div>
       ) : null}
 
-      {isSuccess && (glossaryTotal > 0 || hasActiveFilters) ? (
+      {hasAnyResults || hasActiveFilters || nativeQuery.isLoading || externalQuery.isLoading ? (
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-2">
           <WorkspaceFilterField
             label={intl.formatMessage(glossariesPageViewMessages.searchLabel)}
@@ -251,135 +278,6 @@ export function GlossariesPageView({
               className="w-full"
             />
           </WorkspaceFilterField>
-          <WorkspaceFilterField
-            label={intl.formatMessage(glossariesPageViewMessages.sourceLabel)}
-            className="w-full sm:w-40"
-          >
-            <Select
-              value={sourceFilter}
-              onValueChange={(value) => {
-                onSourceFilterChange(value ?? "all");
-                if (value === "native") {
-                  onProviderFilterChange("all");
-                  onResourceTypeFilterChange("all");
-                  onSyncFilterChange("all");
-                }
-              }}
-            >
-              <SelectTrigger className={workspaceFilterTriggerClassName}>
-                <SelectValue>
-                  {sourceFilterLabels[sourceFilter as keyof typeof sourceFilterLabels] ??
-                    sourceFilter}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all" label={sourceFilterLabels.all}>
-                  {sourceFilterLabels.all}
-                </SelectItem>
-                <SelectItem value="native" label={sourceFilterLabels.native}>
-                  {sourceFilterLabels.native}
-                </SelectItem>
-                <SelectItem value="external_tms" label={sourceFilterLabels.external_tms}>
-                  {sourceFilterLabels.external_tms}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </WorkspaceFilterField>
-
-          {hasExternalGlossaries && sourceFilter !== "native" ? (
-            <WorkspaceFilterField
-              label={intl.formatMessage(glossariesPageViewMessages.providerLabel)}
-              className="w-full sm:w-40"
-            >
-              <Select
-                value={providerFilter}
-                onValueChange={(value) => onProviderFilterChange(value ?? "all")}
-              >
-                <SelectTrigger className={workspaceFilterTriggerClassName}>
-                  <SelectValue>
-                    {providerFilter === "all" ? allProvidersLabel : providerLabel(providerFilter)}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all" label={allProvidersLabel}>
-                    {allProvidersLabel}
-                  </SelectItem>
-                  {providerKinds.map((kind) => (
-                    <SelectItem key={kind} value={kind} label={providerLabel(kind)}>
-                      {providerLabel(kind)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </WorkspaceFilterField>
-          ) : null}
-
-          {hasResourceTypes && sourceFilter !== "native" ? (
-            <WorkspaceFilterField
-              label={intl.formatMessage(glossariesPageViewMessages.resourceLabel)}
-              className="w-full sm:w-44"
-            >
-              <Select
-                value={resourceTypeFilter}
-                onValueChange={(value) => onResourceTypeFilterChange(value ?? "all")}
-              >
-                <SelectTrigger className={workspaceFilterTriggerClassName}>
-                  <SelectValue>
-                    {resourceTypeFilterLabels[
-                      resourceTypeFilter as keyof typeof resourceTypeFilterLabels
-                    ] ?? resourceTypeFilter}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all" label={resourceTypeFilterLabels.all}>
-                    {resourceTypeFilterLabels.all}
-                  </SelectItem>
-                  <SelectItem value="glossary" label={resourceTypeFilterLabels.glossary}>
-                    {resourceTypeFilterLabels.glossary}
-                  </SelectItem>
-                  <SelectItem value="term_base" label={resourceTypeFilterLabels.term_base}>
-                    {resourceTypeFilterLabels.term_base}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </WorkspaceFilterField>
-          ) : null}
-
-          {hasExternalGlossaries && sourceFilter !== "native" && !useLiveProviderGlossaries ? (
-            <WorkspaceFilterField
-              label={intl.formatMessage(glossariesPageViewMessages.syncLabel)}
-              className="w-full sm:w-40"
-            >
-              <Select
-                value={syncFilter}
-                onValueChange={(value) => onSyncFilterChange(value ?? "all")}
-              >
-                <SelectTrigger className={workspaceFilterTriggerClassName}>
-                  <SelectValue>
-                    {syncFilterLabels[syncFilter as keyof typeof syncFilterLabels] ?? syncFilter}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all" label={syncFilterLabels.all}>
-                    {syncFilterLabels.all}
-                  </SelectItem>
-                  <SelectItem value="synced" label={syncFilterLabels.synced}>
-                    {syncFilterLabels.synced}
-                  </SelectItem>
-                  <SelectItem value="stale" label={syncFilterLabels.stale}>
-                    {syncFilterLabels.stale}
-                  </SelectItem>
-                  <SelectItem value="syncing" label={syncFilterLabels.syncing}>
-                    {syncFilterLabels.syncing}
-                  </SelectItem>
-                  <SelectItem value="error" label={syncFilterLabels.error}>
-                    {syncFilterLabels.error}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </WorkspaceFilterField>
-          ) : null}
-
           {activeFilterCount > 0 ? (
             <Button type="button" variant="ghost" size="sm" onClick={onClearFilters}>
               <FormattedMessage {...glossariesPageViewMessages.clearFilters} />
@@ -388,7 +286,7 @@ export function GlossariesPageView({
         </div>
       ) : null}
 
-      {isSuccess && hasActiveFilters && glossaryTotal === 0 ? (
+      {queriesHaveNoResults && hasActiveFilters ? (
         <div className="text-sm text-muted-foreground">
           <FormattedMessage
             {...glossariesPageViewMessages.noFilterMatches}
@@ -407,43 +305,130 @@ export function GlossariesPageView({
         </div>
       ) : null}
 
-      {liveProjectSelectionRequired ? (
-        <div className="space-y-3 py-10">
-          <TypographyP className="text-sm font-medium text-foreground">
-            <FormattedMessage {...glossariesPageViewMessages.chooseTmsProjectTitle} />
-          </TypographyP>
-          <TypographyP className="max-w-xl text-sm leading-6 text-muted-foreground">
-            <FormattedMessage {...glossariesPageViewMessages.chooseTmsProjectDescription} />
-          </TypographyP>
-        </div>
-      ) : (
+      <div className="grid gap-8">
         <GlossariesTable
-          glossaries={glossaries}
-          glossariesQuery={glossariesQuery}
+          glossaries={nativeGlossaries}
+          glossariesQuery={nativeQuery}
           organizationSlug={organizationSlug}
-          emptyTitle={
-            allowCreateGlossaries
-              ? intl.formatMessage(glossariesPageViewMessages.emptyTitle)
-              : emptyTitle
-          }
-          emptyDescription={
-            allowCreateGlossaries
-              ? intl.formatMessage(glossariesPageViewMessages.emptyDescriptionCreate)
-              : emptyDescription
-          }
+          title={nativeSectionTitle}
+          count={nativeTotal}
+          emptyTitle={nativeEmptyTitle}
+          emptyDescription={nativeEmptyDescription}
           emptyAction={
             allowCreateGlossaries ? (
               <Button type="button" size="sm" onClick={() => onCreateDialogOpenChange(true)}>
                 <FormattedMessage {...glossariesPageViewMessages.createGlossary} />
               </Button>
-            ) : (
-              <GlossariesEmptyAction organizationSlug={organizationSlug} />
-            )
+            ) : undefined
           }
         />
-      )}
+        {liveProjectSelectionRequired ? (
+          <section aria-label={externalSectionTitle} className="min-w-0">
+            <div className="mb-3 flex items-baseline justify-between gap-3">
+              <h2 className="text-sm font-semibold tracking-[-0.01em] text-foreground">
+                {externalSectionTitle}
+              </h2>
+            </div>
+            <div className="space-y-3 rounded-lg border border-border px-5 py-8">
+              <TypographyP className="text-sm font-medium text-foreground">
+                <FormattedMessage {...glossariesPageViewMessages.chooseTmsProjectTitle} />
+              </TypographyP>
+              <TypographyP className="max-w-xl text-sm leading-6 text-muted-foreground">
+                <FormattedMessage {...glossariesPageViewMessages.chooseTmsProjectDescription} />
+              </TypographyP>
+            </div>
+          </section>
+        ) : (
+          <GlossariesTable
+            glossaries={externalGlossaries}
+            glossariesQuery={externalQuery}
+            organizationSlug={organizationSlug}
+            title={externalSectionTitle}
+            count={externalTotal}
+            emptyTitle={externalEmptyTitle}
+            emptyDescription={externalEmptyDescription}
+            emptyAction={
+              !hasConnectedProvider ? (
+                <GlossariesEmptyAction organizationSlug={organizationSlug} />
+              ) : undefined
+            }
+          />
+        )}
+      </div>
 
-      {!liveProjectSelectionRequired && isSuccess && glossaryTotal > GLOSSARIES_PAGE_SIZE ? (
+      {useLiveCrowdinGlossaries && nativeQuery.isSuccess && nativeTotal > GLOSSARIES_PAGE_SIZE ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">
+            <FormattedMessage
+              {...glossariesPageViewMessages.paginationSummary}
+              values={{ pageStart, pageEnd, glossaryTotal: nativeTotal }}
+            />
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={page <= 1}
+              onClick={() => onPageChange(Math.max(1, page - 1))}
+            >
+              <FormattedMessage {...glossariesPageViewMessages.previousPage} />
+            </Button>
+            <p className="text-sm text-muted-foreground">
+              <FormattedMessage
+                {...glossariesPageViewMessages.paginationPage}
+                values={{ page, totalPages }}
+              />
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={page >= totalPages}
+              onClick={() => onPageChange(page + 1)}
+            >
+              <FormattedMessage {...glossariesPageViewMessages.nextPage} />
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {useLiveCrowdinGlossaries &&
+      externalQuery.isSuccess &&
+      (crowdinPage > 1 || crowdinHasMore) ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">
+            <FormattedMessage
+              {...glossariesPageViewMessages.crowdinPaginationSummary}
+              values={{ page: crowdinPage }}
+            />
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={crowdinPage <= 1}
+              onClick={() => onCrowdinPageChange(Math.max(1, crowdinPage - 1))}
+            >
+              <FormattedMessage {...glossariesPageViewMessages.previousPage} />
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!crowdinHasMore}
+              onClick={() => onCrowdinPageChange(crowdinPage + 1)}
+            >
+              <FormattedMessage {...glossariesPageViewMessages.nextPage} />
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      {!useLiveCrowdinGlossaries &&
+      !useLiveProviderGlossaries &&
+      glossaryTotal > GLOSSARIES_PAGE_SIZE ? (
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm text-muted-foreground">
             <FormattedMessage

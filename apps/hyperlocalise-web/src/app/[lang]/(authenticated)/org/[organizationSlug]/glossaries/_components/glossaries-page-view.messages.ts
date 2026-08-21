@@ -51,95 +51,46 @@ export const glossariesPageViewMessages = defineMessages({
     id: "IGfRG2bCrY",
     description: "Placeholder for the glossaries search field",
   },
-  sourceLabel: {
-    defaultMessage: "Source",
-    id: "QAVlGw1a6j",
-    description: "Label for the glossary source filter",
-  },
-  sourceAll: {
-    defaultMessage: "All sources",
-    id: "eAIQ4Y8Q3i",
-    description: "Source filter option for all glossary sources",
-  },
-  sourceNative: {
-    defaultMessage: "Workspace",
-    id: "ZrA/LAv/+i",
-    description: "Source filter option for workspace-native glossaries",
-  },
-  sourceExternalTms: {
-    defaultMessage: "Provider",
-    id: "RpVhGmmzel",
-    description: "Source filter option for provider glossaries",
-  },
-  providerLabel: {
-    defaultMessage: "Provider",
-    id: "VDktuK9D7C",
-    description: "Label for the glossary provider filter",
-  },
-  providerAll: {
-    defaultMessage: "All providers",
-    id: "LhocbJWKLx",
-    description: "Provider filter option for all TMS providers",
-  },
-  resourceLabel: {
-    defaultMessage: "Resource",
-    id: "qOrpKFZ2EU",
-    description: "Label for the glossary resource type filter",
-  },
-  resourceAll: {
-    defaultMessage: "All resource types",
-    id: "uukLNszv2X",
-    description: "Resource type filter option for all glossary resource types",
-  },
-  resourceGlossary: {
-    defaultMessage: "Glossary",
-    id: "W402cvEu6n",
-    description: "Resource type filter option for glossary resources",
-  },
-  resourceTermBase: {
-    defaultMessage: "Term base",
-    id: "L0gachMRlZ",
-    description: "Resource type filter option for term base resources",
-  },
-  syncLabel: {
-    defaultMessage: "Sync",
-    id: "q5MIT8loA8",
-    description: "Label for the glossary sync state filter",
-  },
-  syncAll: {
-    defaultMessage: "All sync states",
-    id: "SSDdQ9eeIj",
-    description: "Sync filter option for all sync states",
-  },
-  syncSynced: {
-    defaultMessage: "Synced",
-    id: "CPfzUKHSJO",
-    description: "Sync filter option for synced glossaries",
-  },
-  syncStale: {
-    defaultMessage: "Stale",
-    id: "vWSQHBkZt5",
-    description: "Sync filter option for stale glossaries",
-  },
-  syncSyncing: {
-    defaultMessage: "Syncing",
-    id: "Dd7B9s1kqD",
-    description: "Sync filter option for glossaries currently syncing",
-  },
-  syncError: {
-    defaultMessage: "Sync error",
-    id: "7z1XK9p1bT",
-    description: "Sync filter option for glossaries with sync errors",
-  },
+
   clearFilters: {
-    defaultMessage: "Clear filters",
-    id: "hpZLGfM1av",
-    description: "Button to reset glossary list filters",
+    defaultMessage: "Clear search",
+    id: "vGmSBVyRPS",
+    description: "Button to reset the glossary search",
   },
   noFilterMatches: {
-    defaultMessage: "No glossaries match your filters. <clear>Clear filters</clear>",
-    id: "HwI92QKVOs",
-    description: "Empty filter state for glossaries, with a clear-filters action",
+    defaultMessage: "No glossaries match your search. <clear>Clear search</clear>",
+    id: "9HdSrp2HI/",
+    description: "Empty search state for glossaries, with a clear-search action",
+  },
+  nativeSectionTitle: {
+    defaultMessage: "Native glossaries",
+    id: "tR49yNVFBv",
+    description: "Heading for workspace-native glossaries",
+  },
+  externalSectionTitle: {
+    defaultMessage: "Provider glossaries",
+    id: "iTLkbt2liA",
+    description: "Heading for persisted provider glossaries",
+  },
+  crowdinSectionTitle: {
+    defaultMessage: "Crowdin glossaries",
+    id: "CckeviPE6F",
+    description: "Heading for live Crowdin glossaries",
+  },
+  nativeEmptyTitle: {
+    defaultMessage: "No native glossaries",
+    id: "EN/XL+26FR",
+    description: "Empty state title for the native glossary section when creation is unavailable",
+  },
+  nativeEmptyDescription: {
+    defaultMessage: "Native glossaries created in this workspace will appear here.",
+    id: "cH3TG4pXPd",
+    description: "Empty state description for native glossaries",
+  },
+  externalEmptyTitle: {
+    defaultMessage: "No provider glossaries",
+    id: "ZiWVuGHeQL",
+    description: "Empty state title for a connected provider with no glossaries",
   },
   chooseTmsProjectTitle: {
     defaultMessage: "Choose a TMS project",
@@ -199,6 +150,31 @@ export const glossariesPageViewMessages = defineMessages({
     defaultMessage: "Next",
     id: "pUTlRV1r0u",
     description: "Button to go to the next page of glossaries",
+  },
+  sortLabel: {
+    defaultMessage: "Sort",
+    id: "9DtnBnymqw",
+    description: "Label for the Crowdin glossary ordering control",
+  },
+  sortNewest: {
+    defaultMessage: "Newest first",
+    id: "Xo2+rtWc3U",
+    description: "Crowdin glossary ordering option for newest glossaries",
+  },
+  sortNameAsc: {
+    defaultMessage: "Name A–Z",
+    id: "lNH8JueKxa",
+    description: "Crowdin glossary ordering option for ascending names",
+  },
+  sortNameDesc: {
+    defaultMessage: "Name Z–A",
+    id: "BBn+JiQbC1",
+    description: "Crowdin glossary ordering option for descending names",
+  },
+  crowdinPaginationSummary: {
+    defaultMessage: "Crowdin page {page}",
+    id: "8mLorWvZHa",
+    description: "Pagination summary for the live Crowdin glossary list",
   },
   createDialogTitle: {
     defaultMessage: "Create glossary",

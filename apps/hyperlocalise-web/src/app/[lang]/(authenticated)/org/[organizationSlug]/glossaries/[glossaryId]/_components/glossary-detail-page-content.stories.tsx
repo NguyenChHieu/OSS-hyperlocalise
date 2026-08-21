@@ -136,6 +136,7 @@ export const ConceptList: Story = {
   parameters: {
     msw: { handlers: detailHandlers },
     nextjs: {
+      appDirectory: true,
       navigation: {
         pathname: `/org/acme/glossaries/${glossaryId}`,
       },
@@ -144,6 +145,17 @@ export const ConceptList: Story = {
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByRole("heading", { name: "Product terminology" }),
+    ).toBeInTheDocument();
+    const nameInput = canvas.getByRole("textbox", { name: "Edit glossary name" });
+    await userEvent.clear(nameInput);
+    await userEvent.type(nameInput, "Canceled terminology");
+    await userEvent.keyboard("{Escape}");
+    await expect(nameInput).toHaveValue("Product terminology");
+    await userEvent.clear(nameInput);
+    await userEvent.type(nameInput, "Updated terminology");
+    await userEvent.keyboard("{Enter}");
+    await expect(
+      await canvas.findByRole("heading", { name: "Updated terminology" }),
     ).toBeInTheDocument();
     await expect(await canvas.findByText("Agency")).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "Add concept" })).toBeInTheDocument();
@@ -157,6 +169,7 @@ export const ConceptDetail: Story = {
   parameters: {
     msw: { handlers: detailHandlers },
     nextjs: {
+      appDirectory: true,
       navigation: {
         pathname: `/org/acme/glossaries/${glossaryId}/concepts/${conceptId}`,
       },
@@ -198,6 +211,7 @@ export const ConceptCreationWithTerms: Story = {
   parameters: {
     msw: { handlers: detailHandlers },
     nextjs: {
+      appDirectory: true,
       navigation: {
         pathname: `/org/acme/glossaries/${glossaryId}/concepts/new`,
       },
@@ -224,6 +238,7 @@ export const LoadingConceptList: Story = {
       }),
     },
     nextjs: {
+      appDirectory: true,
       navigation: {
         pathname: `/org/acme/glossaries/${glossaryId}`,
       },
@@ -252,6 +267,7 @@ export const LoadingConceptDetail: Story = {
       }),
     },
     nextjs: {
+      appDirectory: true,
       navigation: {
         pathname: `/org/acme/glossaries/${glossaryId}/concepts/${conceptId}`,
       },

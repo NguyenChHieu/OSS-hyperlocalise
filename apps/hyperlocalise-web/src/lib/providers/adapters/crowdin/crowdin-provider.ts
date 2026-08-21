@@ -13,6 +13,7 @@
 import { createHash } from "node:crypto";
 
 import type { JobKind } from "@/lib/database/types";
+import { selectGlossaryPrimaryTerm } from "@/lib/glossary/glossary";
 import { createLogger } from "@/lib/log";
 import { mapWithConcurrency } from "@/lib/primitives/map-with-concurrency/map-with-concurrency";
 import { err, isErr, ok, type Result } from "@/lib/primitives/result/results";
@@ -690,8 +691,7 @@ export class CrowdinTmsProvider extends TmsProvider {
     const mapped: CrowdinGlossaryConcept[] = concepts.map((concept) => ({
       conceptId: concept.id,
       primaryTerm:
-        termsByConcept.get(concept.id)?.find((term) => term.languageId === sourceLocale)?.text ??
-        "",
+        selectGlossaryPrimaryTerm(termsByConcept.get(concept.id) ?? [], sourceLocale)?.text ?? "",
       sourceLocale,
       subject: concept.subject,
       definition: concept.definition,
@@ -711,7 +711,7 @@ export class CrowdinTmsProvider extends TmsProvider {
       if (knownIds.has(conceptId)) continue;
       mapped.push({
         conceptId,
-        primaryTerm: conceptTerms.find((term) => term.languageId === sourceLocale)?.text ?? "",
+        primaryTerm: selectGlossaryPrimaryTerm(conceptTerms, sourceLocale)?.text ?? "",
         sourceLocale,
         subject: "",
         definition: "",

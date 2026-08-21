@@ -12,7 +12,7 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -73,11 +73,13 @@ import { TypographyH1, TypographyP } from "@/components/ui/typography";
 import { readApiError } from "@/lib/api-error";
 import { apiClient } from "@/lib/api-client-instance";
 import { COMMON_LOCALES, getLocaleLabel } from "@/lib/i18n/locales";
+import { cn } from "@/lib/primitives/cn";
 import {
   glossaryGenderValues,
   glossaryPartOfSpeechValues,
   glossaryTermStatusValues,
   glossaryTermTypeValues,
+  selectGlossaryPrimaryTerm,
   type GlossaryPartOfSpeech,
   type GlossaryTermStatus,
 } from "@/lib/glossary/glossary";
@@ -198,11 +200,18 @@ function partOfSpeechOptionsFor(value: string) {
     : partOfSpeechOptions;
 }
 
+const DATE_FORMATTER = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
 function formatDate(value: string) {
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(
-    new Date(value),
-  );
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : DATE_FORMATTER.format(date);
 }
+
+const termPropertyTriggerClassName =
+  "h-7 border-transparent bg-transparent px-2 text-xs font-normal shadow-none hover:bg-muted/60 focus-visible:bg-muted/60";
 
 function statusClass(status: TermDraft["status"]) {
   if (status === "preferred") return "border-emerald-500/30 text-emerald-700";
@@ -347,6 +356,8 @@ export function GlossaryDetailPageContent({
   const [expandedCreatingTermIds, setExpandedCreatingTermIds] = useState<Set<string>>(new Set());
   const [termToDeleteId, setTermToDeleteId] = useState<string | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [nameDraft, setNameDraft] = useState("");
+  const skipNameBlurSave = useRef(false);
 
   const glossaryQuery = useQuery({
     queryKey: ["glossary", organizationSlug, glossaryId],
@@ -370,6 +381,10 @@ export function GlossaryDetailPageContent({
   const isConceptGlossary = isNative || isLiveCrowdin;
   const canEdit = canManageGlossaries && isConceptGlossary;
 
+  useEffect(() => {
+    if (glossary) setNameDraft(glossary.name);
+  }, [glossary?.name]);
+
   const conceptsQuery = useQuery({
     queryKey: ["glossary-concepts", organizationSlug, glossaryId],
     enabled: Boolean(isConceptGlossary),
@@ -388,7 +403,7 @@ export function GlossaryDetailPageContent({
   });
   const attachedProjectsQuery = useQuery({
     queryKey: ["glossary-projects", organizationSlug, glossaryId],
-    enabled: Boolean(isNative),
+    enabled: Boolean(isNative || isLiveCrowdin),
     queryFn: async () => {
       const response = await apiClient.api.orgs[":organizationSlug"].glossaries[
         ":glossaryId"
@@ -456,9 +471,7 @@ export function GlossaryDetailPageContent({
       setNewTermLocale(null);
       setNewTermDraft(emptyTermDraft);
       setCreatingTermDrafts([]);
-      setExpandedTermIds(
-        selectedConcept.terms[0] ? new Set([selectedConcept.terms[0].id]) : new Set(),
-      );
+      setExpandedTermIds(new Set());
       setExpandedCreatingTermIds(new Set());
       setIsCreatingConcept(false);
     }
@@ -665,6 +678,45 @@ export function GlossaryDetailPageContent({
     },
     onError: (error) => toast.error(error.message),
   });
+  const updateGlossaryName = useMutation({
+    mutationFn: async (name: string) => {
+      const response = await apiClient.api.orgs[":organizationSlug"].glossaries[
+        ":glossaryId"
+      ].$patch({
+        param: { organizationSlug, glossaryId },
+        json: { name },
+      });
+      if (!response.ok)
+        throw new Error(
+          await readApiError(response, intl.formatMessage(messages.updateGlossaryNameFailed)),
+        );
+      return (await response.json()).glossary as GlossaryRecord;
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["glossary", organizationSlug, glossaryId],
+      });
+      toast.success(intl.formatMessage(messages.glossaryNameUpdated));
+    },
+  });
+
+  const saveGlossaryName = async () => {
+    const name = nameDraft.trim();
+    if (!name || !glossary || name === glossary.name) {
+      setNameDraft(glossary?.name ?? nameDraft);
+      return;
+    }
+    try {
+      await updateGlossaryName.mutateAsync(name);
+    } catch (error) {
+      setNameDraft(glossary.name);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : intl.formatMessage(messages.updateGlossaryNameFailed),
+      );
+    }
+  };
   const attachProject = useMutation({
     mutationFn: async (projectId: string) => {
       const response = await apiClient.api.orgs[":organizationSlug"].glossaries[
@@ -841,7 +893,45 @@ export function GlossaryDetailPageContent({
                 </Badge>
               ))}
             </div>
-            <TypographyH1 className="font-sans text-2xl font-medium">{glossary.name}</TypographyH1>
+            {canEdit ? (
+              <>
+                <TypographyH1 className="sr-only">{glossary.name}</TypographyH1>
+                <Textarea
+                  value={nameDraft}
+                  onChange={(event) => setNameDraft(event.currentTarget.value)}
+                  onBlur={() => {
+                    if (skipNameBlurSave.current) {
+                      skipNameBlurSave.current = false;
+                      return;
+                    }
+                    void saveGlossaryName();
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      skipNameBlurSave.current = true;
+                      setNameDraft(glossary.name);
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  disabled={updateGlossaryName.isPending}
+                  aria-label={intl.formatMessage(messages.editName)}
+                  rows={1}
+                  className={cn(
+                    "font-heading min-h-14 shrink-0 resize-none overflow-hidden rounded-none border-transparent bg-transparent px-0 py-1 text-3xl font-semibold text-balance text-foreground shadow-none md:text-5xl lg:text-6xl",
+                    "focus-visible:border-transparent focus-visible:ring-0",
+                  )}
+                />
+              </>
+            ) : (
+              <TypographyH1 className="font-sans text-3xl font-semibold text-balance md:text-5xl lg:text-6xl">
+                {glossary.name}
+              </TypographyH1>
+            )}
             <TypographyP className="max-w-3xl text-sm leading-6 text-muted-foreground">
               {glossary.description || intl.formatMessage(messages.descriptionFallback)}
             </TypographyP>
@@ -935,8 +1025,14 @@ export function GlossaryDetailPageContent({
                   </thead>
                   <tbody>
                     {filteredConcepts.map((concept) => {
-                      const primary = concept.terms.find(
-                        (term) => term.locale === glossary.sourceLocale,
+                      const primary = selectGlossaryPrimaryTerm(
+                        concept.terms.map((term) => ({
+                          id: term.id,
+                          languageId: term.locale,
+                          text: term.term,
+                          status: term.status,
+                        })),
+                        glossary.sourceLocale,
                       );
                       return (
                         <tr
@@ -960,8 +1056,12 @@ export function GlossaryDetailPageContent({
                           </td>
                           <td className="px-3 py-3">
                             <div className="flex flex-wrap items-center gap-2 font-medium">
-                              {primary?.term ?? concept.primaryTerm}
-                              {primary ? <Badge variant="outline">{primary.status}</Badge> : null}
+                              {primary?.text ?? concept.primaryTerm}
+                              {primary ? (
+                                <Badge variant="outline" className={statusClass(primary.status)}>
+                                  {primary.status}
+                                </Badge>
+                              ) : null}
                             </div>
                           </td>
                           <td className="max-w-xs truncate px-3 py-3 text-muted-foreground">
@@ -1258,7 +1358,10 @@ export function GlossaryDetailPageContent({
                                               )
                                             }
                                           >
-                                            <SelectTrigger className="h-7">
+                                            <SelectTrigger
+                                              showIcon={false}
+                                              className={termPropertyTriggerClassName}
+                                            >
                                               <SelectValue>
                                                 {term.partOfSpeech
                                                   ? readableEnumLabel(term.partOfSpeech)
@@ -1296,7 +1399,10 @@ export function GlossaryDetailPageContent({
                                               )
                                             }
                                           >
-                                            <SelectTrigger className="h-7">
+                                            <SelectTrigger
+                                              showIcon={false}
+                                              className={termPropertyTriggerClassName}
+                                            >
                                               <SelectValue>
                                                 {term.gender ? readableEnumLabel(term.gender) : "—"}
                                               </SelectValue>
@@ -1330,7 +1436,10 @@ export function GlossaryDetailPageContent({
                                               )
                                             }
                                           >
-                                            <SelectTrigger className="h-7">
+                                            <SelectTrigger
+                                              showIcon={false}
+                                              className={termPropertyTriggerClassName}
+                                            >
                                               <SelectValue>
                                                 {term.termType
                                                   ? readableEnumLabel(term.termType)
@@ -1364,7 +1473,10 @@ export function GlossaryDetailPageContent({
                                               )
                                             }
                                           >
-                                            <SelectTrigger className="h-7">
+                                            <SelectTrigger
+                                              showIcon={false}
+                                              className={termPropertyTriggerClassName}
+                                            >
                                               <SelectValue>
                                                 {readableEnumLabel(term.status)}
                                               </SelectValue>
@@ -1647,7 +1759,10 @@ export function GlossaryDetailPageContent({
                                                   })
                                                 }
                                               >
-                                                <SelectTrigger className="h-7">
+                                                <SelectTrigger
+                                                  showIcon={false}
+                                                  className={termPropertyTriggerClassName}
+                                                >
                                                   <SelectValue>
                                                     {draft.partOfSpeech
                                                       ? readableEnumLabel(draft.partOfSpeech)
@@ -1682,7 +1797,10 @@ export function GlossaryDetailPageContent({
                                                   })
                                                 }
                                               >
-                                                <SelectTrigger className="h-7">
+                                                <SelectTrigger
+                                                  showIcon={false}
+                                                  className={termPropertyTriggerClassName}
+                                                >
                                                   <SelectValue>
                                                     {draft.gender
                                                       ? readableEnumLabel(draft.gender)
@@ -1715,7 +1833,10 @@ export function GlossaryDetailPageContent({
                                                   })
                                                 }
                                               >
-                                                <SelectTrigger className="h-7">
+                                                <SelectTrigger
+                                                  showIcon={false}
+                                                  className={termPropertyTriggerClassName}
+                                                >
                                                   <SelectValue>
                                                     {draft.termType
                                                       ? readableEnumLabel(draft.termType)
@@ -1748,7 +1869,10 @@ export function GlossaryDetailPageContent({
                                                   })
                                                 }
                                               >
-                                                <SelectTrigger className="h-7">
+                                                <SelectTrigger
+                                                  showIcon={false}
+                                                  className={termPropertyTriggerClassName}
+                                                >
                                                   <SelectValue>
                                                     {readableEnumLabel(draft.status)}
                                                   </SelectValue>
@@ -1944,7 +2068,10 @@ export function GlossaryDetailPageContent({
                                               })
                                             }
                                           >
-                                            <SelectTrigger className="h-7">
+                                            <SelectTrigger
+                                              showIcon={false}
+                                              className={termPropertyTriggerClassName}
+                                            >
                                               <SelectValue>
                                                 {newTermDraft.partOfSpeech
                                                   ? readableEnumLabel(newTermDraft.partOfSpeech)
@@ -1973,7 +2100,10 @@ export function GlossaryDetailPageContent({
                                               })
                                             }
                                           >
-                                            <SelectTrigger className="h-7">
+                                            <SelectTrigger
+                                              showIcon={false}
+                                              className={termPropertyTriggerClassName}
+                                            >
                                               <SelectValue>
                                                 {newTermDraft.gender
                                                   ? readableEnumLabel(newTermDraft.gender)
@@ -2001,7 +2131,10 @@ export function GlossaryDetailPageContent({
                                               })
                                             }
                                           >
-                                            <SelectTrigger className="h-7">
+                                            <SelectTrigger
+                                              showIcon={false}
+                                              className={termPropertyTriggerClassName}
+                                            >
                                               <SelectValue>
                                                 {newTermDraft.termType
                                                   ? readableEnumLabel(newTermDraft.termType)
@@ -2028,7 +2161,10 @@ export function GlossaryDetailPageContent({
                                               })
                                             }
                                           >
-                                            <SelectTrigger className="h-7">
+                                            <SelectTrigger
+                                              showIcon={false}
+                                              className={termPropertyTriggerClassName}
+                                            >
                                               <SelectValue>
                                                 {readableEnumLabel(newTermDraft.status)}
                                               </SelectValue>
@@ -2190,17 +2326,23 @@ export function GlossaryDetailPageContent({
           )
         : null}
 
-      {!conceptPageMode && !isLiveCrowdin ? (
+      {!conceptPageMode && (isNative || isLiveCrowdin) ? (
         <section className="grid gap-4 rounded-lg border border-border p-4">
           <div>
             <TypographyP className="text-sm font-medium text-foreground">
-              <FormattedMessage {...messages.assignedProjectsTitle} />
+              <FormattedMessage
+                {...(isLiveCrowdin ? messages.linkedProjectTitle : messages.assignedProjectsTitle)}
+              />
             </TypographyP>
             <TypographyP className="text-xs text-muted-foreground">
-              <FormattedMessage {...messages.assignedProjectsDescription} />
+              <FormattedMessage
+                {...(isLiveCrowdin
+                  ? messages.linkedProjectDescription
+                  : messages.assignedProjectsDescription)}
+              />
             </TypographyP>
           </div>
-          {canEdit ? (
+          {canEdit && isNative ? (
             <div className="flex flex-col gap-2 sm:flex-row">
               <Select
                 value={selectedProjectId}
@@ -2245,7 +2387,7 @@ export function GlossaryDetailPageContent({
                 >
                   {project.projectName}
                 </Link>
-                {canEdit ? (
+                {canEdit && isNative ? (
                   <Button
                     type="button"
                     size="sm"

@@ -172,6 +172,20 @@ describe("glossaryRoutes", () => {
           translatable: true,
           terms: [
             {
+              locale: "en",
+              term: "Check-out",
+              status: "draft",
+              caseSensitive: false,
+              forbidden: false,
+            },
+            {
+              locale: "en",
+              term: "Payment",
+              status: "draft",
+              caseSensitive: false,
+              forbidden: false,
+            },
+            {
               locale: "vi-VN",
               term: "Thanh toán",
               status: "draft",
@@ -202,6 +216,7 @@ describe("glossaryRoutes", () => {
     expect(body.concept.terms).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ locale: "en", term: "Checkout", status: "preferred" }),
+        expect.objectContaining({ locale: "en", term: "Payment", status: "draft" }),
         expect.objectContaining({ locale: "vi-VN", term: "Thanh toán", status: "draft" }),
         expect.objectContaining({ locale: "en-US", term: "Check-out", status: "draft" }),
       ]),
@@ -418,7 +433,7 @@ describe("glossaryRoutes", () => {
     expect(storedTerm?.term).toBe("Thanh toán");
   });
 
-  it("rejects duplicate terms when creating a concept", async () => {
+  it("allows the primary source term when creating a concept", async () => {
     const identity = fixture.createWorkosIdentityWithRole("admin");
     const headers = await fixture.authHeadersFor(identity);
     const organizationSlug = identity.organization.slug ?? "missing-slug";
@@ -448,9 +463,12 @@ describe("glossaryRoutes", () => {
       { headers },
     );
 
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(201);
     await expect(response.json()).resolves.toMatchObject({
-      error: "duplicate_glossary_concept_term",
+      concept: {
+        primaryTerm: "Checkout",
+        terms: [{ locale: "en", term: "Checkout" }],
+      },
     });
   });
 

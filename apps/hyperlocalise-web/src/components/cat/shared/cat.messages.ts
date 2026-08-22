@@ -200,6 +200,16 @@ export const catQueuePanelMessages = defineMessages({
     description:
       "Bulk action to make selected native CAT source strings visible to translation jobs",
   },
+  bulkLock: {
+    defaultMessage: "Lock selected",
+    id: "HazwWhJHjo",
+    description: "Bulk action to lock selected CAT segments against accidental edits",
+  },
+  bulkUnlock: {
+    defaultMessage: "Unlock selected",
+    id: "RdS22zCv6k",
+    description: "Bulk action to unlock selected CAT segments so they can be edited",
+  },
   bulkSelectAll: {
     defaultMessage: "Select all visible",
     id: "1v2hbAXp/Y",
@@ -265,6 +275,29 @@ export const catHiddenStringMessages = defineMessages({
     defaultMessage: "Hidden",
     id: "/d/gbp0E4g",
     description: "Badge shown when a TMS source string is hidden from translators",
+  },
+});
+
+export const catLockedStringMessages = defineMessages({
+  locked: {
+    defaultMessage: "Locked",
+    id: "jZwDGjK7RL",
+    description: "Badge shown when a CAT segment is locked against edits",
+  },
+  lock: {
+    defaultMessage: "Lock",
+    id: "fQ1jKCCGwH",
+    description: "Button to lock the current CAT segment against edits",
+  },
+  unlock: {
+    defaultMessage: "Unlock",
+    id: "uG9evF+2Fa",
+    description: "Button to unlock the current CAT segment so it can be edited",
+  },
+  lockedBanner: {
+    defaultMessage: "This string is locked. Unlock it to edit.",
+    id: "BLCf0utxhq",
+    description: "Banner shown in the CAT editor when the current string is locked",
   },
 });
 

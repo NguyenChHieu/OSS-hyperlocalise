@@ -67,6 +67,7 @@ import { listOrganizationProjects } from "@/lib/projects/organization/organizati
 import {
   getNativeProjectCatFile,
   getNativeProjectCatSegmentComments,
+  fileBackedCatSegmentIds,
   getNativeProjectCatSegmentTarget,
   resolveNativeProjectCatLegacyIssueComment,
   saveNativeProjectCatComment,
@@ -82,6 +83,11 @@ import {
   storeExternalCatImageUpload,
   cleanupFailedExternalCatImageUpload,
 } from "@/lib/projects/cat/external-cat-string-overlay-service";
+import {
+  attachCatSegmentLocks,
+  listLockedCatSegmentIds,
+  setCatSegmentLocks,
+} from "@/lib/projects/cat/cat-segment-lock-service";
 import { resolveProjectFileCatPagination } from "@/lib/projects/cat/project-file-cat-pagination";
 import {
   buildCatFilteredExportPayload,
@@ -147,6 +153,7 @@ import {
   projectFileCatCommentBodySchema,
   projectFileCatCommentResolveBodySchema,
   projectFileCatHiddenStringsBodySchema,
+  projectFileCatLockedStringsBodySchema,
   projectFileCatImageRegenerateBodySchema,
   projectFileCatImageStatusBodySchema,
   projectFileCatRecommendationBodySchema,
@@ -592,6 +599,16 @@ const validateProjectFileCatHiddenStringsBody = validator("json", (value, c) => 
   return parsed.data;
 });
 
+const validateProjectFileCatLockedStringsBody = validator("json", (value, c) => {
+  const parsed = projectFileCatLockedStringsBodySchema.safeParse(value);
+
+  if (!parsed.success) {
+    return invalidProjectPayloadResponse(c);
+  }
+
+  return parsed.data;
+});
+
 const validateProjectFileCatImageRegenerateBody = validator("json", (value, c) => {
   const parsed = projectFileCatImageRegenerateBodySchema.safeParse(value);
 
@@ -788,7 +805,14 @@ export async function loadProjectFileCatQueue(
       return { kind: "source_file_not_found" as const };
     }
 
-    return { kind: "ok" as const, catQueue };
+    return {
+      kind: "ok" as const,
+      catQueue: await attachCatSegmentLocks({
+        organizationId: auth.organization.localOrganizationId,
+        projectId,
+        catQueue,
+      }),
+    };
   }
 
   try {
@@ -828,10 +852,51 @@ export async function loadProjectFileCatQueue(
       catFile: catQueue,
     });
 
-    return { kind: "ok" as const, catQueue: enrichedCatQueue };
+    return {
+      kind: "ok" as const,
+      catQueue: await attachCatSegmentLocks({
+        organizationId: auth.organization.localOrganizationId,
+        projectId,
+        catQueue: enrichedCatQueue,
+      }),
+    };
   } catch (error) {
     return { kind: "provider_error" as const, error };
   }
+}
+
+async function catSegmentLockedResponse(
+  c: Parameters<typeof conflictResponse>[0],
+  input: {
+    organizationId: string;
+    projectId: string;
+    targetLocale: string;
+    externalStringId?: string | null;
+    externalStringIds?: string[];
+  },
+) {
+  const externalStringIds = [
+    ...new Set(
+      [...(input.externalStringIds ?? []), input.externalStringId ?? ""]
+        .map((id) => id.trim())
+        .filter((id) => id.length > 0),
+    ),
+  ];
+  if (externalStringIds.length === 0) {
+    return null;
+  }
+
+  const lockedIds = await listLockedCatSegmentIds({
+    organizationId: input.organizationId,
+    projectId: input.projectId,
+    targetLocale: input.targetLocale,
+    externalStringIds,
+  });
+  if (lockedIds.size === 0) {
+    return null;
+  }
+
+  return conflictResponse(c, "translation_locked", "This string is locked. Unlock it to edit.");
 }
 
 export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
@@ -1188,6 +1253,16 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         const target = await resolveProjectResourceTarget(c.var.auth, params.projectId);
         if (target.kind === "provider_unavailable") {
           return providerProjectUnavailableResponse(c, target);
+        }
+
+        const lockedResponse = await catSegmentLockedResponse(c, {
+          organizationId: c.var.auth.organization.localOrganizationId,
+          projectId: params.projectId,
+          targetLocale: body.targetLocale,
+          externalStringId: body.externalStringId,
+        });
+        if (lockedResponse) {
+          return lockedResponse;
         }
 
         if (target.kind !== "provider") {
@@ -1588,6 +1663,16 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           return projectNotFoundResponse(c);
         }
 
+        const lockedStatusResponse = await catSegmentLockedResponse(c, {
+          organizationId: c.var.auth.organization.localOrganizationId,
+          projectId: params.projectId,
+          targetLocale: body.targetLocale,
+          externalStringId: body.externalStringId,
+        });
+        if (lockedStatusResponse) {
+          return lockedStatusResponse;
+        }
+
         const translation = await updateNativeProjectTranslationStatus({
           organizationId: c.var.auth.organization.localOrganizationId,
           projectId: params.projectId,
@@ -1682,6 +1767,41 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
       },
     )
     .post(
+      "/:projectId/files/detail/cat/strings/locked",
+      validateProjectParams,
+      validateProjectFileCatLockedStringsBody,
+      async (c) => {
+        if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {
+          return projectForbiddenResponse(c);
+        }
+
+        const params = c.req.valid("param");
+        const body = c.req.valid("json");
+        const target = await resolveProjectResourceTarget(c.var.auth, params.projectId);
+        if (target.kind === "provider_unavailable") {
+          return providerProjectUnavailableResponse(c, target);
+        }
+
+        if (target.kind !== "provider") {
+          const project = await getOwnedProject(c.var.auth, params.projectId);
+          if (!project) {
+            return projectNotFoundResponse(c);
+          }
+        }
+
+        const result = await setCatSegmentLocks({
+          organizationId: c.var.auth.organization.localOrganizationId,
+          projectId: params.projectId,
+          targetLocale: body.targetLocale,
+          externalStringIds: body.externalStringIds,
+          isLocked: body.isLocked,
+          actorUserId: c.var.auth.user.localUserId,
+        });
+
+        return c.json({ catSegmentLock: result }, 200);
+      },
+    )
+    .post(
       "/:projectId/files/detail/cat/images/regenerate",
       validateProjectParams,
       validateProjectFileCatImageRegenerateBody,
@@ -1707,6 +1827,16 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         const project = await getOwnedProjectRecord(c.var.auth, params.projectId);
         if (!project) {
           return projectNotFoundResponse(c);
+        }
+
+        const lockedImageResponse = await catSegmentLockedResponse(c, {
+          organizationId: c.var.auth.organization.localOrganizationId,
+          projectId: params.projectId,
+          targetLocale: body.targetLocale,
+          externalStringId: body.externalStringId,
+        });
+        if (lockedImageResponse) {
+          return lockedImageResponse;
         }
 
         const organizationSlug =
@@ -1940,6 +2070,16 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
 
         if (!sourcePath || !targetLocale || !file) {
           return invalidProjectPayloadResponse(c);
+        }
+
+        const lockedUploadResponse = await catSegmentLockedResponse(c, {
+          organizationId: c.var.auth.organization.localOrganizationId,
+          projectId: params.projectId,
+          targetLocale,
+          externalStringId,
+        });
+        if (lockedUploadResponse) {
+          return lockedUploadResponse;
         }
 
         const organizationSlug =
@@ -2281,6 +2421,21 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         const organizationId = c.var.auth.organization.localOrganizationId;
         const organizationSlug =
           c.var.auth.organization.slug ?? c.var.auth.organization.localOrganizationId;
+
+        const sourceFile = await getRepositorySourceFileByPath({
+          organizationId,
+          projectId: params.projectId,
+          sourcePath: body.sourcePath,
+        });
+        const lockedImageStatusResponse = await catSegmentLockedResponse(c, {
+          organizationId,
+          projectId: params.projectId,
+          targetLocale: body.targetLocale,
+          externalStringIds: fileBackedCatSegmentIds(sourceFile?.id, body.sourcePath),
+        });
+        if (lockedImageStatusResponse) {
+          return lockedImageStatusResponse;
+        }
 
         if (inferSupportedVideoTranslationFileFormat(body.sourcePath)) {
           const result = await updateVideoVariantStatus({

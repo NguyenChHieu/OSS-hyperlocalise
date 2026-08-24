@@ -1,0 +1,18 @@
+{
+  "compatible_core": "2.0",
+  "display_name": "Hyperlocalise",
+  "enabled_agent_adapters": [
+    "codex",
+    "claude-code",
+    "generic"
+  ],
+  "pilot_scope": "future-reviewed-personal-repository-rollout",
+  "privacy_domain": "personal:hyperlocalise",
+  "privacy_mode": "standard",
+  "project_id": "personal-hyperlocalise",
+  "repository_writes_allowed": false,
+  "schema_version": "2.0",
+  "sidecar_home": "C:\\Users\\nguye\\AppData\\Local\\ai-workflow-v2\\projects\\personal-hyperlocalise",
+  "storage_mode": "sidecar",
+  "workflow_home": "C:\\Users\\nguye\\AppData\\Local\\ai-workflow-v2\\distribution-alpha4-pilot"
+}

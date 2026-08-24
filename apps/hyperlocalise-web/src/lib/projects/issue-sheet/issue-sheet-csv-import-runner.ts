@@ -10,7 +10,7 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 
 import type { IssueSheetImportBody } from "@/api/routes/project/issue-sheet.schema";
 import { db, schema } from "@/lib/database";
@@ -453,8 +453,6 @@ export async function runIssueSheetCsvImport(
         throw new Error("issue_sheet_import_insert_failed");
       }
 
-      const activityCreatedAt = new Date();
-
       await tx.insert(schema.issueSheetActivities).values({
         organizationId: input.organizationId,
         projectId: input.projectId,
@@ -462,7 +460,7 @@ export async function runIssueSheetCsvImport(
         actorUserId: input.actorUserId,
         type: ISSUE_SHEET_ACTIVITY_ISSUE_CREATED,
         payload: {},
-        createdAt: activityCreatedAt,
+        createdAt: sql`clock_timestamp()`,
       });
 
       if (row.assigneeUserId) {
@@ -476,7 +474,7 @@ export async function runIssueSheetCsvImport(
             previousAssigneeUserId: null,
             nextAssigneeUserId: row.assigneeUserId,
           },
-          createdAt: new Date(activityCreatedAt.getTime() + 1),
+          createdAt: sql`clock_timestamp()`,
         });
       }
 

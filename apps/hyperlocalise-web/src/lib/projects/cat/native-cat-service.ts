@@ -10,22 +10,18 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import type {
   ProjectFileCatComment,
   ProjectFileCatQueueFile,
-  ProjectFileCatQueueSegment,
+  ProjectFileCatSegment,
   ProjectFileCatTranslation,
 } from "@/api/routes/project/project.schema";
 import { legacyNativeCatSegmentLimit } from "@/api/routes/project/project.schema";
 import { db, schema } from "@/lib/database";
 import { getLatestRepositorySourceFileVersion } from "@/lib/file-storage/records";
 import { NativeCatCommentService } from "@/lib/projects/cat/native-cat-comment-service";
-import {
-  nativeCatGroupId,
-  resolveNativeCatLogicalRows,
-} from "@/lib/projects/cat/native-cat-group-resolver";
 import {
   CAT_ALL_FILES_FILENAME,
   CAT_ALL_FILES_SOURCE_PATH,
@@ -109,7 +105,7 @@ function toCatTranslation(row: {
   };
 }
 
-function mapTextSegmentSharedFields(
+function mapTextSegment(
   key: {
     id: string;
     key: string;
@@ -122,7 +118,7 @@ function mapTextSegmentSharedFields(
     sourcePath?: string;
   },
   options?: { includeSourcePath?: boolean },
-) {
+): ProjectFileCatSegment {
   const isVideoUrl = isVideoUrlContentKind(key.metadata);
   const isImageUrl = isImageUrlContentKind(key.metadata);
   const contentKind = isVideoUrl
@@ -151,44 +147,6 @@ function mapTextSegmentSharedFields(
   };
 }
 
-function mapTextSegment(
-  key: {
-    id: string;
-    key: string;
-    sourceText: string;
-    context: string | null;
-    type: string | null;
-    maxLength: number | null;
-    metadata: Record<string, unknown> | null;
-    isHidden?: boolean;
-    sourcePath?: string;
-    kind?: "segment" | "group";
-    groupId?: string;
-    sourceTextHash?: string;
-    projectOccurrenceCount?: number;
-    fileOccurrenceCount?: number;
-  },
-  options?: { includeSourcePath?: boolean },
-): ProjectFileCatQueueSegment {
-  const shared = mapTextSegmentSharedFields(key, options);
-  if (key.kind === "group") {
-    return {
-      ...shared,
-      kind: "group",
-      groupId: key.groupId!,
-      sourceTextHash: key.sourceTextHash!,
-      translationKeyId: null,
-      projectOccurrenceCount: key.projectOccurrenceCount!,
-      fileOccurrenceCount: key.fileOccurrenceCount!,
-    };
-  }
-
-  return {
-    ...shared,
-    ...(key.kind ? { kind: "segment" as const } : {}),
-  };
-}
-
 export class NativeCatService extends ProjectServiceBase {
   private readonly translations: ProjectTranslationService;
   private readonly comments: NativeCatCommentService;
@@ -213,22 +171,7 @@ export class NativeCatService extends ProjectServiceBase {
     pagination?: ProjectFileCatPaginationInput;
     sourcePaths?: readonly string[] | null;
   }): Promise<ProjectFileCatQueueFile | null> {
-    const paginationInput = input.pagination ?? {
-      offset: 0,
-      limit: legacyNativeCatSegmentLimit,
-      search: undefined,
-      queueFilter: "all" as const,
-      queueSort: "file_order" as const,
-      paginated: false,
-    };
-
     if (isCatAllFilesSourcePath(input.sourcePath)) {
-      const groupingEnabled = this.translations.isIdenticalStringGroupingEnabled
-        ? await this.translations.isIdenticalStringGroupingEnabled(input)
-        : false;
-      if (groupingEnabled) {
-        return this.getGroupedCatQueue(input, paginationInput);
-      }
       return this.getAllFilesCatQueue(input);
     }
 
@@ -263,13 +206,14 @@ export class NativeCatService extends ProjectServiceBase {
       });
     }
 
-    const groupingEnabled = this.translations.isIdenticalStringGroupingEnabled
-      ? await this.translations.isIdenticalStringGroupingEnabled(input)
-      : false;
-
-    if (groupingEnabled) {
-      return this.getGroupedCatQueue(input, paginationInput);
-    }
+    const paginationInput = input.pagination ?? {
+      offset: 0,
+      limit: legacyNativeCatSegmentLimit,
+      search: undefined,
+      queueFilter: "all",
+      queueSort: "file_order",
+      paginated: false,
+    };
 
     if (!paginationInput.paginated) {
       const keys = await this.translations.listKeysForFile({
@@ -325,76 +269,6 @@ export class NativeCatService extends ProjectServiceBase {
       truncated: pagination.hasMore,
       pagination,
     });
-  }
-
-  private async getGroupedCatQueue(
-    input: {
-      organizationId: string;
-      projectId: string;
-      sourcePath: string;
-      targetLocale: string;
-      canEditTranslations: boolean;
-      sourcePaths?: readonly string[] | null;
-    },
-    paginationInput: ProjectFileCatPaginationInput,
-  ): Promise<ProjectFileCatQueueFile> {
-    const result = await resolveNativeCatLogicalRows(
-      {
-        organizationId: input.organizationId,
-        projectId: input.projectId,
-        targetLocale: input.targetLocale,
-        sourcePath: input.sourcePath,
-        sourcePaths: input.sourcePaths,
-        limit: paginationInput.limit,
-        offset: paginationInput.offset,
-        search: paginationInput.search,
-        queueFilter: paginationInput.queueFilter ?? "all",
-        queueSort: paginationInput.queueSort ?? "file_order",
-      },
-      { database: this.database },
-    );
-    const pagination = buildCatFilePagination({
-      offset: paginationInput.offset,
-      limit: paginationInput.limit,
-      returnedCount: result.rows.length,
-      totalCount: result.totalLogicalRows,
-    });
-
-    return {
-      sourcePath: input.sourcePath,
-      filename: isCatAllFilesSourcePath(input.sourcePath)
-        ? CAT_ALL_FILES_FILENAME
-        : filenameFromSourcePath(input.sourcePath),
-      provider: null,
-      targetLocale: input.targetLocale,
-      canEditTranslations: input.canEditTranslations,
-      truncated: pagination.hasMore,
-      pagination: {
-        ...pagination,
-        totalSourceOccurrences: result.totalSourceOccurrences,
-      },
-      segments: result.rows.map((row) =>
-        mapTextSegment(
-          {
-            id: row.externalStringId,
-            key: row.key,
-            sourceText: row.sourceText,
-            context: row.context,
-            type: row.type,
-            maxLength: row.maxLength,
-            metadata: row.metadata,
-            isHidden: row.isHidden,
-            sourcePath: row.sourcePath,
-            kind: row.kind,
-            groupId: row.kind === "group" ? row.groupId : undefined,
-            sourceTextHash: row.kind === "group" ? row.sourceTextHash : undefined,
-            projectOccurrenceCount: row.projectOccurrenceCount,
-            fileOccurrenceCount: row.fileOccurrenceCount,
-          },
-          { includeSourcePath: isCatAllFilesSourcePath(input.sourcePath) },
-        ),
-      ),
-    };
   }
 
   private async buildImageCatFileResponse(input: {
@@ -1093,92 +967,6 @@ export class NativeCatService extends ProjectServiceBase {
 
     return commentsByKeyId.get(key.id) ?? [];
   }
-
-  async getGroupOccurrences(input: {
-    organizationId: string;
-    projectId: string;
-    targetLocale: string;
-    groupId: string;
-    sourceTextHash: string;
-  }) {
-    const candidates = await this.database
-      .select({
-        id: schema.projectTranslationKeys.id,
-        key: schema.projectTranslationKeys.key,
-        sourceText: schema.projectTranslationKeys.sourceText,
-        context: schema.projectTranslationKeys.context,
-        sourcePath: schema.repositorySourceFiles.sourcePath,
-      })
-      .from(schema.projectTranslationKeys)
-      .innerJoin(
-        schema.repositorySourceFiles,
-        eq(schema.projectTranslationKeys.repositorySourceFileId, schema.repositorySourceFiles.id),
-      )
-      .where(
-        and(
-          eq(schema.projectTranslationKeys.organizationId, input.organizationId),
-          eq(schema.projectTranslationKeys.projectId, input.projectId),
-          eq(schema.projectTranslationKeys.sourceTextHash, input.sourceTextHash),
-        ),
-      );
-    const members = candidates.filter(
-      (candidate) =>
-        nativeCatGroupId({
-          projectId: input.projectId,
-          targetLocale: input.targetLocale,
-          sourceText: candidate.sourceText,
-        }) === input.groupId,
-    );
-    if (members.length < 2) return null;
-
-    const memberIds = members.map((member) => member.id);
-    const [translations, commentsByKeyId] = await Promise.all([
-      this.translations.getTranslationsByKeyIds({
-        organizationId: input.organizationId,
-        projectId: input.projectId,
-        translationKeyIds: memberIds,
-        targetLocale: input.targetLocale,
-      }),
-      this.comments.listByKeyIds({
-        organizationId: input.organizationId,
-        projectId: input.projectId,
-        translationKeyIds: memberIds,
-        targetLocale: input.targetLocale,
-      }),
-    ]);
-    const lockedIds = new Set(
-      (
-        await this.database
-          .select({ externalStringId: schema.projectCatSegmentLocks.externalStringId })
-          .from(schema.projectCatSegmentLocks)
-          .where(
-            and(
-              eq(schema.projectCatSegmentLocks.organizationId, input.organizationId),
-              eq(schema.projectCatSegmentLocks.projectId, input.projectId),
-              eq(schema.projectCatSegmentLocks.targetLocale, input.targetLocale),
-              inArray(schema.projectCatSegmentLocks.externalStringId, memberIds),
-            ),
-          )
-      ).map((row) => row.externalStringId),
-    );
-    const translationByKeyId = new Map(
-      translations.map((translation) => [translation.translationKeyId, translation]),
-    );
-
-    return members.map((member) => {
-      const translation = translationByKeyId.get(member.id);
-      return {
-        translationKeyId: member.id,
-        key: member.key,
-        sourcePath: member.sourcePath,
-        context: member.context,
-        comments: commentsByKeyId.get(member.id) ?? [],
-        isLocked: lockedIds.has(member.id),
-        target: translation ? toCatTranslation(translation) : null,
-        reviewState: translation?.status ?? null,
-      };
-    });
-  }
 }
 
 export const nativeCatService = new NativeCatService();
@@ -1193,10 +981,6 @@ export const getNativeProjectCatSegmentTarget = (
 export const getNativeProjectCatSegmentComments = (
   input: Parameters<NativeCatService["getSegmentComments"]>[0],
 ) => nativeCatService.getSegmentComments(input);
-
-export const getNativeProjectCatGroupOccurrences = (
-  input: Parameters<NativeCatService["getGroupOccurrences"]>[0],
-) => nativeCatService.getGroupOccurrences(input);
 
 export const saveNativeProjectCatTranslation = (
   input: Parameters<NativeCatService["saveTranslation"]>[0],

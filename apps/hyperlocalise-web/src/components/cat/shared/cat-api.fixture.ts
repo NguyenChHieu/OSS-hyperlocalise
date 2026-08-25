@@ -44,8 +44,8 @@ export function createCatProviderMeta() {
 }
 
 export function createCatQueueSegment(
-  overrides: Partial<ProjectFileCatSegment> = {},
-): ProjectFileCatSegment {
+  overrides: Partial<ProjectFileCatQueueResponse["catQueue"]["segments"][number]> = {},
+) {
   return {
     externalStringId: "segment-1",
     key: "auth.signIn.title",

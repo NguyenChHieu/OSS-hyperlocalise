@@ -52,12 +52,6 @@ export const projectTranslationKeys = pgTable(
     ),
     key: text("key").notNull(),
     sourceText: text("source_text").notNull(),
-    // `convert_to(..., 'UTF8')` is STABLE, so PostgreSQL rejects it in a
-    // generated column. `text::bytea` is IMMUTABLE and uses the database
-    // encoding, which this project keeps as UTF-8.
-    sourceTextHash: text("source_text_hash").generatedAlwaysAs(
-      sql`encode(sha256(source_text::bytea), 'hex')`,
-    ),
     normalizedSourceText: text("normalized_source_text").notNull(),
     context: text("context"),
     type: text("type"),
@@ -88,11 +82,6 @@ export const projectTranslationKeys = pgTable(
       table.key,
     ),
     index("idx_project_translation_keys_org_project").on(table.organizationId, table.projectId),
-    index("idx_project_translation_keys_project_source_hash").on(
-      table.organizationId,
-      table.projectId,
-      table.sourceTextHash,
-    ),
     index("idx_project_translation_keys_file").on(table.repositorySourceFileId),
   ],
 );

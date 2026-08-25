@@ -237,7 +237,6 @@ export function projectFileCatToWorkspaceState(
     index: segmentOffset + index + 1,
     key: segment.key,
     sourceText: segment.sourceText,
-    ...(segment.kind ? { kind: segment.kind } : {}),
     ...(segment.contentKind ? { contentKind: segment.contentKind } : {}),
     ...(segment.sourceAssetUrl !== undefined ? { sourceAssetUrl: segment.sourceAssetUrl } : {}),
     ...(segment.targetAssetUrl !== undefined ? { targetAssetUrl: segment.targetAssetUrl } : {}),

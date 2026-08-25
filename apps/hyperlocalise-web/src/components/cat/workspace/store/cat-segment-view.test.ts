@@ -44,24 +44,6 @@ describe("toQueueSegment", () => {
     });
   });
 
-  it("preserves group kind when present", () => {
-    expect(
-      toQueueSegment({
-        id: "g".repeat(64),
-        index: 1,
-        key: "save",
-        sourceText: "Save",
-        kind: "group",
-      }),
-    ).toEqual({
-      id: "g".repeat(64),
-      index: 1,
-      key: "save",
-      sourceText: "Save",
-      kind: "group",
-    });
-  });
-
   it("preserves sourcePath when present", () => {
     expect(
       toQueueSegment({

@@ -12,7 +12,6 @@
  */
 import type { AuthVariables } from "@/api/auth/workos";
 import type {
-  ProjectFileCatGroupOccurrence,
   ProjectFileCatQuery,
   ProjectFileCatQueueFile,
   ProjectFileCatSegment,
@@ -20,7 +19,6 @@ import type {
 import type { ProjectResourceTarget } from "@/api/routes/project/project.shared";
 import { maxProjectFileCatPageLimit } from "@/api/routes/project/project.schema";
 import { mapWithConcurrency } from "@/lib/primitives/map-with-concurrency/map-with-concurrency";
-import { isCatQueueGroup, isCatQueueSegmentRow } from "@/lib/projects/cat/cat-queue-row";
 import { getProjectTranslationsByKeyIds } from "@/lib/projects/translations/project-translation-service";
 import { getTmsProviderLiveCatSegmentTarget } from "@/lib/providers/jobs/tms-provider-live";
 
@@ -50,14 +48,6 @@ export type CatQueueLoader = (
 ) => Promise<CatQueueLoaderResult>;
 
 const PROVIDER_TARGET_CONCURRENCY = 8;
-
-export type CatGroupOccurrencesLoader = (input: {
-  organizationId: string;
-  projectId: string;
-  targetLocale: string;
-  groupId: string;
-  sourceTextHash: string;
-}) => Promise<ProjectFileCatGroupOccurrence[] | null>;
 
 async function loadNativeTargets(input: {
   organizationId: string;
@@ -114,7 +104,6 @@ export async function collectCatFilteredExportRows(input: {
   sourceLocale: string;
   loadCatQueue: CatQueueLoader;
   externalProjectId?: string | null;
-  loadGroupOccurrences?: CatGroupOccurrencesLoader;
 }): Promise<
   | { kind: "ok"; rows: CatFilteredExportRow[]; truncated: boolean }
   | { kind: "empty" }
@@ -151,7 +140,6 @@ export async function collectCatFilteredExportRows(input: {
       break;
     }
 
-    const singletonSegments = catQueue.segments.filter(isCatQueueSegmentRow);
     const targetById = isProvider
       ? await loadProviderTargets({
           organizationId: input.auth.organization.localOrganizationId,
@@ -159,47 +147,16 @@ export async function collectCatFilteredExportRows(input: {
           sourcePath: input.query.sourcePath,
           targetLocale: input.query.targetLocale,
           actorUserId: input.auth.user.localUserId,
-          segments: singletonSegments,
+          segments: catQueue.segments,
         })
       : await loadNativeTargets({
           organizationId: input.auth.organization.localOrganizationId,
           projectId: input.projectId,
           targetLocale: input.query.targetLocale,
-          segments: singletonSegments,
+          segments: catQueue.segments,
         });
-    const loadGroupOccurrences =
-      input.loadGroupOccurrences ??
-      (async (groupInput) => {
-        const { getNativeProjectCatGroupOccurrences } =
-          await import("@/lib/projects/cat/native-cat-service");
-        return getNativeProjectCatGroupOccurrences(groupInput);
-      });
 
     for (const segment of catQueue.segments) {
-      if (isCatQueueGroup(segment)) {
-        const occurrences = await loadGroupOccurrences({
-          organizationId: input.auth.organization.localOrganizationId,
-          projectId: input.projectId,
-          targetLocale: input.query.targetLocale,
-          groupId: segment.groupId,
-          sourceTextHash: segment.sourceTextHash,
-        });
-        if (!occurrences) {
-          continue;
-        }
-        for (const occurrence of occurrences) {
-          rows.push({
-            key: occurrence.key,
-            sourceText: segment.sourceText,
-            targetText: occurrence.target?.text ?? "",
-            sourceLocale: input.sourceLocale,
-            targetLocale: input.query.targetLocale,
-            sourcePath: occurrence.sourcePath,
-          });
-        }
-        continue;
-      }
-
       rows.push({
         key: segment.key,
         sourceText: segment.sourceText,

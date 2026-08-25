@@ -252,6 +252,7 @@ export const CatWorkspaceView = observer(function CatWorkspaceView({
         isNativeProject: true,
         segmentId: editorSegment.id,
         contentKind: editorSegment.contentKind,
+        kind: editorSegment.kind,
       })
     : null;
   const editorIssueStringLink =
@@ -270,6 +271,7 @@ export const CatWorkspaceView = observer(function CatWorkspaceView({
           isNativeProject: true,
           segmentId: intelligenceSegment.id,
           contentKind: intelligenceSegment.contentKind,
+          kind: intelligenceSegment.kind,
         })
       : null;
   const intelligenceIssueStringLink =

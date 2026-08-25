@@ -66,6 +66,7 @@ export interface CatQueueSegment {
   index: number;
   key: string;
   sourceText: string;
+  kind?: "segment" | "group";
   contentKind?: CatContentKind;
   sourceAssetUrl?: string | null;
   targetAssetUrl?: string | null;
@@ -99,6 +100,7 @@ export interface CatSegment {
   index: number;
   key: string;
   sourceText: string;
+  kind?: "segment" | "group";
   targetText: string;
   /** Present when the queue spans multiple files. */
   sourcePath?: string;

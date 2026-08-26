@@ -19,6 +19,7 @@ import { FormattedMessage, useIntl } from "react-intl";
 
 import { formatInternalMarkupForDisplay } from "@/components/cat/message-format/cat-internal-markup";
 import { MarkdownContent } from "@/components/markdown-editor/markdown-editor";
+import { CatSegmentMaxLengthEditor } from "@/components/cat/segment/cat-segment-max-length-editor";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -53,7 +54,6 @@ import {
 } from "./cat-glossary-guidance-event";
 import { requiresLowMatchConfirmation } from "./tm-match-quality";
 import { CatVisualContextPanel } from "./cat-visual-context-panel";
-import { CatSegmentMaxLengthEditor } from "@/components/cat/segment/cat-segment-max-length-editor";
 
 function PanelSection({
   title,

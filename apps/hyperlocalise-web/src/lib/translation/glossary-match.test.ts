@@ -40,6 +40,28 @@ describe("normalizeGlossaryTermStatus", () => {
     });
   });
 
+  it("does not infer preferred from non-forbidden statuses", () => {
+    expect(normalizeGlossaryTermStatus({ status: "admitted" })).toEqual({
+      forbidden: false,
+      preferred: false,
+    });
+    expect(normalizeGlossaryTermStatus({ status: "draft" })).toEqual({
+      forbidden: false,
+      preferred: false,
+    });
+    expect(normalizeGlossaryTermStatus({})).toEqual({
+      forbidden: false,
+      preferred: false,
+    });
+  });
+
+  it("infers preferred from an explicit non-forbidden provider flag without a status", () => {
+    expect(normalizeGlossaryTermStatus({ forbidden: false })).toEqual({
+      forbidden: false,
+      preferred: true,
+    });
+  });
+
   it("honors explicit forbidden flags over status text", () => {
     expect(
       normalizeGlossaryTermStatus({
@@ -52,7 +74,7 @@ describe("normalizeGlossaryTermStatus", () => {
         status: "forbidden",
         forbidden: false,
       }),
-    ).toEqual({ forbidden: false, preferred: true });
+    ).toEqual({ forbidden: false, preferred: false });
   });
 });
 
@@ -137,6 +159,28 @@ describe("normalizeSyncedDatabaseGlossaryMatch", () => {
 
     expect(match.matchSource).toBe("synced_database");
     expect(match.termStatus).toEqual({ forbidden: true, preferred: false });
+  });
+
+  it("preserves explicit preferred flags for admitted targets", () => {
+    const match = normalizeSyncedDatabaseGlossaryMatch({
+      id: "term-2",
+      glossaryId: "glossary-1",
+      glossaryName: "Synced glossary",
+      sourceTerm: "Save",
+      targetTerm: "Enregistrer",
+      sourceLocale: "en",
+      targetLocale: "fr",
+      description: null,
+      forbidden: false,
+      preferred: false,
+      caseSensitive: false,
+      rank: 1,
+      providerKind: null,
+      externalResourceId: null,
+      externalTermId: null,
+    });
+
+    expect(match.termStatus).toEqual({ forbidden: false, preferred: false });
   });
 
   it("passes through concept payloads for CAT guidance", () => {
@@ -235,7 +279,7 @@ describe("context and agent run projections", () => {
 
     expect(toAgentRunGlossaryMatchUsage(normalized)).toMatchObject({
       matchSource: "synced_database",
-      preferred: true,
+      preferred: false,
       forbidden: false,
       glossaryName: "Synced glossary",
     });

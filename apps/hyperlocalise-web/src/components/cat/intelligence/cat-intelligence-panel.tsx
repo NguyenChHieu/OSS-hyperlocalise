@@ -41,12 +41,12 @@ import {
   catIntelligencePanelMessages,
 } from "@/components/cat/shared/cat.messages";
 import type {
-  CatGlossaryConcept,
   CatSegmentIntelligence,
   CatTmMatchKind,
   CatTranslationMemoryMatch,
 } from "@/components/cat/shared/types";
 
+import { normalizedCatGlossaryTermStatus } from "./cat-glossary-term-status";
 import { CatGlossaryConceptCard } from "./cat-glossary-concept-card";
 import {
   CAT_GLOSSARY_GUIDANCE_OPEN_EVENT,
@@ -102,33 +102,6 @@ function AgentContextSkeleton() {
       </div>
     </div>
   );
-}
-
-function legacyGlossaryConcepts(intelligence: CatSegmentIntelligence): CatGlossaryConcept[] {
-  return intelligence.glossaryTerms.map((term) => ({
-    id: `legacy:${term.id}`,
-    glossaryId: "legacy",
-    glossaryName: "Project Glossary",
-    primaryTerm: term.source,
-    sourceTerms: [
-      {
-        id: `${term.id}:source`,
-        locale: "source",
-        text: term.source,
-        preferred: term.approved,
-        forbidden: term.forbidden,
-      },
-    ],
-    targetTerms: [
-      {
-        id: `${term.id}:target`,
-        locale: "target",
-        text: term.target,
-        preferred: term.approved,
-        forbidden: term.forbidden,
-      },
-    ],
-  }));
 }
 
 function tmMatchBadgeTone(matchKind: CatTmMatchKind | undefined) {
@@ -237,8 +210,10 @@ export function CatIntelligencePanel({
   const [pendingLowMatch, setPendingLowMatch] = useState<CatTranslationMemoryMatch | null>(null);
   const [isGlossaryPanelOpen, setIsGlossaryPanelOpen] = useState(false);
   const glossaryConcepts = useMemo(
-    () => intelligence.glossaryConcepts ?? legacyGlossaryConcepts(intelligence),
-    [intelligence],
+    // Concept-only guidance. Legacy flat glossaryTerms (no glossaryConcepts) are intentionally
+    // not synthesized here; concordance must return concept payloads for the panel to populate.
+    () => intelligence.glossaryConcepts ?? [],
+    [intelligence.glossaryConcepts],
   );
   const glossaryConceptKey = glossaryConcepts.map((concept) => concept.id).join("\u0000");
   const glossaryGuidanceStatus = useMemo(() => {
@@ -248,14 +223,11 @@ export function CatIntelligencePanel({
     ]);
 
     return {
-      preferredCount: terms.filter((term) => {
-        const normalized = term.status?.trim().toLowerCase().replaceAll(" ", "_");
-        return !term.forbidden && (term.preferred || normalized === "preferred");
-      }).length,
-      notRecommendedCount: terms.filter((term) => {
-        const normalized = term.status?.trim().toLowerCase().replaceAll(" ", "_");
-        return term.forbidden || normalized === "forbidden" || normalized === "not_recommended";
-      }).length,
+      preferredCount: terms.filter((term) => normalizedCatGlossaryTermStatus(term) === "preferred")
+        .length,
+      notRecommendedCount: terms.filter(
+        (term) => normalizedCatGlossaryTermStatus(term) === "not_recommended",
+      ).length,
     };
   }, [glossaryConcepts]);
   const [expandedGlossaryConceptIds, setExpandedGlossaryConceptIds] = useState<Set<string>>(

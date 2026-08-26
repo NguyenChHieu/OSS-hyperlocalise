@@ -13,6 +13,7 @@
 import type { ExternalTmsProviderKind } from "@/lib/providers/contracts/external-tms-provider-kind";
 import {
   normalizeProviderGlossaryTermFlags,
+  normalizedGlossaryTermStatusFromStatus,
   type ProviderGlossaryTermStatusInput,
 } from "@/lib/providers/contracts/glossary-term-status";
 
@@ -117,9 +118,13 @@ export function normalizeGlossaryTermStatus(
   input: ProviderGlossaryTermStatusInput,
 ): NormalizedGlossaryTermStatus {
   const { forbidden } = normalizeProviderGlossaryTermFlags(input);
+  const status = input.status?.trim();
+  const preferred = status
+    ? normalizedGlossaryTermStatusFromStatus(status).preferred
+    : input.forbidden === false;
   return {
     forbidden,
-    preferred: !forbidden,
+    preferred: forbidden ? false : preferred,
   };
 }
 
@@ -162,6 +167,7 @@ export function normalizeSyncedDatabaseGlossaryMatch(input: {
   targetLocale: string;
   description: string | null;
   forbidden: boolean;
+  preferred?: boolean;
   caseSensitive: boolean;
   rank: number;
   providerKind: ExternalTmsProviderKind | null;
@@ -187,7 +193,7 @@ export function normalizeSyncedDatabaseGlossaryMatch(input: {
     externalTermId: input.externalTermId,
     termStatus: {
       forbidden: input.forbidden,
-      preferred: !input.forbidden,
+      preferred: input.preferred ?? false,
     },
     ...(input.concept ? { concept: input.concept } : {}),
   };

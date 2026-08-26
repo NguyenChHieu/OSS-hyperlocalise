@@ -113,7 +113,7 @@ describe("searchCrowdinCatConcordance", () => {
     expect(result.glossaryTerms[0]?.concept).toMatchObject({
       id: "1",
       primaryTerm: "workspace",
-      glossaryUrl: "https://crowdin.com/glossary/7",
+      glossaryUrl: null,
       sourceTerms: [
         expect.objectContaining({
           id: "11",
@@ -157,11 +157,51 @@ describe("searchCrowdinCatConcordance", () => {
     expect(result.glossaryTerms[0]?.concept).toMatchObject({
       id: "21",
       primaryTerm: "dashboard",
-      glossaryUrl: "https://crowdin.com/glossary/9",
+      glossaryUrl: null,
     });
+    expect(result.glossaryTerms[0]?.externalConceptId).toBeUndefined();
   });
 
-  it("uses Crowdin glossary webUrl when it is a safe https URL", async () => {
+  it("uses term conceptId when Crowdin omits concept metadata", async () => {
+    const client = {
+      glossaryConcordanceSearch: vi.fn().mockResolvedValue([
+        {
+          glossary: { id: 9, name: "Product terms" },
+          concept: null,
+          sourceTerms: [
+            { id: 21, conceptId: 55, languageId: "en", text: "dashboard", status: "preferred" },
+          ],
+          targetTerms: [
+            {
+              id: 22,
+              conceptId: 55,
+              languageId: "fr",
+              text: "tableau de bord",
+              status: "preferred",
+            },
+          ],
+        },
+      ]),
+      concordanceSearch: vi.fn().mockResolvedValue([]),
+    } as unknown as CrowdinApiClient;
+
+    const result = await crowdinTmsProvider.searchCatConcordance({
+      client,
+      externalProjectId: "42",
+      sourceLocale: "en",
+      targetLocale: "fr",
+      sourceText: "dashboard",
+    });
+
+    expect(result.glossaryTerms[0]?.concept).toMatchObject({
+      id: "55",
+      primaryTerm: "dashboard",
+      glossaryUrl: null,
+    });
+    expect(result.glossaryTerms[0]?.externalConceptId).toBe("55");
+  });
+
+  it("does not expose Crowdin glossary webUrl on concept matches", async () => {
     const client = {
       glossaryConcordanceSearch: vi.fn().mockResolvedValue([
         {
@@ -200,7 +240,8 @@ describe("searchCrowdinCatConcordance", () => {
       id: "3",
       subject: "UI",
       definition: "Product workspace",
-      glossaryUrl: "https://acme.crowdin.com/u/projects/1/glossary/7",
+      glossaryUrl: null,
     });
+    expect(result.glossaryTerms[0]?.externalConceptId).toBe("3");
   });
 });

@@ -134,7 +134,7 @@ export function VisualWorkflowEditor({
       };
 
       setNodes((current) => [...current, nextNode]);
-      if (source) {
+      if (source && !isTriggerType(type)) {
         const branchHandle =
           addFrom?.handleId === "true" || addFrom?.handleId === "false" ? addFrom.handleId : null;
         setEdges((current) =>
@@ -256,7 +256,10 @@ export function VisualWorkflowEditor({
             />
           ) : (
             <>
-              <VisualWorkflowNodePicker disableTriggers={hasTrigger} onPick={addNode} />
+              <VisualWorkflowNodePicker
+                disableTriggers={hasTrigger || addFrom !== null}
+                onPick={addNode}
+              />
               {issues.length > 0 ? (
                 <div className="border-t border-border px-4 py-3 text-sm text-destructive">
                   {issues.map((issue) => (

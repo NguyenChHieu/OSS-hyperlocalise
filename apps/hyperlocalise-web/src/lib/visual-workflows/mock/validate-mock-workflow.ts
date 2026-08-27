@@ -26,12 +26,32 @@ export function validateMockWorkflow(
     issues.push({ code: "multiple_triggers" });
   }
 
-  const incoming = new Set(edges.map((edge) => edge.target));
+  const reachable = new Set<string>();
+  const outgoing = new Map<string, string[]>();
+  for (const node of nodes) {
+    outgoing.set(node.id, []);
+  }
+  for (const edge of edges) {
+    outgoing.get(edge.source)?.push(edge.target);
+  }
+
+  const queue = triggers.map((node) => node.id);
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || reachable.has(current)) {
+      continue;
+    }
+    reachable.add(current);
+    for (const next of outgoing.get(current) ?? []) {
+      queue.push(next);
+    }
+  }
+
   for (const node of nodes) {
     if (isTriggerType(node.data.catalogType)) {
       continue;
     }
-    if (!incoming.has(node.id)) {
+    if (!reachable.has(node.id)) {
       issues.push({ code: "orphan_node", nodeId: node.id });
     }
   }

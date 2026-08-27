@@ -66,6 +66,9 @@ export function VisualWorkflowCanvas({
 }) {
   const isValidConnection = useCallback(
     (connection: Connection | VisualWorkflowRfEdge) => {
+      if (!connection.target || connection.source === connection.target) {
+        return false;
+      }
       const target = nodes.find((node) => node.id === connection.target);
       if (!target) {
         return false;

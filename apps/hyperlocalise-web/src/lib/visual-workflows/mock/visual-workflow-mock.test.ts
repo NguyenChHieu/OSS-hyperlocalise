@@ -99,6 +99,14 @@ describe("validateMockWorkflow", () => {
       ),
     ).toEqual([]);
   });
+
+  it("reports a self-looped action that is not reachable from the trigger", () => {
+    const issues = validateMockWorkflow(
+      [node("t", "trigger.manual"), node("h", "action.http")],
+      [{ id: "loop", source: "h", target: "h" }],
+    );
+    expect(issues).toEqual([{ code: "orphan_node", nodeId: "h" }]);
+  });
 });
 
 describe("fake-run ordering", () => {

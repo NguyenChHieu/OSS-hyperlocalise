@@ -32,6 +32,8 @@ import { productPageMessages, type ProductMessageKey } from "./product-page-cont
 import { AutomationEditorMock } from "./automation-editor-mock";
 import { IntegrationStripSection } from "./integration-strip-section";
 import { GlobeHeroVisual } from "./globe-hero-visual";
+import { KnowledgeMockUI } from "./knowledge-mock-ui";
+import { KnowledgeHero } from "./knowledge-hero";
 
 type ProductPageProps = {
   content: ProductPageContent;
@@ -51,6 +53,35 @@ function ProductEyebrow({ messageKey }: { messageKey: ProductMessageKey }) {
 
 function ProductHero({ content }: ProductPageProps) {
   const isAutomation = content.visualKind === "automation";
+  const isKnowledge = content.visualKind === "knowledge";
+
+  // if (isKnowledge) {
+  //   return (
+  //     <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-8 text-center">
+  //       <div className="flex flex-col gap-4">
+  //         <h1 className="font-heading text-[clamp(2.5rem,5vw,4.75rem)] leading-[1] font-semibold tracking-normal text-balance">
+  //           <ProductMessage messageKey={content.hero.headlineKey} />
+  //         </h1>
+  //         <p className="max-auto text-md leading-8 text-muted-foreground text-balance sm:text-lg">
+  //           <ProductMessage messageKey={content.hero.subcopyKey} />
+  //         </p>
+  //       </div>
+  //       <Button
+  //         size="lg"
+  //         nativeButton={false}
+  //         render={<a href={REQUEST_DEMO_URL} target="_blank" rel="noopener noreferrer" />}
+  //       >
+  //         <ProductMessage messageKey="ctaJoinWaitlist" />
+  //         <HugeiconsIcon icon={ArrowRight01Icon} data-icon="inline-end" className="size-4" />
+  //       </Button>
+  //     </div>
+  //   );
+  // }
+  if (isKnowledge) {
+    return (
+      <KnowledgeHero headlineKey={content.hero.headlineKey} subcopyKey={content.hero.subcopyKey} />
+    );
+  }
 
   return (
     <div className="flex flex-col gap-16">
@@ -75,7 +106,6 @@ function ProductHero({ content }: ProductPageProps) {
             </Button>
           </div>
         </div>
-
         {isAutomation && <GlobeHeroVisual />}
       </div>
       {isAutomation && (
@@ -96,6 +126,22 @@ function ProductShowcase({ content }: ProductPageProps) {
     return (
       <div className="mx-auto max-w-6xl">
         <AutomationsMockUI priority />
+      </div>
+    );
+  }
+
+  if (content.visualKind === "knowledge") {
+    return (
+      <div className="mx-auto max-w-6xl space-y-10">
+        <div className="relative">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-x-[8%] -top-8 -bottom-10 rounded-lg bg-[radial-gradient(circle_at_top,rgba(96,116,9,0.16),transparent_58%),radial-gradient(circle_at_bottom_right,rgba(9,108,229,0.1),transparent_46%)] blur-3xl"
+          />
+          <div className="relative grid overflow-hidden rounded-lg border border-border bg-background p-2 shadow-2xl shadow-gray-alpha-100 sm:p-3">
+            <KnowledgeMockUI />
+          </div>
+        </div>
       </div>
     );
   }

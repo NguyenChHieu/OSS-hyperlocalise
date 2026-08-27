@@ -63,7 +63,7 @@ const NAV_ITEMS: MockNavItem[] = [
 ];
 
 const ACTIVE_NAV_BY_TAB: Record<ContentOpsMockTabId, MockNavId> = {
-  triage: "issues",
+  triage: "inbox",
   campaign: "automations",
   "seo-blog": "automations",
   brand: "knowledge",
@@ -73,7 +73,7 @@ const ACTIVE_NAV_BY_TAB: Record<ContentOpsMockTabId, MockNavId> = {
 
 const BREADCRUMB_KEY_BY_TAB: Record<ContentOpsMockTabId, keyof typeof contentOpsMockStageMessages> =
   {
-    triage: "mockBreadcrumbIssues",
+    triage: "mockBreadcrumbInbox",
     campaign: "mockBreadcrumbCampaign",
     "seo-blog": "mockBreadcrumbSeo",
     brand: "mockBreadcrumbBrand",

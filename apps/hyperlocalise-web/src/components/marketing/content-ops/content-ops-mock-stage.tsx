@@ -42,7 +42,7 @@ import { ContentOpsBrandPanel } from "./content-ops-brand-panel";
 import { ContentOpsEditorPanel } from "./content-ops-editor-panel";
 import { ContentOpsFlowPanel } from "./content-ops-flow-panel";
 import { ContentOpsMockAppShell } from "./content-ops-mock-app-shell";
-import { ContentOpsIssuesPanel } from "./content-ops-issues-panel";
+import { ContentOpsInboxPanel } from "./content-ops-inbox-panel";
 import {
   contentOpsMockStageMessages,
   type ContentOpsMockTabId,
@@ -275,17 +275,11 @@ export function ContentOpsMockStage({
           >
             <ContentOpsMockAppShell activeTab={activeTab}>
               {activeTab === "triage" ? (
-                <ContentOpsIssuesPanel highlightedIndex={triageHighlightIndex % 3} />
+                <ContentOpsInboxPanel highlightedIndex={triageHighlightIndex % 3} />
               ) : null}
-              {activeTab === "campaign" ? (
-                <ContentOpsAgentTerminal scene={campaignScene} pauseAutoplay={pauseAutoplay} />
-              ) : null}
-              {activeTab === "seo-blog" ? (
-                <ContentOpsAgentTerminal scene={seoScene} pauseAutoplay={pauseAutoplay} />
-              ) : null}
-              {activeTab === "brand" ? (
-                <ContentOpsBrandPanel pauseAutoplay={pauseAutoplay} />
-              ) : null}
+              {activeTab === "campaign" ? <ContentOpsAgentTerminal scene={campaignScene} /> : null}
+              {activeTab === "seo-blog" ? <ContentOpsAgentTerminal scene={seoScene} /> : null}
+              {activeTab === "brand" ? <ContentOpsBrandPanel /> : null}
               {activeTab === "brief-to-publish" ? (
                 <ContentOpsFlowPanel pauseAutoplay={pauseAutoplay} />
               ) : null}

@@ -61,6 +61,11 @@ export const contentOpsMockStageMessages = defineMessages({
     id: "Ehcjh40kDc",
     description: "Sidebar nav label in marketing app shell mock",
   },
+  mockBreadcrumbInbox: {
+    defaultMessage: "Acme · Inbox",
+    id: "HD1VQg9qxJ",
+    description: "Header breadcrumb in marketing app shell mock for inbox triage",
+  },
   mockBreadcrumbIssues: {
     defaultMessage: "Acme · Issues",
     id: "yqDgUgDi10",
@@ -333,6 +338,110 @@ export const contentOpsMockStageMessages = defineMessages({
     id: "rugkgwDED8",
     description: "Issues panel title in content ops mock",
   },
+  inboxTitle: {
+    defaultMessage: "Inbox",
+    id: "TYvjU7uCVI",
+    description: "Inbox panel title in content ops mock",
+  },
+  inboxConvDeCtaTitle: {
+    defaultMessage: "DE checkout CTA review",
+    id: "oLZRmhKHIV",
+    description: "Inbox conversation title in content ops mock",
+  },
+  inboxConvDeCtaPreview: {
+    defaultMessage: "Does this CTA follow our brand voice for German checkout?",
+    id: "9J33Cf6m0j",
+    description: "Inbox conversation preview in content ops mock",
+  },
+  inboxConvDeCtaMeta: {
+    defaultMessage: "Slack · 2h ago",
+    id: "NQK86OKSk0",
+    description: "Inbox conversation meta in content ops mock",
+  },
+  inboxConvGlossaryTitle: {
+    defaultMessage: "Onboarding glossary check",
+    id: "P0tbpI+zHV",
+    description: "Inbox conversation title in content ops mock",
+  },
+  inboxConvGlossaryPreview: {
+    defaultMessage: "Should AcmePay stay untranslated in ES onboarding?",
+    id: "d1YNCoenDE",
+    description: "Inbox conversation preview in content ops mock",
+  },
+  inboxConvGlossaryMeta: {
+    defaultMessage: "Email · yesterday",
+    id: "fsHdGSEIEq",
+    description: "Inbox conversation meta in content ops mock",
+  },
+  inboxIssueWeb2Preview: {
+    defaultMessage: "Mina assigned you · Payment button label too long",
+    id: "19Hyjf99DQ",
+    description: "Inbox issue notification preview in content ops mock",
+  },
+  inboxIssueWeb2Description: {
+    defaultMessage:
+      "The French payment button exceeds the 32-character limit in checkout.json. Review the translation and shorten the CTA while keeping meaning intact.",
+    id: "sFgi3RFLqg",
+    description: "Inbox issue detail description in content ops mock",
+  },
+  inboxIssueWeb2Project: {
+    defaultMessage: "Web launch",
+    id: "j53Gofjd1b",
+    description: "Inbox issue project label in content ops mock",
+  },
+  inboxIssueNotificationMeta: {
+    defaultMessage: "Issue update · 45m ago",
+    id: "sQA+edg3pH",
+    description: "Inbox issue notification meta in content ops mock",
+  },
+  inboxIssueProjectLabel: {
+    defaultMessage: "Project",
+    id: "TWitJgQdIP",
+    description: "Inbox issue detail project label in content ops mock",
+  },
+  inboxIssueSourceLabel: {
+    defaultMessage: "Source file",
+    id: "wHFmp4/+wj",
+    description: "Inbox issue detail source label in content ops mock",
+  },
+  inboxAssistantTitle: {
+    defaultMessage: "Hyperlocalise Agent",
+    id: "EeV19O9AuX",
+    description: "Inbox assistant panel title in content ops mock",
+  },
+  inboxAssistantDeCtaQuestion: {
+    defaultMessage: 'Does "Nutzen Sie unsere innovative Plattform" follow our DE brand voice?',
+    id: "/WYfcQHn0k",
+    description: "Inbox assistant user question in content ops mock",
+  },
+  inboxAssistantDeCtaAnswer: {
+    defaultMessage:
+      'Off-brand for checkout — too formal. Use a short verb CTA like "Jetzt starten" (max 24 characters).',
+    id: "fOCWpBnaX6",
+    description: "Inbox assistant answer in content ops mock",
+  },
+  inboxAssistantWeb2Question: {
+    defaultMessage: "What's the fastest fix for the FR checkout button length issue?",
+    id: "NIHlitteoo",
+    description: "Inbox assistant user question for issue in content ops mock",
+  },
+  inboxAssistantWeb2Answer: {
+    defaultMessage:
+      'Shorten to "Payer maintenant" (16 chars). Open checkout.json in the CAT editor to apply and re-run QA.',
+    id: "vy7kjRq93r",
+    description: "Inbox assistant answer for issue in content ops mock",
+  },
+  inboxAssistantGlossaryQuestion: {
+    defaultMessage: "Should AcmePay stay untranslated in Spanish onboarding?",
+    id: "/QZxo6jgZM",
+    description: "Inbox assistant glossary question in content ops mock",
+  },
+  inboxAssistantGlossaryAnswer: {
+    defaultMessage:
+      'Yes — glossary rule "Product names: never translate" applies. Flag MOB-1 and link the onboarding strings.',
+    id: "SS1sIH3qu1",
+    description: "Inbox assistant glossary answer in content ops mock",
+  },
   issuesSummary: {
     defaultMessage: "{open} open · {inProgress} in progress · {resolved} resolved",
     id: "MMFb5MTldp",
@@ -408,6 +517,59 @@ export const contentOpsMockStageMessages = defineMessages({
     defaultMessage: "CTA: short verb",
     id: "4yshvtwLy5",
     description: "Brand style rule chip",
+  },
+  brandGuidelineToneTitle: {
+    defaultMessage: "Tone",
+    id: "SBN/+r4YAI",
+    description: "Brand guideline tone section title in content ops mock",
+  },
+  brandGuidelineToneBody: {
+    defaultMessage:
+      "Friendly and direct. Avoid formal Sie-form and jargon in checkout flows. Write like you are helping a customer finish quickly.",
+    id: "EbI5T06YK7",
+    description: "Brand guideline tone body in content ops mock",
+  },
+  brandGuidelineCtaTitle: {
+    defaultMessage: "Call to action",
+    id: "RrEtMWT3+n",
+    description: "Brand guideline CTA section title in content ops mock",
+  },
+  brandGuidelineCtaBody: {
+    defaultMessage:
+      'Use a short verb. Maximum 24 characters. Prefer "Jetzt starten" over descriptive marketing phrases.',
+    id: "3wZP3Mai9s",
+    description: "Brand guideline CTA body in content ops mock",
+  },
+  brandGuidelineTermsTitle: {
+    defaultMessage: "Product terms",
+    id: "z2BXL0WPeh",
+    description: "Brand guideline terms section title in content ops mock",
+  },
+  brandGuidelineTermsBody: {
+    defaultMessage: "Keep product names such as AcmePay untranslated across all markets.",
+    id: "Ga2xU2YzE3",
+    description: "Brand guideline terms body in content ops mock",
+  },
+  brandUploadedGuideLabel: {
+    defaultMessage: "Uploaded style guide",
+    id: "wkXL+SvV0U",
+    description: "Label for uploaded PDF in brand mock",
+  },
+  brandUploadedGuideFilename: {
+    defaultMessage: "brand-voice-style-guide.pdf",
+    id: "szjULYmU5z",
+    description: "Filename for uploaded PDF in brand mock",
+  },
+  brandUploadedGuideSize: {
+    defaultMessage: "2.4 MB · 12 pages",
+    id: "anFNHwBPyz",
+    description: "File size for uploaded PDF in brand mock",
+  },
+  brandUploadedGuideExcerpt: {
+    defaultMessage:
+      "DE checkout CTAs should use informal du, stay under 24 characters, and lead with a verb.",
+    id: "62TJERGYuU",
+    description: "Excerpt text shown in PDF preview in brand mock",
   },
   brandBeforeLabel: {
     defaultMessage: "Before",

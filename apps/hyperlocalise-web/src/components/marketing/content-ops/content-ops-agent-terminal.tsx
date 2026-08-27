@@ -235,11 +235,9 @@ function AgentRunPanel({
 
 export function ContentOpsAgentTerminal({
   scene,
-  pauseAutoplay = false,
   onStepIndexChange,
 }: {
   scene: ContentOpsTerminalScene;
-  pauseAutoplay?: boolean;
   onStepIndexChange?: (stepIndex: number) => void;
 }) {
   const shouldReduceMotion = useReducedMotion() ?? false;
@@ -254,10 +252,8 @@ export function ContentOpsAgentTerminal({
   }, [onStepIndexChange, visibleStepCount]);
 
   useEffect(() => {
-    if (pauseAutoplay || shouldReduceMotion) {
-      if (shouldReduceMotion) {
-        setVisibleStepCount(scene.steps.length);
-      }
+    if (shouldReduceMotion) {
+      setVisibleStepCount(scene.steps.length);
       return;
     }
 
@@ -265,7 +261,7 @@ export function ContentOpsAgentTerminal({
       const timer = setTimeout(() => setVisibleStepCount((count) => count + 1), STEP_INTERVAL_MS);
       return () => clearTimeout(timer);
     }
-  }, [pauseAutoplay, scene.steps.length, shouldReduceMotion, visibleStepCount]);
+  }, [scene.steps.length, shouldReduceMotion, visibleStepCount]);
 
   const visibleSteps: ContentOpsTerminalStep[] = scene.steps
     .slice(0, visibleStepCount)

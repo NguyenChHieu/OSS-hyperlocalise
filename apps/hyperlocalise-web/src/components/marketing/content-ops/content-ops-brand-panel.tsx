@@ -17,6 +17,7 @@ import {
   BookOpenTextIcon,
   Cancel01Icon,
   Chat01Icon,
+  File01Icon,
   RefreshIcon,
   SentIcon,
 } from "@hugeicons/core-free-icons";
@@ -40,10 +41,8 @@ const MENTION_GLYPH = "@";
 export type BrandPlaybackPhase = "idle" | "playing" | "done";
 
 export function ContentOpsBrandPanel({
-  pauseAutoplay = false,
   onPhaseChange,
 }: {
-  pauseAutoplay?: boolean;
   onPhaseChange?: (phase: BrandPlaybackPhase) => void;
 }) {
   const intl = useIntl();
@@ -57,18 +56,18 @@ export function ContentOpsBrandPanel({
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const prompt = intl.formatMessage(contentOpsMockStageMessages.brandChatPrompt);
-  const answerSections = [
+  const guidelineSections = [
     {
-      label: intl.formatMessage(contentOpsMockStageMessages.brandVerdictLabel),
-      body: intl.formatMessage(contentOpsMockStageMessages.brandVerdictBody),
+      title: intl.formatMessage(contentOpsMockStageMessages.brandGuidelineToneTitle),
+      body: intl.formatMessage(contentOpsMockStageMessages.brandGuidelineToneBody),
     },
     {
-      label: intl.formatMessage(contentOpsMockStageMessages.brandGuidelineLabel),
-      body: intl.formatMessage(contentOpsMockStageMessages.brandGuidelineBody),
+      title: intl.formatMessage(contentOpsMockStageMessages.brandGuidelineCtaTitle),
+      body: intl.formatMessage(contentOpsMockStageMessages.brandGuidelineCtaBody),
     },
     {
-      label: intl.formatMessage(contentOpsMockStageMessages.brandSuggestLabel),
-      body: intl.formatMessage(contentOpsMockStageMessages.brandSuggestBody),
+      title: intl.formatMessage(contentOpsMockStageMessages.brandGuidelineTermsTitle),
+      body: intl.formatMessage(contentOpsMockStageMessages.brandGuidelineTermsBody),
     },
   ];
 
@@ -119,14 +118,14 @@ export function ContentOpsBrandPanel({
   }, [shouldReduceMotion]);
 
   useEffect(() => {
-    if (pauseAutoplay || shouldReduceMotion || hasAutoStartedRef.current) {
+    if (shouldReduceMotion || hasAutoStartedRef.current) {
       return;
     }
 
     hasAutoStartedRef.current = true;
     const timer = setTimeout(() => startPlayback(), 400);
     return () => clearTimeout(timer);
-  }, [pauseAutoplay, shouldReduceMotion, startPlayback]);
+  }, [shouldReduceMotion, startPlayback]);
 
   useEffect(() => () => clearTimers(), []);
 
@@ -137,7 +136,7 @@ export function ContentOpsBrandPanel({
     transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
   }, [showTool, toolResolved, showAnswer]);
 
-  const showAppliedStyle = showAnswer;
+  const showChatAnswer = showAnswer;
 
   return (
     <div className={cn(CONTENT_OPS_MOCK_INNER_CLASSNAME, "grid lg:grid-cols-2")}>
@@ -146,9 +145,12 @@ export function ContentOpsBrandPanel({
           <div className="text-base font-semibold text-foreground">
             <FormattedMessage {...contentOpsMockStageMessages.brandStyleTitle} />
           </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            <FormattedMessage {...contentOpsMockStageMessages.brandStyleSubtitle} />
+          </p>
         </div>
 
-        <div className="space-y-4 p-4">
+        <div className="space-y-4 overflow-y-auto p-4">
           <div className="flex flex-wrap gap-2">
             {[
               contentOpsMockStageMessages.brandRuleTone,
@@ -163,42 +165,50 @@ export function ContentOpsBrandPanel({
             ))}
           </div>
 
-          <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
-            <div className="space-y-3">
-              <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2.5">
-                <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  <FormattedMessage {...contentOpsMockStageMessages.brandBeforeLabel} />
-                </div>
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  <FormattedMessage {...contentOpsMockStageMessages.brandBeforeCopy} />
+          <div className="space-y-4 rounded-xl border border-border/60 bg-muted/20 p-4">
+            {guidelineSections.map((section) => (
+              <div key={section.title} className="space-y-1">
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {section.title}
+                </h4>
+                <p className="text-sm leading-relaxed text-foreground">{section.body}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-border/60 bg-background">
+            <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2.5">
+              <HugeiconsIcon
+                icon={File01Icon}
+                strokeWidth={1.8}
+                className="size-4 shrink-0 text-primary"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-medium text-foreground">
+                  <FormattedMessage {...contentOpsMockStageMessages.brandUploadedGuideFilename} />
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  <FormattedMessage {...contentOpsMockStageMessages.brandUploadedGuideSize} />
                 </p>
               </div>
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                PDF
+              </span>
+            </div>
 
-              <AnimatePresence mode="wait">
-                {showAppliedStyle ? (
-                  <motion.div
-                    key="after"
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.24 }}
-                  >
-                    <div className="rounded-lg border border-primary/25 bg-primary/5 px-3 py-2.5">
-                      <div className="mb-1 flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-medium uppercase tracking-wide text-primary/80">
-                          <FormattedMessage {...contentOpsMockStageMessages.brandAfterLabel} />
-                        </span>
-                        <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
-                          <FormattedMessage {...contentOpsMockStageMessages.brandAppliedBadge} />
-                        </span>
-                      </div>
-                      <p className="text-sm font-medium leading-relaxed text-foreground">
-                        <FormattedMessage {...contentOpsMockStageMessages.brandAfterCopy} />
-                      </p>
-                    </div>
-                  </motion.div>
-                ) : null}
-              </AnimatePresence>
+            <div className="space-y-2 bg-muted/25 p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <FormattedMessage {...contentOpsMockStageMessages.brandUploadedGuideLabel} />
+              </p>
+              <div className="space-y-2 rounded-lg border border-border/50 bg-background p-3 shadow-sm">
+                <div className="h-2 w-2/3 rounded bg-muted" />
+                <div className="h-2 w-full rounded bg-muted" />
+                <div className="h-2 w-5/6 rounded bg-muted" />
+                <p className="pt-1 text-xs leading-relaxed text-muted-foreground">
+                  <FormattedMessage {...contentOpsMockStageMessages.brandUploadedGuideExcerpt} />
+                </p>
+                <div className="h-2 w-4/5 rounded bg-muted" />
+              </div>
             </div>
           </div>
         </div>
@@ -286,19 +296,37 @@ export function ContentOpsBrandPanel({
                     ) : null}
                   </AnimatePresence>
 
-                  {showAnswer ? (
+                  {showChatAnswer ? (
                     <motion.div
                       initial={shouldReduceMotion ? false : { opacity: 0, y: 12 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: shouldReduceMotion ? 0 : 0.35, ease: EASE_OUT }}
                       className="space-y-4 text-sm leading-6 text-foreground"
                     >
-                      {answerSections.map((section) => (
-                        <div key={section.label} className="space-y-1">
-                          <p className="font-medium text-foreground">{section.label}</p>
-                          <p className="text-muted-foreground">{section.body}</p>
-                        </div>
-                      ))}
+                      <div className="space-y-1">
+                        <p className="font-medium text-foreground">
+                          <FormattedMessage {...contentOpsMockStageMessages.brandVerdictLabel} />
+                        </p>
+                        <p className="text-muted-foreground">
+                          <FormattedMessage {...contentOpsMockStageMessages.brandVerdictBody} />
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="font-medium text-foreground">
+                          <FormattedMessage {...contentOpsMockStageMessages.brandGuidelineLabel} />
+                        </p>
+                        <p className="text-muted-foreground">
+                          <FormattedMessage {...contentOpsMockStageMessages.brandGuidelineBody} />
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <p className="font-medium text-foreground">
+                          <FormattedMessage {...contentOpsMockStageMessages.brandSuggestLabel} />
+                        </p>
+                        <p className="text-muted-foreground">
+                          <FormattedMessage {...contentOpsMockStageMessages.brandSuggestBody} />
+                        </p>
+                      </div>
                     </motion.div>
                   ) : null}
                 </div>

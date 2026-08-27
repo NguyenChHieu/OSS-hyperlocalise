@@ -41,11 +41,6 @@ export const automationsPageViewMessages = defineMessages({
     id: "1um5cM9poq",
     description: "Button to create a new workspace automation",
   },
-  visualEditorPreview: {
-    defaultMessage: "Visual editor (preview)",
-    id: "lRCHCijFI+",
-    description: "Secondary button to open the visual workflow canvas prototype",
-  },
   loadingAutomations: {
     defaultMessage: "Loading automations",
     id: "o1Kg4Vat6I",

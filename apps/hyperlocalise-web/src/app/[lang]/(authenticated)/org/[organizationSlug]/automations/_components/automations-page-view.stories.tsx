@@ -53,7 +53,6 @@ type Story = StoryObj<typeof meta>;
 export const Default: Story = {
   play: async ({ canvas, canvasElement, userEvent }) => {
     await expect(canvas.getByRole("heading", { name: "Automations" })).toBeInTheDocument();
-    await expect(canvas.getByRole("link", { name: "Visual editor (preview)" })).toBeInTheDocument();
     await expect(canvas.getByRole("heading", { name: "From Hyperlocalise" })).toBeInTheDocument();
     await expect(
       canvas.getByRole("heading", { name: "Review localisation before it merges" }),

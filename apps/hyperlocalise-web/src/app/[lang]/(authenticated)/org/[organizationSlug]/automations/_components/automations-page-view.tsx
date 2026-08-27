@@ -209,27 +209,16 @@ export function AutomationsPageView({
         )}
         title={intl.formatMessage(automationsPageViewMessages.pageTitle)}
         description={intl.formatMessage(automationsPageViewMessages.pageDescription)}
-        actions={
-          <>
-            <Button
-              nativeButton={false}
-              variant="outline"
-              render={<Link href={`${automationsBasePath}/visual/new`} />}
-            >
-              <FormattedMessage {...automationsPageViewMessages.visualEditorPreview} />
-            </Button>
-            {renderActionLink({
-              href: `${automationsBasePath}/new`,
-              kind: "header",
-              children: (
-                <>
-                  <HugeiconsIcon icon={Add01Icon} strokeWidth={2} />
-                  <FormattedMessage {...automationsPageViewMessages.newAutomation} />
-                </>
-              ),
-            })}
-          </>
-        }
+        actions={renderActionLink({
+          href: `${automationsBasePath}/new`,
+          kind: "header",
+          children: (
+            <>
+              <HugeiconsIcon icon={Add01Icon} strokeWidth={2} />
+              <FormattedMessage {...automationsPageViewMessages.newAutomation} />
+            </>
+          ),
+        })}
       />
 
       <section className="grid gap-4 md:grid-cols-3">

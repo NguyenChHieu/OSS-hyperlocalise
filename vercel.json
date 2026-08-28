@@ -17,9 +17,6 @@
       }
     ]
   },
-  "proxy": {
-    "entrypoint": "apps/hyperlocalise-web/src/proxy.ts"
-  },
   "services": {
     "web": {
       "root": "apps/hyperlocalise-web",

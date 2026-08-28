@@ -17,7 +17,96 @@ import { db, schema, type DatabaseClient } from "@/lib/database";
 export type AttachedTeamGlossary = {
   id: string;
   name: string;
+  teamId: string;
 };
+
+export type ContributorTeam = {
+  id: string;
+  name: string;
+};
+
+export type ProjectTeamContext = {
+  teamId: string | null;
+  teamName: string | null;
+};
+
+export async function getProjectTeamContext(projectId: string): Promise<ProjectTeamContext | null> {
+  const [row] = await db
+    .select({
+      teamId: schema.projects.teamId,
+      teamName: schema.teams.name,
+    })
+    .from(schema.projects)
+    .leftJoin(schema.teams, eq(schema.projects.teamId, schema.teams.id))
+    .where(eq(schema.projects.id, projectId))
+    .limit(1);
+
+  return row ?? null;
+}
+
+export async function getProjectTeamName(projectId: string): Promise<string | null> {
+  const context = await getProjectTeamContext(projectId);
+  return context?.teamName ?? null;
+}
+
+export type ListContributorTeamsOptions = {
+  organizationWideAccess?: boolean;
+};
+
+export async function listContributorTeams(
+  userId: string,
+  organizationId: string,
+  options: ListContributorTeamsOptions = {},
+  client: DatabaseClient = db,
+): Promise<ContributorTeam[]> {
+  if (options.organizationWideAccess) {
+    return client
+      .select({
+        id: schema.teams.id,
+        name: schema.teams.name,
+      })
+      .from(schema.teams)
+      .where(eq(schema.teams.organizationId, organizationId))
+      .orderBy(schema.teams.name);
+  }
+
+  return client
+    .select({
+      id: schema.teams.id,
+      name: schema.teams.name,
+    })
+    .from(schema.teamMemberships)
+    .innerJoin(schema.teams, eq(schema.teamMemberships.teamId, schema.teams.id))
+    .where(
+      and(
+        eq(schema.teamMemberships.userId, userId),
+        eq(schema.teams.organizationId, organizationId),
+      ),
+    )
+    .orderBy(schema.teams.name);
+}
+
+export async function isUserMemberOfTeam(
+  userId: string,
+  teamId: string,
+  organizationId: string,
+  client: DatabaseClient = db,
+): Promise<boolean> {
+  const [row] = await client
+    .select({ id: schema.teamMemberships.id })
+    .from(schema.teamMemberships)
+    .innerJoin(schema.teams, eq(schema.teamMemberships.teamId, schema.teams.id))
+    .where(
+      and(
+        eq(schema.teamMemberships.userId, userId),
+        eq(schema.teamMemberships.teamId, teamId),
+        eq(schema.teams.organizationId, organizationId),
+      ),
+    )
+    .limit(1);
+
+  return row !== undefined;
+}
 
 export async function listAttachedTeamGlossaries(
   projectId: string,
@@ -26,6 +115,7 @@ export async function listAttachedTeamGlossaries(
     .select({
       id: schema.glossaries.id,
       name: schema.glossaries.name,
+      teamId: schema.glossaries.teamId,
     })
     .from(schema.projectGlossaries)
     .innerJoin(schema.glossaries, eq(schema.projectGlossaries.glossaryId, schema.glossaries.id))
@@ -41,7 +131,13 @@ export async function listAttachedTeamGlossaries(
     )
     .orderBy(schema.projectGlossaries.priority, schema.glossaries.name);
 
-  return rows;
+  return rows.flatMap((row) => {
+    if (!row.teamId) {
+      return [];
+    }
+
+    return [{ id: row.id, name: row.name, teamId: row.teamId }];
+  });
 }
 
 export async function hasAttachedGlossarySourceLocaleConflict(
@@ -62,15 +158,4 @@ export async function hasAttachedGlossarySourceLocaleConflict(
     .limit(1);
 
   return row !== undefined;
-}
-
-export async function getProjectTeamName(projectId: string): Promise<string | null> {
-  const [row] = await db
-    .select({ name: schema.teams.name })
-    .from(schema.projects)
-    .innerJoin(schema.teams, eq(schema.projects.teamId, schema.teams.id))
-    .where(eq(schema.projects.id, projectId))
-    .limit(1);
-
-  return row?.name ?? null;
 }

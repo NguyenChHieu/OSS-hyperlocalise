@@ -28,6 +28,7 @@ import { db, schema } from "@/lib/database";
 import type { Glossary as GlossaryRecord } from "@/lib/database/types";
 import { getTmsProviderLiveGlossary } from "@/lib/providers/jobs/tms-provider-live";
 import { parseLiveProviderGlossaryId } from "@/lib/providers/jobs/tms-provider-resource-id";
+import { isUserMemberOfTeam } from "@/lib/glossary/attached-team-glossaries";
 
 export function invalidGlossaryPayloadResponse(c: { json: JsonContext["json"] }) {
   return validationErrorResponse(c, "invalid_glossary_payload", "Invalid glossary payload");
@@ -87,6 +88,14 @@ export function glossaryTeamNativeProjectRequiredResponse(c: { json: JsonContext
     "glossary_team_native_project_required",
     "Team glossaries must attach to Hyperlocalise-owned projects",
   );
+}
+
+export function glossaryTeamNotFoundResponse(c: { json: JsonContext["json"] }) {
+  return notFoundResponse(c, "glossary_team_not_found", "Team not found");
+}
+
+export function glossaryTeamMembershipRequiredResponse(c: { json: JsonContext["json"] }) {
+  return forbiddenResponse(c);
 }
 
 export function glossarySourceLocaleAttachedProjectsResponse(c: { json: JsonContext["json"] }) {
@@ -220,6 +229,44 @@ export function isGlossaryContributeAllowed(
   return role === "translator" && glossary.controlLevel === "team" && glossary.source === "native";
 }
 
+async function isTeamGlossaryContributorAllowed(
+  auth: ApiAuthContext,
+  glossary: Pick<GlossaryRecord, "controlLevel" | "source" | "teamId">,
+) {
+  if (isGlossaryManageAllowed(auth.membership.role)) {
+    return true;
+  }
+
+  if (
+    auth.membership.role !== "translator" ||
+    glossary.controlLevel !== "team" ||
+    glossary.source !== "native"
+  ) {
+    return false;
+  }
+
+  if (!glossary.teamId) {
+    return false;
+  }
+
+  return isUserMemberOfTeam(
+    auth.user.localUserId,
+    glossary.teamId,
+    auth.organization.localOrganizationId,
+  );
+}
+
+export async function canContributeToGlossary(
+  auth: ApiAuthContext,
+  glossary: Pick<GlossaryRecord, "controlLevel" | "source" | "teamId">,
+) {
+  if (!isGlossaryContributeAllowed(auth.membership.role, glossary)) {
+    return false;
+  }
+
+  return isTeamGlossaryContributorAllowed(auth, glossary);
+}
+
 export function glossaryContributeForbiddenResponse(
   c: { json: JsonContext["json"] },
   role: ApiAuthContext["membership"]["role"],
@@ -237,6 +284,9 @@ export async function getContributableGlossary(auth: ApiAuthContext, glossaryId:
     return { kind: "not_found" as const };
   }
   if (!isGlossaryContributeAllowed(auth.membership.role, glossary)) {
+    return { kind: "forbidden" as const, glossary };
+  }
+  if (!(await isTeamGlossaryContributorAllowed(auth, glossary))) {
     return { kind: "forbidden" as const, glossary };
   }
   return { kind: "ok" as const, glossary };
@@ -278,6 +328,7 @@ export async function getOwnedGlossary(auth: ApiAuthContext, glossaryId: string)
       status: "active",
       source: "external_tms",
       controlLevel: "org",
+      teamId: null,
       externalProviderKind: "crowdin",
       externalProviderCredentialId: null,
       externalProjectId: liveGlossary.externalProjectId,

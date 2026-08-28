@@ -276,12 +276,7 @@ export class NativeGlossary extends Glossary {
     return attachedProjects.map((project) => ({ ...project, externalUrl: null }));
   }
 
-  async update(payload: {
-    name?: string;
-    description?: string;
-    sourceLocale?: string;
-    controlLevel?: "org" | "team";
-  }) {
+  async update(payload: { name?: string; description?: string; sourceLocale?: string }) {
     const updates = Object.fromEntries(
       Object.entries(payload).filter(([, value]) => value !== undefined),
     );
@@ -305,12 +300,9 @@ export class NativeGlossary extends Glossary {
     name?: string;
     description?: string;
     sourceLocale?: string;
-    controlLevel?: "org" | "team";
   }): Promise<
     | { status: "updated"; glossary: GlossaryRecord }
     | { status: "not_found" }
-    | { status: "team_project_required" }
-    | { status: "team_native_project_required" }
     | { status: "source_locale_attached_projects" }
     | { status: "source_locale_existing_terms" }
   > {
@@ -322,9 +314,8 @@ export class NativeGlossary extends Glossary {
     }
 
     const needsAttachmentValidation =
-      payload.controlLevel === "team" ||
-      (payload.sourceLocale !== undefined &&
-        payload.sourceLocale !== this.input.glossary.sourceLocale);
+      payload.sourceLocale !== undefined &&
+      payload.sourceLocale !== this.input.glossary.sourceLocale;
 
     if (!needsAttachmentValidation) {
       const glossary = await this.update(payload);
@@ -336,7 +327,6 @@ export class NativeGlossary extends Glossary {
     return db.transaction(async (tx) => {
       const [glossaryRow] = await tx
         .select({
-          controlLevel: schema.glossaries.controlLevel,
           sourceLocale: schema.glossaries.sourceLocale,
         })
         .from(schema.glossaries)
@@ -367,7 +357,6 @@ export class NativeGlossary extends Glossary {
 
       const attachments = await tx
         .select({
-          source: schema.projects.source,
           sourceLocale: schema.projects.sourceLocale,
         })
         .from(schema.projectGlossaries)
@@ -382,15 +371,6 @@ export class NativeGlossary extends Glossary {
             accessibleProjectsWhere,
           ),
         );
-
-      if (payload.controlLevel === "team") {
-        if (attachments.length === 0) {
-          return { status: "team_project_required" };
-        }
-        if (attachments.some((attachment) => attachment.source !== "native")) {
-          return { status: "team_native_project_required" };
-        }
-      }
 
       if (
         payload.sourceLocale !== undefined &&
@@ -846,6 +826,7 @@ export class NativeGlossary extends Glossary {
         .select({
           source: schema.projects.source,
           sourceLocale: schema.projects.sourceLocale,
+          teamId: schema.projects.teamId,
         })
         .from(schema.projects)
         .where(
@@ -865,6 +846,7 @@ export class NativeGlossary extends Glossary {
         .select({
           controlLevel: schema.glossaries.controlLevel,
           sourceLocale: schema.glossaries.sourceLocale,
+          teamId: schema.glossaries.teamId,
         })
         .from(schema.glossaries)
         .where(

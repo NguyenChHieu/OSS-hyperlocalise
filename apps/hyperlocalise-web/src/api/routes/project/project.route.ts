@@ -201,11 +201,15 @@ import { normalizeProjectId } from "@/lib/projects/identity/project-id";
 import { parseProviderProjectId } from "@/lib/providers/jobs/tms-provider-resource-id";
 
 import {
-  getProjectTeamName,
+  getProjectTeamContext,
   hasAttachedGlossarySourceLocaleConflict,
   listAttachedTeamGlossaries,
+  listContributorTeams,
 } from "@/lib/glossary/attached-team-glossaries";
-import { isGlossaryContributorRole } from "@/api/routes/glossary/glossary.shared";
+import {
+  isGlossaryContributorRole,
+  isGlossaryManageAllowed,
+} from "@/api/routes/glossary/glossary.shared";
 import {
   isAiActionAllowed,
   isProjectCatBehaviorMutationAllowed,
@@ -897,16 +901,21 @@ async function withCatTeamGlossaryContext(
   projectId: string,
   catQueue: ProjectFileCatQueueFile,
 ): Promise<ProjectFileCatQueueFile> {
-  const [teamGlossaries, teamName] = await Promise.all([
+  const [teamGlossaries, projectTeam, contributorTeams] = await Promise.all([
     listAttachedTeamGlossaries(projectId),
-    getProjectTeamName(projectId),
+    getProjectTeamContext(projectId),
+    listContributorTeams(auth.user.localUserId, auth.organization.localOrganizationId, {
+      organizationWideAccess: isGlossaryManageAllowed(auth.membership.role),
+    }),
   ]);
   return {
     ...catQueue,
     teamGlossaries,
+    contributorTeams,
     canContributeTeamGlossary:
       catQueue.provider == null && isGlossaryContributorRole(auth.membership.role),
-    ...(teamName ? { teamName } : {}),
+    ...(projectTeam?.teamId ? { projectTeamId: projectTeam.teamId } : {}),
+    ...(projectTeam?.teamName ? { teamName: projectTeam.teamName } : {}),
   };
 }
 

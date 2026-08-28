@@ -10,7 +10,7 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { count, desc } from "drizzle-orm";
+import { count, desc, eq, and } from "drizzle-orm";
 import { Hono } from "hono";
 import { validator } from "hono/validator";
 
@@ -23,6 +23,7 @@ import { db, schema } from "@/lib/database";
 import { Glossary, type NativeGlossary } from "@/lib/glossary/glossary";
 import { getGlossaryProduct } from "@/lib/glossary/glossary-provider";
 import { toGlossaryRecord } from "@/lib/glossary/glossary-records";
+import { isUserMemberOfTeam } from "@/lib/glossary/attached-team-glossaries";
 import {
   queryNativeGlossaryTermCountForGlossary,
   queryNativeGlossaryTermCounts,
@@ -32,6 +33,10 @@ import {
   queryNativeGlossaryLanguages,
   queryNativeGlossaryLanguagesForGlossary,
 } from "@/lib/glossary/query-glossary-languages";
+import {
+  queryGlossaryTeamNamesById,
+  resolveGlossaryTeamName,
+} from "@/lib/glossary/query-glossary-team-names";
 import { mapWithConcurrency } from "@/lib/primitives/map-with-concurrency/map-with-concurrency";
 
 import {
@@ -50,14 +55,16 @@ import {
   updateGlossaryBodySchema,
   type AttachGlossaryProjectBody,
   type CreateGlossaryBody,
+  type GlossaryRecord,
   type ListGlossaryQuery,
 } from "./glossary.schema";
 import {
   externalGlossaryLocaleReadonlyResponse,
   externalTmsGlossaryImmutableResponse,
   forbiddenResponse,
-  glossaryTeamMustBeNativeResponse,
+  glossaryTeamMembershipRequiredResponse,
   glossaryTeamNativeProjectRequiredResponse,
+  glossaryTeamNotFoundResponse,
   glossaryTeamProjectRequiredResponse,
   glossarySourceLocaleAttachedProjectsResponse,
   glossarySourceLocaleExistingTermsResponse,
@@ -66,7 +73,24 @@ import {
   resolveCreateGlossaryControlLevel,
   getOwnedGlossary,
   glossaryNotFoundResponse,
+  canContributeToGlossary,
 } from "./glossary.shared";
+
+function toGlossaryRecordWithTeamName(
+  glossary: Parameters<typeof toGlossaryRecord>[0],
+  teamNamesById: ReadonlyMap<string, string>,
+  languages?: GlossaryRecord["languages"],
+  termCount?: number | null,
+  projectCount = 0,
+) {
+  return toGlossaryRecord(
+    glossary,
+    languages,
+    termCount,
+    projectCount,
+    resolveGlossaryTeamName(glossary, teamNamesById),
+  );
+}
 
 type GlossaryListResult = {
   glossaries: NativeGlossary[];
@@ -125,12 +149,16 @@ type CreateNativeGlossaryResult =
   | { status: "created"; glossary: NativeGlossary; projectCount: number }
   | { status: "project_not_found" }
   | { status: "team_native_project_required" }
-  | { status: "source_locale_mismatch" };
+  | { status: "source_locale_mismatch" }
+  | { status: "team_not_found" }
+  | { status: "team_membership_required" };
 
 type CreateNativeGlossaryTxResult =
   | { error: "project_not_found" }
   | { error: "team_native_project_required" }
   | { error: "source_locale_mismatch" }
+  | { error: "team_not_found" }
+  | { error: "team_membership_required" }
   | { glossary: NativeGlossary; projectCount: number };
 
 async function createNativeGlossary(
@@ -142,7 +170,12 @@ async function createNativeGlossary(
   const uniqueProjectIds = [...new Set(projectIds)];
 
   const result = await db.transaction(async (tx): Promise<CreateNativeGlossaryTxResult> => {
-    const lockedProjects: Array<{ id: string; source: string; sourceLocale: string | null }> = [];
+    const lockedProjects: Array<{
+      id: string;
+      source: string;
+      sourceLocale: string | null;
+      teamId: string | null;
+    }> = [];
 
     for (const projectId of uniqueProjectIds.toSorted()) {
       const [project] = await tx
@@ -150,6 +183,7 @@ async function createNativeGlossary(
           id: schema.projects.id,
           source: schema.projects.source,
           sourceLocale: schema.projects.sourceLocale,
+          teamId: schema.projects.teamId,
         })
         .from(schema.projects)
         .where(await ownedProjectWhere(auth, projectId))
@@ -178,6 +212,38 @@ async function createNativeGlossary(
       return { error: "source_locale_mismatch" as const };
     }
 
+    let resolvedTeamId: string | null = null;
+    if (payload.controlLevel === "team") {
+      resolvedTeamId = payload.teamId ?? lockedProjects[0]?.teamId ?? null;
+      if (!resolvedTeamId) {
+        return { error: "team_not_found" as const };
+      }
+
+      const [team] = await tx
+        .select({ id: schema.teams.id })
+        .from(schema.teams)
+        .where(
+          and(eq(schema.teams.id, resolvedTeamId), eq(schema.teams.organizationId, organizationId)),
+        )
+        .limit(1);
+
+      if (!team) {
+        return { error: "team_not_found" as const };
+      }
+
+      if (!isGlossaryManageAllowed(auth.membership.role)) {
+        const isMember = await isUserMemberOfTeam(
+          auth.user.localUserId,
+          resolvedTeamId,
+          organizationId,
+          tx,
+        );
+        if (!isMember) {
+          return { error: "team_membership_required" as const };
+        }
+      }
+    }
+
     const [created] = await tx
       .insert(schema.glossaries)
       .values({
@@ -188,6 +254,7 @@ async function createNativeGlossary(
         sourceLocale: payload.sourceLocale,
         targetLocale: null,
         controlLevel: payload.controlLevel,
+        teamId: resolvedTeamId,
       })
       .returning();
 
@@ -261,6 +328,10 @@ const validateAttachGlossaryProjectBody = validator("json", (value, c) => {
 });
 
 const validateUpdateGlossaryBody = validator("json", (value, c) => {
+  if (value && typeof value === "object" && "controlLevel" in value) {
+    return invalidGlossaryPayloadResponse(c);
+  }
+
   const parsed = updateGlossaryBodySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -294,6 +365,7 @@ export function createGlossaryRoutes() {
         projectCountsByGlossaryId,
         productsByGlossaryId,
       } = await listGlossaries(c.var.auth, query);
+      const teamNamesById = await queryGlossaryTeamNamesById(glossaries);
       const records = await mapWithConcurrency(glossaries, 5, async (glossary) => {
         const product = productsByGlossaryId.get(glossary.id);
         const termCount =
@@ -303,11 +375,24 @@ export function createGlossaryRoutes() {
           const remote = await product.get();
           const languages = languagesByGlossaryId.get(glossary.id);
           return languages
-            ? toGlossaryRecord(remote ?? glossary, languages, termCount, projectCount)
-            : toGlossaryRecord(remote ?? glossary, undefined, termCount, projectCount);
+            ? toGlossaryRecordWithTeamName(
+                remote ?? glossary,
+                teamNamesById,
+                languages,
+                termCount,
+                projectCount,
+              )
+            : toGlossaryRecordWithTeamName(
+                remote ?? glossary,
+                teamNamesById,
+                undefined,
+                termCount,
+                projectCount,
+              );
         }
-        return toGlossaryRecord(
+        return toGlossaryRecordWithTeamName(
           glossary,
+          teamNamesById,
           languagesByGlossaryId.get(glossary.id),
           termCount,
           projectCount,
@@ -353,11 +438,17 @@ export function createGlossaryRoutes() {
             "glossary_source_locale_mismatch",
             "The selected project uses a different source locale",
           );
-        case "created":
+        case "team_not_found":
+          return glossaryTeamNotFoundResponse(c);
+        case "team_membership_required":
+          return glossaryTeamMembershipRequiredResponse(c);
+        case "created": {
+          const teamNamesById = await queryGlossaryTeamNamesById([createResult.glossary]);
           return c.json(
             {
-              glossary: toGlossaryRecord(
+              glossary: toGlossaryRecordWithTeamName(
                 createResult.glossary,
+                teamNamesById,
                 undefined,
                 0,
                 createResult.projectCount,
@@ -365,6 +456,7 @@ export function createGlossaryRoutes() {
             },
             201,
           );
+        }
       }
     })
     .get("/:glossaryId", validateGlossaryParams, async (c) => {
@@ -381,8 +473,11 @@ export function createGlossaryRoutes() {
           ? await queryNativeGlossaryTermCountForGlossary(glossary)
           : undefined;
       const projectCount = product ? await product.queryProjectCount() : 0;
+      const teamNamesById = await queryGlossaryTeamNamesById([glossary]);
+      const canContribute = await canContributeToGlossary(c.var.auth, glossary);
       if (product) {
         const remote = await product.get();
+        const resolvedGlossary = remote ?? glossary;
         const languages =
           glossary.source === "native"
             ? await queryNativeGlossaryLanguagesForGlossary(glossary)
@@ -390,15 +485,37 @@ export function createGlossaryRoutes() {
         return c.json(
           {
             glossary: languages
-              ? toGlossaryRecord(remote ?? glossary, languages, termCount, projectCount)
-              : toGlossaryRecord(remote ?? glossary, undefined, termCount, projectCount),
+              ? toGlossaryRecordWithTeamName(
+                  resolvedGlossary,
+                  teamNamesById,
+                  languages,
+                  termCount,
+                  projectCount,
+                )
+              : toGlossaryRecordWithTeamName(
+                  resolvedGlossary,
+                  teamNamesById,
+                  undefined,
+                  termCount,
+                  projectCount,
+                ),
+            canContribute,
           },
           200,
         );
       }
 
       return c.json(
-        { glossary: toGlossaryRecord(glossary, undefined, termCount, projectCount) },
+        {
+          glossary: toGlossaryRecordWithTeamName(
+            glossary,
+            teamNamesById,
+            undefined,
+            termCount,
+            projectCount,
+          ),
+          canContribute,
+        },
         200,
       );
     })
@@ -527,9 +644,6 @@ export function createGlossaryRoutes() {
       if (!glossary) {
         return glossaryNotFoundResponse(c);
       }
-      if (payload.controlLevel === "team" && glossary.source !== "native") {
-        return glossaryTeamMustBeNativeResponse(c);
-      }
       if (glossary.source !== "native" && payload.sourceLocale !== undefined) {
         return externalGlossaryLocaleReadonlyResponse(c);
       }
@@ -539,16 +653,12 @@ export function createGlossaryRoutes() {
 
       const needsAttachmentGuard =
         product instanceof NativeGlossaryProduct &&
-        (payload.controlLevel === "team" ||
-          (payload.sourceLocale !== undefined && payload.sourceLocale !== glossary.sourceLocale));
+        payload.sourceLocale !== undefined &&
+        payload.sourceLocale !== glossary.sourceLocale;
 
       if (needsAttachmentGuard) {
         const result = await product.updateWithAttachmentGuard(payload);
         switch (result.status) {
-          case "team_project_required":
-            return glossaryTeamProjectRequiredResponse(c);
-          case "team_native_project_required":
-            return glossaryTeamNativeProjectRequiredResponse(c);
           case "source_locale_attached_projects":
             return glossarySourceLocaleAttachedProjectsResponse(c);
           case "source_locale_existing_terms":
@@ -558,8 +668,17 @@ export function createGlossaryRoutes() {
           case "updated": {
             const termCount = await queryNativeGlossaryTermCountForGlossary(result.glossary);
             const projectCount = await product.queryProjectCount();
+            const teamNamesById = await queryGlossaryTeamNamesById([result.glossary]);
             return c.json(
-              { glossary: toGlossaryRecord(result.glossary, undefined, termCount, projectCount) },
+              {
+                glossary: toGlossaryRecordWithTeamName(
+                  result.glossary,
+                  teamNamesById,
+                  undefined,
+                  termCount,
+                  projectCount,
+                ),
+              },
               200,
             );
           }
@@ -577,8 +696,17 @@ export function createGlossaryRoutes() {
           ? await queryNativeGlossaryTermCountForGlossary(updated)
           : undefined;
       const projectCount = await product.queryProjectCount();
+      const teamNamesById = await queryGlossaryTeamNamesById([updated]);
       return c.json(
-        { glossary: toGlossaryRecord(updated, undefined, termCount, projectCount) },
+        {
+          glossary: toGlossaryRecordWithTeamName(
+            updated,
+            teamNamesById,
+            undefined,
+            termCount,
+            projectCount,
+          ),
+        },
         200,
       );
     })

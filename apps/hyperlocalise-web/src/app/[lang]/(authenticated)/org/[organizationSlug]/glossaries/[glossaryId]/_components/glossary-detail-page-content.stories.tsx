@@ -33,6 +33,7 @@ const glossaryFixture: GlossaryRecord = {
   status: "active",
   source: "native",
   controlLevel: "org",
+  teamId: null,
   externalProviderKind: null,
   externalProjectId: null,
   externalResourceType: null,
@@ -124,7 +125,6 @@ const meta = {
     organizationSlug: "acme",
     glossaryId,
     canManageGlossaries: true,
-    canContributeTeamGlossaries: false,
   },
 } satisfies Meta<typeof GlossaryDetailPageContent>;
 
@@ -152,7 +152,8 @@ export const ConceptList: Story = {
     await expect(
       await canvas.findByRole("heading", { name: "Product terminology" }),
     ).toBeInTheDocument();
-    await expect(canvas.getByRole("combobox", { name: "Control" })).toHaveTextContent("Org");
+    await expect(canvas.getByText("Org")).toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Delete glossary" })).toBeInTheDocument();
     const nameInput = canvas.getByRole("textbox", { name: "Edit glossary name" });
     await userEvent.clear(nameInput);
     await userEvent.type(nameInput, "Canceled terminology");
@@ -173,6 +174,8 @@ const teamGlossaryFixture: GlossaryRecord = {
   ...glossaryFixture,
   name: "Product team terms",
   controlLevel: "team",
+  teamId: "team-product-1",
+  teamName: "Product",
 };
 
 const providerGlossaryFixture: GlossaryRecord = {
@@ -186,12 +189,16 @@ const providerGlossaryFixture: GlossaryRecord = {
   externalGlossaryId: "tb-42",
 };
 
-function createListStoryParameters(glossary: GlossaryRecord) {
+function createListStoryParameters(
+  glossary: GlossaryRecord,
+  { canContribute = true }: { canContribute?: boolean } = {},
+) {
   return {
     msw: {
       handlers: createGlossaryDetailMswHandlers({
         glossary,
         concepts: conceptsFixture,
+        canContribute,
       }),
     },
     nextjs: {
@@ -205,32 +212,27 @@ function createListStoryParameters(glossary: GlossaryRecord) {
 
 export const TeamManagerConceptList: Story = {
   parameters: createListStoryParameters(teamGlossaryFixture),
-  play: async ({ canvas, canvasElement }) => {
+  play: async ({ canvas }) => {
     await expect(
       await canvas.findByRole("heading", { name: "Product team terms" }),
     ).toBeInTheDocument();
-    await expect(canvas.getByRole("combobox", { name: "Control" })).toHaveTextContent("Team");
+    await expect(canvas.getByText("Product")).toBeInTheDocument();
+    await expect(canvas.queryByRole("combobox", { name: "Control" })).not.toBeInTheDocument();
+    await expect(canvas.getByRole("button", { name: "Delete glossary" })).toBeInTheDocument();
     await expect(canvas.getByRole("button", { name: "Add concept" })).toBeInTheDocument();
-    const body = within(canvasElement.ownerDocument.body);
-    await userEvent.click(canvas.getByRole("combobox", { name: "Control" }));
-    await userEvent.click(await body.findByRole("option", { name: "Org" }));
-    await waitFor(() =>
-      expect(canvas.getByRole("combobox", { name: "Control" })).toHaveTextContent("Org"),
-    );
   },
 };
 
 export const TeamTranslatorConceptList: Story = {
   args: {
     canManageGlossaries: false,
-    canContributeTeamGlossaries: true,
   },
-  parameters: createListStoryParameters(teamGlossaryFixture),
+  parameters: createListStoryParameters(teamGlossaryFixture, { canContribute: true }),
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByRole("heading", { name: "Product team terms" }),
     ).toBeInTheDocument();
-    await expect(canvas.getByText("Team")).toBeInTheDocument();
+    await expect(canvas.getByText("Product")).toBeInTheDocument();
     await expect(canvas.queryByRole("combobox", { name: "Control" })).not.toBeInTheDocument();
     await expect(
       canvas.queryByRole("textbox", { name: "Edit glossary name" }),
@@ -242,9 +244,8 @@ export const TeamTranslatorConceptList: Story = {
 export const OrgTranslatorReadOnly: Story = {
   args: {
     canManageGlossaries: false,
-    canContributeTeamGlossaries: true,
   },
-  parameters: createListStoryParameters(glossaryFixture),
+  parameters: createListStoryParameters(glossaryFixture, { canContribute: false }),
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByRole("heading", { name: "Product terminology" }),
@@ -261,9 +262,8 @@ export const OrgTranslatorReadOnly: Story = {
 export const ProviderReadOnly: Story = {
   args: {
     canManageGlossaries: false,
-    canContributeTeamGlossaries: true,
   },
-  parameters: createListStoryParameters(providerGlossaryFixture),
+  parameters: createListStoryParameters(providerGlossaryFixture, { canContribute: false }),
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByRole("heading", { name: "Phrase Term Base" }),

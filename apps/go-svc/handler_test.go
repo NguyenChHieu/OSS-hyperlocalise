@@ -55,6 +55,26 @@ func TestValidateSegmentUnauthorized(t *testing.T) {
 	require.Equal(t, "unauthorized", body["error"])
 }
 
+func TestRegisterRoutesServesStrippedPaths(t *testing.T) {
+	h := newHandler()
+	mux := http.NewServeMux()
+	registerRoutes(mux, h, mockSessionVerifier{claims: AuthClaims{UserID: "user_123"}})
+
+	healthRec := httptest.NewRecorder()
+	healthReq := httptest.NewRequest(http.MethodGet, "/health", nil)
+	mux.ServeHTTP(healthRec, healthReq)
+	require.Equal(t, http.StatusOK, healthRec.Code)
+	require.JSONEq(t, `{"status":"ok"}`, healthRec.Body.String())
+
+	payload := `{"sourceText":"Hello","targetText":"Bonjour","sourcePath":"/messages/en.json"}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/validate/segment", bytes.NewBufferString(payload))
+	req.AddCookie(&http.Cookie{Name: workOSSessionCookieName, Value: "test-session"})
+	mux.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
 func TestValidateSegmentSuccess(t *testing.T) {
 	h := &handler{
 		validate: func(req segmentvalidate.Request) []segmentvalidate.Check {

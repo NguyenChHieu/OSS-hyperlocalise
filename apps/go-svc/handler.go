@@ -40,6 +40,12 @@ func newHandler() *handler {
 	}
 }
 
+func registerRoutes(mux *http.ServeMux, h *handler, verifier SessionVerifier) {
+	validate := authMiddleware(verifier)(http.HandlerFunc(h.validateSegment))
+	mux.HandleFunc("GET /health", h.health)
+	mux.Handle("POST /v1/validate/segment", validate)
+}
+
 func (h *handler) checkSpelling(ctx context.Context, locale, text string) ([]SpellingIssue, error) {
 	return h.spellChecker.Check(ctx, locale, uniqueWords(spellcheck.Tokenize(text)))
 }

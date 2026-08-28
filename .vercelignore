@@ -1,19 +1,19 @@
-# Fallback ignore when the dashboard Root Directory is this app.
-# Keep the repo-root .vercelignore in sync for Vercel Services.
+# Project-root ignore for Vercel Services (Root Directory = repo root).
 # See https://vercel.com/docs/deployments/vercel-ignore
 # Vercel already ignores node_modules, .next, .git, and .env* by default.
+#
+# Keep apps/hyperlocalise-web/.vercelignore in sync as a fallback when the
+# dashboard Root Directory is the web app.
 
 # Storybook
 .storybook
 storybook-static
 
-# Tests, fixtures, MSW handlers, and stories (not imported by production code)
+# Tests, MSW handlers, and stories (not imported by production code)
 **/*.test.ts
 **/*.test.tsx
 **/*.test.js
 **/*.test.jsx
-**/*.fixture.ts
-**/*.fixture.js
 **/*-msw-handlers.ts
 **/*.stories.ts
 **/*.stories.tsx
@@ -24,7 +24,7 @@ storybook-static
 coverage
 
 # MSW worker used by Storybook/local dev only
-public/mockServiceWorker.js
+**/public/mockServiceWorker.js
 
 # Agent/editor docs
 AGENTS.md

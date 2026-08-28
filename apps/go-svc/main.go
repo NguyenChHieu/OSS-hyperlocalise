@@ -63,8 +63,7 @@ func main() {
 	h.spellChecker = spellChecker
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", h.health)
-	mux.Handle("POST /v1/validate/segment", authMiddleware(verifier)(http.HandlerFunc(h.validateSegment)))
+	registerRoutes(mux, h, verifier)
 
 	addr := ":" + port
 	server := newHTTPServer(addr, mux)

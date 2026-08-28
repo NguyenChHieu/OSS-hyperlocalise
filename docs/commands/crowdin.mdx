@@ -8,6 +8,7 @@ description: "Crowdin-compatible file workflow commands powered by crowdin.yml."
 ```bash
 hyperlocalise crowdin init
 hyperlocalise crowdin config validate [--config <path>] [--identity <path>]
+hyperlocalise crowdin status [--config <path>] [--identity <path>] [--branch <name>] [--language <id>] [--output text|json] [--fail-if-incomplete]
 hyperlocalise crowdin upload sources [--config <path>] [--identity <path>] [--branch <name>]
 hyperlocalise crowdin upload translations [--config <path>] [--identity <path>] [--branch <name>] [--language <locale>]
 hyperlocalise crowdin download sources [--config <path>] [--identity <path>] [--branch <name>] [--file-id <id>] [--source <path>] [--output <path>] [--force]
@@ -28,6 +29,8 @@ Use them when you want Crowdin-compatible file mode:
 - translation download/export back into your repo
 - optional source download alongside translations with `download translations --include-sources`
 - branch-scoped upload and download with root `branch:` or `--branch`
+- translation and approval progress with `status`
+- glossary and translation-memory download
 - strict YAML decoding: only keys Crowdin documents and `hl` recognizes may appear in `crowdin.yml` (unknown keys still error)
 
 ## Supported config fields
@@ -65,7 +68,8 @@ YAML keys not listed above still cause a decode error (`KnownFields`).
 
 This v1 file-mode implementation does not support:
 
-- TM, glossary, task, screenshot, comment, distribution, or app commands
+- screenshot, comment, task, distribution, or app commands
+- glossary or TM upload (download exists)
 - permissive "warn and ignore" compatibility mode
 - interactive Crowdin project bootstrap
 
@@ -75,6 +79,12 @@ Validate config:
 
 ```bash
 hyperlocalise crowdin config validate
+```
+
+Show translation and approval progress:
+
+```bash
+hyperlocalise crowdin status --language es --output json
 ```
 
 Upload source files:

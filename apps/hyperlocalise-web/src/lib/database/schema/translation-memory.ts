@@ -30,6 +30,7 @@ import {
   externalTmsMemoryCapabilityModeEnum,
   externalTmsProviderKindEnum,
   externalTmsTerminologyResourceTypeEnum,
+  glossaryControlLevelEnum,
   glossarySyncStateEnum,
   glossaryTermProvenanceEnum,
   projectSourceEnum,
@@ -75,6 +76,8 @@ export const glossaries = pgTable(
     status: assetStatusEnum("status").notNull().default("active"),
     // Where this glossary originated from.
     source: projectSourceEnum("source").notNull().default("native"),
+    // Org-wide vs team control. Team is Hyperlocalise-owned only.
+    controlLevel: glossaryControlLevelEnum("control_level").notNull().default("org"),
     // Provider kind when sourced from external TMS.
     externalProviderKind: externalTmsProviderKindEnum("external_provider_kind"),
     // External provider credential backing this glossary.
@@ -145,6 +148,10 @@ export const glossaries = pgTable(
       table.organizationId,
       table.externalProviderKind,
       table.externalProjectId,
+    ),
+    check(
+      "glossaries_team_control_is_native",
+      sql`${table.controlLevel} <> 'team' OR ${table.source} = 'native'`,
     ),
   ],
 );

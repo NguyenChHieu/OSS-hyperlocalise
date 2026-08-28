@@ -54,26 +54,42 @@ export const listGlossaryQuerySchema = z
   })
   .optional();
 
-export const createGlossaryBodySchema = z.object({
-  name: z.string().trim().min(1).max(200),
-  description: z.string().max(10_000).optional(),
-  sourceLocale: localeInputSchema,
-  projectIds: z.array(projectIdSchema).max(100).optional(),
-  // Keep accepting the original single-project payload for API compatibility.
-  projectId: projectIdSchema.optional(),
-});
+export const glossaryControlLevelSchema = z.enum(["org", "team"]);
+
+export const createGlossaryBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    description: z.string().max(10_000).optional(),
+    sourceLocale: localeInputSchema,
+    controlLevel: glossaryControlLevelSchema.optional(),
+    projectIds: z.array(projectIdSchema).max(100).optional(),
+    // Keep accepting the original single-project payload for API compatibility.
+    projectId: projectIdSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    const projectIds = value.projectIds ?? (value.projectId ? [value.projectId] : []);
+    if (new Set(projectIds).size !== projectIds.length) {
+      ctx.addIssue({
+        code: "custom",
+        message: "projectIds must be unique",
+        path: ["projectIds"],
+      });
+    }
+  });
 
 export const updateGlossaryBodySchema = z
   .object({
     name: z.string().trim().min(1).max(200).optional(),
     description: z.string().max(10_000).optional(),
     sourceLocale: localeInputSchema.optional(),
+    controlLevel: glossaryControlLevelSchema.optional(),
   })
   .refine(
     (value) =>
       value.name !== undefined ||
       value.description !== undefined ||
-      value.sourceLocale !== undefined,
+      value.sourceLocale !== undefined ||
+      value.controlLevel !== undefined,
     {
       message: "at least one field must be provided",
     },
@@ -175,6 +191,7 @@ export const glossaryRecordSchema = z.object({
   targetLocale: z.string().nullable(),
   status: z.string(),
   source: z.enum(["native", "external_tms"]),
+  controlLevel: glossaryControlLevelSchema,
   externalProviderKind: z.enum(["crowdin", "smartling", "phrase", "lokalise"]).nullable(),
   externalProjectId: z.string().nullable(),
   externalResourceType: z.enum(["glossary", "term_base"]).nullable(),

@@ -12,7 +12,9 @@
  */
 import { describe, expect, it } from "vite-plus/test";
 
-import { listMemoryEntriesQuerySchema } from "./memory.schema";
+import { TMX_DEFAULT_MAX_UNITS } from "@/lib/memory/tmx/tmx-constants";
+
+import { importMemoryEntriesBodySchema, listMemoryEntriesQuerySchema } from "./memory.schema";
 
 describe("listMemoryEntriesQuerySchema", () => {
   it("defaults to a bounded created_at desc page", () => {
@@ -31,5 +33,30 @@ describe("listMemoryEntriesQuerySchema", () => {
 
   it("rejects an oversized page", () => {
     expect(listMemoryEntriesQuerySchema.safeParse({ limit: "101" }).success).toBe(false);
+  });
+});
+
+describe("importMemoryEntriesBodySchema", () => {
+  it("treats dryRun as optional and caps maxUnits at the documented limit", () => {
+    expect(
+      importMemoryEntriesBodySchema.parse({
+        format: "tmx",
+        content: "<tmx />",
+      }).dryRun,
+    ).toBeUndefined();
+    expect(
+      importMemoryEntriesBodySchema.safeParse({
+        format: "tmx",
+        content: "<tmx />",
+        maxUnits: TMX_DEFAULT_MAX_UNITS + 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      importMemoryEntriesBodySchema.safeParse({
+        format: "tmx",
+        content: "<tmx />",
+        maxUnits: TMX_DEFAULT_MAX_UNITS,
+      }).success,
+    ).toBe(true);
   });
 });

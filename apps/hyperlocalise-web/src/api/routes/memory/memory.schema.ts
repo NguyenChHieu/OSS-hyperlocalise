@@ -12,8 +12,12 @@
  */
 import { z } from "zod";
 
-import { projectIdSchema } from "@/lib/projects/identity/project-id";
 import { schema } from "@/lib/database";
+import {
+  TMX_DEFAULT_MAX_UNITS,
+  TMX_MAX_IMPORT_CONTENT_CHARS,
+} from "@/lib/memory/tmx/tmx-constants";
+import { projectIdSchema } from "@/lib/projects/identity/project-id";
 
 export const memoryIdParamsSchema = z.object({
   memoryId: z.string().trim().min(1).max(128),
@@ -134,7 +138,15 @@ export const promoteMemoryFromProjectBodySchema = z.object({
 
 export const importMemoryEntriesBodySchema = z.object({
   format: z.enum(["csv", "tmx"]),
-  content: z.string().min(1).max(10_000_000),
+  content: z.string().min(1).max(TMX_MAX_IMPORT_CONTENT_CHARS),
+  dryRun: z.boolean().optional(),
+  maxUnits: z.number().int().min(1).max(TMX_DEFAULT_MAX_UNITS).optional(),
+});
+
+export const exportMemoryEntriesQuerySchema = z.object({
+  format: z.enum(["tmx"]).optional().default("tmx"),
+  sourceLocale: z.string().trim().min(1).max(50).optional(),
+  targetLocale: z.string().trim().min(1).max(50).optional(),
 });
 
 export const attachMemoryProjectBodySchema = z.object({
@@ -280,6 +292,47 @@ export const memoryProjectsResponseSchema = z.object({
   projects: z.array(memoryProjectRecordSchema),
 });
 
+export const memoryImportIssueSchema = z.object({
+  severity: z.enum(["warning", "error"]),
+  code: z.string(),
+  message: z.string(),
+  unitIndex: z.number().int().optional(),
+  tuid: z.string().optional(),
+});
+
+export const memoryImportReportSchema = z.object({
+  totalRead: z.number().int().nonnegative(),
+  created: z.number().int().nonnegative(),
+  updated: z.number().int().nonnegative(),
+  variantCreated: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  warned: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative(),
+  issues: z.array(memoryImportIssueSchema),
+  headerSrclang: z.string().optional(),
+  truncatedIssues: z.boolean(),
+});
+
+export const memoryImportPreviewEntrySchema = z.object({
+  sourceLocale: z.string(),
+  targetLocale: z.string(),
+  sourceText: z.string(),
+  targetText: z.string(),
+  externalKey: z.string().nullable(),
+  tuid: z.string().optional(),
+  action: z.enum(["create", "update", "variant", "skip"]),
+});
+
+export const memoryImportResponseSchema = z.object({
+  memoryEntries: z.array(memoryEntryRecordSchema),
+  imported: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  importBatchId: z.string().uuid().nullable(),
+  dryRun: z.boolean(),
+  preview: z.array(memoryImportPreviewEntrySchema),
+  report: memoryImportReportSchema,
+});
+
 export type MemoryIdParams = z.infer<typeof memoryIdParamsSchema>;
 export type MemoryEntryIdParams = z.infer<typeof memoryEntryIdParamsSchema>;
 export type MemoryProjectParams = z.infer<typeof memoryProjectParamsSchema>;
@@ -291,6 +344,9 @@ export type CreateMemoryEntryBody = z.infer<typeof createMemoryEntryBodySchema>;
 export type UpdateMemoryEntryBody = z.infer<typeof updateMemoryEntryBodySchema>;
 export type PromoteMemoryFromProjectBody = z.infer<typeof promoteMemoryFromProjectBodySchema>;
 export type ImportMemoryEntriesBody = z.infer<typeof importMemoryEntriesBodySchema>;
+export type ExportMemoryEntriesQuery = z.infer<typeof exportMemoryEntriesQuerySchema>;
+export type MemoryImportReport = z.infer<typeof memoryImportReportSchema>;
+export type MemoryImportResponse = z.infer<typeof memoryImportResponseSchema>;
 export type AttachMemoryProjectBody = z.infer<typeof attachMemoryProjectBodySchema>;
 export type MemoryRecord = z.infer<typeof memoryRecordSchema>;
 export type MemoryResponse = z.infer<typeof memoryResponseSchema>;

@@ -21,6 +21,7 @@ import {
   finalizeImportReport,
   languagesMatch,
   normalizeTmxLanguage,
+  samePrimaryLanguage,
 } from "./tmx-import";
 
 function unitDocument(
@@ -57,6 +58,15 @@ describe("languagesMatch", () => {
     expect(languagesMatch("en-US", "en")).toBe(true);
     expect(languagesMatch("en-US", "fr-FR")).toBe(false);
     expect(languagesMatch("en-US", "en-GB")).toBe(false);
+  });
+});
+
+describe("samePrimaryLanguage", () => {
+  it("treats regional and script siblings as the same language", () => {
+    expect(samePrimaryLanguage("en-US", "en-GB")).toBe(true);
+    expect(samePrimaryLanguage("zh-Hans", "zh-Hant")).toBe(true);
+    expect(samePrimaryLanguage("en", "en-US")).toBe(true);
+    expect(samePrimaryLanguage("en-US", "fr-FR")).toBe(false);
   });
 });
 
@@ -134,6 +144,37 @@ describe("documentToImportCandidates", () => {
       "same_language_variant_skipped",
       "duplicate_target_variant",
     ]);
+  });
+
+  it("does not create en-US→en-GB translation pairs inside one unit", () => {
+    const mapped = documentToImportCandidates(
+      unitDocument({
+        srclang: "en",
+        units: [
+          {
+            unitIndex: 0,
+            tuid: "dialect-1",
+            variants: [
+              { language: "en-US", segment: "Color", notes: [], properties: [] },
+              { language: "en-GB", segment: "Colour", notes: [], properties: [] },
+              { language: "fr-FR", segment: "Couleur", notes: [], properties: [] },
+            ],
+            notes: [],
+            properties: [],
+          },
+        ],
+      }),
+    );
+
+    expect(mapped.candidates.map((candidate) => candidate.targetLocale)).toEqual(["fr-FR"]);
+    expect(mapped.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "same_language_variant_skipped",
+          message: expect.stringContaining("en-GB"),
+        }),
+      ]),
+    );
   });
 
   it("warns when header srclang is missing or *all*", () => {

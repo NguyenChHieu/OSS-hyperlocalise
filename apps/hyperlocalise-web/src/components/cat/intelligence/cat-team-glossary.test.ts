@@ -13,6 +13,11 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  DEFAULT_WORKSPACE_TEAM_NAME,
+  DEFAULT_WORKSPACE_TEAM_SLUG,
+} from "@/lib/teams/default-workspace-team-constants";
+
+import {
   collectVisibleCatGlossaryConcepts,
   filterCatTeamGlossariesForTeam,
   groupCatGlossaryConceptsByTeam,
@@ -23,11 +28,11 @@ describe("resolveCatContributorTeams", () => {
   it("returns membership teams when present", () => {
     expect(
       resolveCatContributorTeams({
-        contributorTeams: [{ id: "team-a", name: "Alpha" }],
+        contributorTeams: [{ id: "team-a", name: "Alpha", slug: "alpha" }],
         projectTeamId: "team-b",
         projectTeamName: "Beta",
       }),
-    ).toEqual([{ id: "team-a", name: "Alpha" }]);
+    ).toEqual([{ id: "team-a", name: "Alpha", slug: "alpha" }]);
   });
 
   it("falls back to the project team when memberships are empty", () => {
@@ -36,8 +41,68 @@ describe("resolveCatContributorTeams", () => {
         contributorTeams: [],
         projectTeamId: "team-b",
         projectTeamName: "Beta",
+        projectTeamSlug: "beta",
       }),
-    ).toEqual([{ id: "team-b", name: "Beta" }]);
+    ).toEqual([{ id: "team-b", name: "Beta", slug: "beta" }]);
+  });
+
+  it("omits the default workspace team from contributor sections", () => {
+    expect(
+      resolveCatContributorTeams({
+        contributorTeams: [
+          {
+            id: "team-default",
+            name: DEFAULT_WORKSPACE_TEAM_NAME,
+            slug: DEFAULT_WORKSPACE_TEAM_SLUG,
+          },
+          { id: "team-a", name: "Alpha", slug: "alpha" },
+        ],
+        projectTeamId: "team-default",
+        projectTeamName: DEFAULT_WORKSPACE_TEAM_NAME,
+        projectTeamSlug: DEFAULT_WORKSPACE_TEAM_SLUG,
+      }),
+    ).toEqual([
+      { id: "team-a", name: "Alpha", slug: "alpha" },
+      { id: "team-default", name: "", slug: DEFAULT_WORKSPACE_TEAM_SLUG },
+    ]);
+  });
+
+  it("appends an unlabeled default project team when the viewer belongs to other teams", () => {
+    expect(
+      resolveCatContributorTeams({
+        contributorTeams: [{ id: "team-a", name: "Alpha", slug: "alpha" }],
+        projectTeamId: "team-default",
+        projectTeamName: DEFAULT_WORKSPACE_TEAM_NAME,
+        projectTeamSlug: DEFAULT_WORKSPACE_TEAM_SLUG,
+      }),
+    ).toEqual([
+      { id: "team-a", name: "Alpha", slug: "alpha" },
+      { id: "team-default", name: "", slug: DEFAULT_WORKSPACE_TEAM_SLUG },
+    ]);
+  });
+
+  it("does not hide a team that only shares the default team name", () => {
+    expect(
+      resolveCatContributorTeams({
+        contributorTeams: [
+          { id: "team-marketing", name: DEFAULT_WORKSPACE_TEAM_NAME, slug: "marketing" },
+        ],
+        projectTeamId: "team-product",
+        projectTeamName: "Product",
+        projectTeamSlug: "product",
+      }),
+    ).toEqual([{ id: "team-marketing", name: DEFAULT_WORKSPACE_TEAM_NAME, slug: "marketing" }]);
+  });
+
+  it("keeps an unlabeled write target when only the default team remains", () => {
+    expect(
+      resolveCatContributorTeams({
+        contributorTeams: [],
+        projectTeamId: "team-default",
+        projectTeamName: DEFAULT_WORKSPACE_TEAM_NAME,
+        projectTeamSlug: DEFAULT_WORKSPACE_TEAM_SLUG,
+      }),
+    ).toEqual([{ id: "team-default", name: "", slug: DEFAULT_WORKSPACE_TEAM_SLUG }]);
   });
 });
 
@@ -78,6 +143,29 @@ describe("groupCatGlossaryConceptsByTeam", () => {
     expect(orgConceptIds).toEqual(new Set(["org-concept"]));
     expect(conceptsByTeamId.get("team-a")).toEqual([concepts[1]]);
     expect(conceptsByTeamId.has("team-b")).toBe(false);
+  });
+
+  it("retains default-project glossary concepts when the unlabeled target is included", () => {
+    const { orgConceptIds, conceptsByTeamId } = groupCatGlossaryConceptsByTeam({
+      concepts: [
+        { id: "default-team-concept", glossaryId: "glossary-default" },
+        { id: "alpha-team-concept", glossaryId: "glossary-alpha" },
+      ],
+      teamGlossaryIds: new Set(["glossary-default", "glossary-alpha"]),
+      glossaryTeamById: new Map([
+        ["glossary-default", "team-default"],
+        ["glossary-alpha", "team-a"],
+      ]),
+      contributorTeamIds: new Set(["team-a", "team-default"]),
+    });
+
+    expect(orgConceptIds).toEqual(new Set());
+    expect(conceptsByTeamId.get("team-default")).toEqual([
+      { id: "default-team-concept", glossaryId: "glossary-default" },
+    ]);
+    expect(conceptsByTeamId.get("team-a")).toEqual([
+      { id: "alpha-team-concept", glossaryId: "glossary-alpha" },
+    ]);
   });
 });
 

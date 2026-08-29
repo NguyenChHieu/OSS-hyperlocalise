@@ -10,9 +10,9 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { count, inArray } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull } from "drizzle-orm";
 
-import { db, schema } from "@/lib/database";
+import { db, schema, type DatabaseClient } from "@/lib/database/client";
 import type { Glossary } from "@/lib/database/types";
 
 export async function queryNativeGlossaryTermCounts(glossaries: Glossary[]) {
@@ -34,9 +34,12 @@ export async function queryNativeGlossaryTermCounts(glossaries: Glossary[]) {
     })
     .from(schema.glossaryTerms)
     .where(
-      inArray(
-        schema.glossaryTerms.glossaryId,
-        nativeGlossaries.map((glossary) => glossary.id),
+      and(
+        inArray(
+          schema.glossaryTerms.glossaryId,
+          nativeGlossaries.map((glossary) => glossary.id),
+        ),
+        isNotNull(schema.glossaryTerms.conceptId),
       ),
     )
     .groupBy(schema.glossaryTerms.glossaryId);
@@ -51,4 +54,23 @@ export async function queryNativeGlossaryTermCounts(glossaries: Glossary[]) {
 export async function queryNativeGlossaryTermCountForGlossary(glossary: Glossary) {
   const counts = await queryNativeGlossaryTermCounts([glossary]);
   return counts.get(glossary.id) ?? 0;
+}
+
+export async function queryNativeGlossaryHasTermsAtLocale(
+  glossaryId: string,
+  locale: string,
+  database: DatabaseClient = db,
+): Promise<boolean> {
+  const [row] = await database
+    .select({ termCount: count() })
+    .from(schema.glossaryTerms)
+    .where(
+      and(
+        eq(schema.glossaryTerms.glossaryId, glossaryId),
+        eq(schema.glossaryTerms.locale, locale),
+        isNotNull(schema.glossaryTerms.conceptId),
+      ),
+    );
+
+  return Number(row?.termCount ?? 0) > 0;
 }

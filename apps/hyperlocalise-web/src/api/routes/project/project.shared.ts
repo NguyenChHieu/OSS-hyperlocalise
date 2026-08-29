@@ -18,15 +18,15 @@ import {
   ownedProjectWhere as teamOwnedProjectWhere,
 } from "@/api/auth/team-access";
 import { and, eq } from "drizzle-orm";
+import { validationErrorResponse } from "@/api/errors";
 import {
   badRequestResponse,
   forbiddenResponse as sharedForbiddenResponse,
   notFoundResponse,
-  validationErrorResponse,
   type JsonContext,
-} from "@/api/errors";
+} from "@/api/response.schema";
 import type { ApiAuthContext } from "@/api/auth/workos";
-import { db, schema } from "@/lib/database";
+import { db, schema } from "@/lib/database/client";
 import { createLogger, serializeErrorForLog } from "@/lib/log";
 import { getTmsProviderConnection } from "@/lib/providers/jobs/tms-provider-live";
 import { tmsProviderLiveErrorResponse } from "@/lib/providers/jobs/tms-provider-live-error-response";
@@ -85,7 +85,7 @@ export type ProjectResourceTarget =
     };
 
 /** Provider kind for the All Files release flag — matches the API CAT queue gate. */
-export function catAllFilesProviderKindFromTarget(target: ProjectResourceTarget) {
+export function contentEditorAllFilesProviderKindFromTarget(target: ProjectResourceTarget) {
   return target.kind === "provider" ? target.providerKind : null;
 }
 

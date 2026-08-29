@@ -14,8 +14,8 @@ import { and, eq } from "drizzle-orm";
 
 import type { ApiAuthContext } from "@/api/auth/workos";
 import { hasCapability } from "@/api/auth/policy";
-import type { JsonContext } from "@/api/errors";
-import { db, schema } from "@/lib/database";
+import type { JsonContext } from "@/api/response.schema";
+import { db, schema } from "@/lib/database/client";
 import type { TeamMembershipRole } from "@/lib/database/types";
 
 export { slugifyTeamName } from "./team-slug";
@@ -91,4 +91,10 @@ export function teamHasProjectsResponse(c: {
   json(body: { error: string }, status: 409): Response;
 }) {
   return c.json({ error: "team_has_projects" }, 409);
+}
+
+export function teamHasGlossariesResponse(c: {
+  json(body: { error: string }, status: 409): Response;
+}) {
+  return c.json({ error: "team_has_glossaries" }, 409);
 }

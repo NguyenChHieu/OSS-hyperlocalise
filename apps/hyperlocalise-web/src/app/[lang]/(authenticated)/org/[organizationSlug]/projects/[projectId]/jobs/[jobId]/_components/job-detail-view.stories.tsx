@@ -25,7 +25,7 @@ import { Button } from "@/components/ui/button";
 import type { IntlShape } from "react-intl";
 
 import { getIntlShape } from "@/lib/app-i18n/intl";
-import { buildJobCatHref } from "@/lib/projects/job-cat-routing";
+import { buildJobContentEditorHref } from "@/lib/projects/job-content-editor-routing";
 
 import { ProviderJobDescriptionFieldView } from "../../../../../jobs/_components/provider-job-description-field";
 import {
@@ -69,7 +69,7 @@ const failedJob = createNativeJobDetail({
 const syncedJob = createProviderBackedJobDetail();
 const syncedJobFields = toProviderBackedJobFields(syncedJob);
 const liveJob = createLiveCrowdinJobDetail();
-const liveJobCatHref = buildJobCatHref(organizationSlug, projectId, liveJob);
+const liveJobContentEditorHref = buildJobContentEditorHref(organizationSlug, projectId, liveJob);
 
 const liveSourceFiles: ProjectFileRecord[] = [
   {
@@ -172,10 +172,10 @@ function liveCrowdinHeaderActions() {
         <HugeiconsIcon icon={RefreshIcon} strokeWidth={1.8} />
         Refresh
       </Button>
-      {liveJobCatHref ? (
-        <Button size="sm" render={<Link href={liveJobCatHref} />}>
+      {liveJobContentEditorHref ? (
+        <Button size="sm" render={<Link href={liveJobContentEditorHref} />}>
           <HugeiconsIcon icon={LeftToRightListBulletIcon} />
-          View strings
+          Open Editor
         </Button>
       ) : null}
     </>
@@ -337,7 +337,7 @@ export const LiveCrowdinTask: Story = {
   },
   play: async ({ canvas }) => {
     await expect(canvas.getByText("Translate marketing homepage")).toBeInTheDocument();
-    await expect(canvas.getByRole("link", { name: "View strings" })).toBeInTheDocument();
+    await expect(canvas.getByRole("link", { name: "Open Editor" })).toBeInTheDocument();
     await expect(canvas.getByText("68%")).toBeInTheDocument();
     await userEvent.click(canvas.getByRole("tab", { name: "Files" }));
     await expect(canvas.getByText("home.json")).toBeInTheDocument();

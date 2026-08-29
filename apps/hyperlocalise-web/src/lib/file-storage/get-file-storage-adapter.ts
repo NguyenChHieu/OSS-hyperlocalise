@@ -1,0 +1,34 @@
+/*
+ * Copyright (c) 2026 Hyperlocalise Pty Ltd
+ *
+ * Use of this software is governed by the Business Source License 1.1
+ * included in this application's LICENSE file.
+ *
+ * Change Date: Four years after publication of the applicable version.
+ *
+ * On the Change Date, in accordance with the Business Source License, use
+ * of this software will be governed by the GNU General Public License
+ * Version 2.0 or later.
+ */
+import { env } from "@/lib/env";
+
+import { createVercelBlobFileStorage } from "./vercel-blob";
+
+import type { FileStorageAdapter } from "./types";
+
+let adapter: FileStorageAdapter | null = null;
+
+export function getFileStorageAdapter(): FileStorageAdapter {
+  if (adapter) {
+    return adapter;
+  }
+
+  switch (env.FILE_STORAGE_PROVIDER) {
+    case "vercel_blob":
+      adapter = createVercelBlobFileStorage({
+        token: env.BLOB_READ_WRITE_TOKEN,
+        defaultAccess: env.FILE_STORAGE_ACCESS,
+      });
+      return adapter;
+  }
+}

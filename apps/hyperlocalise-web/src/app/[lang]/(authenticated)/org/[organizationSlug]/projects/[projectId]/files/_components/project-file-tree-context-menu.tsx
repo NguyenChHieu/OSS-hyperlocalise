@@ -140,7 +140,7 @@ export function ProjectFileTreeContextMenu({
         type="button"
         size="sm"
         className="w-full justify-start"
-        disabled={!capabilities.canOpenCat || !capabilities.catHref}
+        disabled={!capabilities.canOpenCat || !capabilities.contentEditorHref}
         onClick={() => {
           closeMenu();
           if (capabilities.canOpenCat) {
@@ -149,7 +149,7 @@ export function ProjectFileTreeContextMenu({
         }}
       >
         <HugeiconsIcon icon={LeftToRightListBulletIcon} />
-        <FormattedMessage {...messages.viewStrings} />
+        <FormattedMessage {...messages.openEditor} />
       </Button>
       {capabilities.isNativeFile ? (
         <>

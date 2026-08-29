@@ -162,6 +162,7 @@ async function translateProviderUnits(input: {
   translateStringJob: StringTranslationGenerator;
   projectName: string;
   projectTranslationContext: string;
+  actorUserId?: string | null;
 }) {
   const sourceLocale = input.content.sourceLocale ?? defaultSourceLocale;
   const changedItems: ProviderAgentTranslationChangedItem[] = [];
@@ -231,6 +232,7 @@ async function translateProviderUnits(input: {
       {
         organizationId: input.organizationId,
         providerKind: input.providerKind as ExternalTmsProviderKind,
+        actorUserId: input.actorUserId,
         externalJobUid: input.content.externalTaskId,
         translationMemoryMatchResolution: defaultTranslationMemoryMatchResolution,
         glossaryMatchResolution: defaultGlossaryMatchResolution,
@@ -574,7 +576,7 @@ export async function executeProviderAgentTranslation(input: {
 
   const [jobDetails] = run.hyperlocaliseJobId
     ? await (async () => {
-        const { db, schema } = await import("@/lib/database");
+        const { db, schema } = await import("@/lib/database/client");
         const { eq } = await import("drizzle-orm");
         return db
           .select({
@@ -770,6 +772,7 @@ export async function executeProviderAgentTranslation(input: {
     projectTranslationContext: organizationGenerator.ok
       ? organizationGenerator.project.translationContext
       : "",
+    actorUserId: run.actorUserId,
   });
 
   if (translationResult.projectNotFound) {

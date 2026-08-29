@@ -12,16 +12,25 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull, isNull } from "drizzle-orm";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { validator } from "hono/validator";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
+import {
+  organizationIssuesQuerySchema,
+  type OrganizationIssuesQuery,
+} from "@/api/routes/issues/issues.schema";
+import {
+  organizationIssueService,
+  type OrganizationIssueListItem,
+} from "@/lib/projects/issue-sheet/organization-issue-service";
 import { z } from "zod";
 
 import { apiAuthContextFromMcpAuth } from "@/api/auth/mcp-access";
+import { normalizedGlossaryTermStatusFromStatus } from "@/lib/providers/contracts/glossary-term-status";
 import { projectIdSchema } from "@/lib/projects/identity/project-id";
 import {
   buildAccessibleProjectsWhere,
@@ -49,12 +58,14 @@ import {
 } from "@/api/auth/mcp";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { resolveApiAuthContextFromSession } from "@/api/auth/workos-session";
-import { db, schema } from "@/lib/database";
+import { db, schema } from "@/lib/database/client";
 import { env } from "@/lib/env";
+import { resolveMcpClientMetadata } from "@/api/auth/mcp-client-metadata";
+import { isErr } from "@/lib/primitives/result/results";
 
 const authorizationQuerySchema = z.object({
   response_type: z.literal("code"),
-  client_id: z.string().min(1).max(128),
+  client_id: z.string().min(1).max(2048),
   redirect_uri: z.url().max(2048),
   code_challenge: z.string().min(32).max(128),
   code_challenge_method: z.literal("S256"),
@@ -68,13 +79,13 @@ const tokenRequestSchema = z.discriminatedUnion("grant_type", [
     grant_type: z.literal("authorization_code"),
     code: z.string().min(1).max(8192),
     redirect_uri: z.url().max(2048),
-    client_id: z.string().min(1).max(128),
+    client_id: z.string().min(1).max(2048),
     code_verifier: z.string().min(43).max(128),
   }),
   z.object({
     grant_type: z.literal("refresh_token"),
     refresh_token: z.string().min(1).max(8192),
-    client_id: z.string().min(1).max(128).optional(),
+    client_id: z.string().min(1).max(2048).optional(),
   }),
 ]);
 
@@ -96,21 +107,35 @@ function isAllowedRedirectUri(redirectUri: string): boolean {
   return url.protocol === "http:" && (url.hostname === "localhost" || url.hostname === "127.0.0.1");
 }
 
-async function findRegisteredMcpClient(clientId: string, redirectUri: string) {
-  const [client] = await db
+async function findMcpClient(clientId: string, redirectUri: string) {
+  const [registeredClient] = await db
     .select({
       clientId: schema.mcpOAuthClients.clientId,
+      clientName: schema.mcpOAuthClients.clientName,
       redirectUris: schema.mcpOAuthClients.redirectUris,
     })
     .from(schema.mcpOAuthClients)
     .where(eq(schema.mcpOAuthClients.clientId, clientId))
     .limit(1);
 
-  if (!client?.redirectUris.includes(redirectUri)) {
+  if (registeredClient?.redirectUris.includes(redirectUri)) {
+    return registeredClient;
+  }
+
+  if (!clientId.startsWith("https://")) {
     return null;
   }
 
-  return client;
+  const metadataResult = await resolveMcpClientMetadata({
+    clientId,
+    redirectUri,
+  });
+
+  if (isErr(metadataResult)) {
+    return null;
+  }
+
+  return metadataResult.value;
 }
 
 function endpointOrigin(c: { req: { url: string } }) {
@@ -127,8 +152,16 @@ function secureCookieOptions(maxAgeSeconds: number) {
   };
 }
 
-function storeMcpAuthRequestCookie(c: Parameters<typeof setCookie>[0], token: string) {
+const MAX_MCP_AUTH_REQUEST_COOKIE_VALUE_LENGTH = 3_500;
+
+function storeMcpAuthRequestCookie(c: Parameters<typeof setCookie>[0], token: string): boolean {
+  if (token.length > MAX_MCP_AUTH_REQUEST_COOKIE_VALUE_LENGTH) {
+    return false;
+  }
+
   setCookie(c, MCP_AUTH_REQUEST_COOKIE, token, secureCookieOptions(15 * 60));
+
+  return true;
 }
 
 function storeMcpConsentCookie(c: Parameters<typeof setCookie>[0], token: string) {
@@ -229,7 +262,9 @@ export function getMcpAuthorizationServerMetadata(origin: string, apiBasePath = 
     issuer: origin,
     authorization_endpoint: `${origin}${mcpBasePath}/authorize`,
     token_endpoint: `${origin}${mcpBasePath}/token`,
-    registration_endpoint: `${origin}${mcpBasePath}/register`,
+    ...(env.MCP_ALLOW_DYNAMIC_REGISTRATION
+      ? { registration_endpoint: `${origin}${mcpBasePath}/register` }
+      : {}),
     scopes_supported: ["mcp"],
     response_types_supported: ["code"],
     response_modes_supported: ["query"],
@@ -237,6 +272,18 @@ export function getMcpAuthorizationServerMetadata(origin: string, apiBasePath = 
     token_endpoint_auth_methods_supported: ["none"],
     code_challenge_methods_supported: ["S256"],
     service_documentation: "https://hyperlocalise.com",
+    client_id_metadata_document_supported: true,
+  };
+}
+
+export function getMcpProtectedResourceMetadata(origin: string, apiBasePath = "/api") {
+  const mcpBasePath = getMcpBasePath(apiBasePath);
+
+  return {
+    resource: `${origin}${mcpBasePath}/sse`,
+    authorization_servers: [origin],
+    scopes_supported: ["mcp"],
+    bearer_methods_supported: ["header"],
   };
 }
 
@@ -281,6 +328,71 @@ const mcpAuthEnabledMiddleware = createMiddleware(async (c, next) => {
 
   await next();
 });
+
+const invalidIssueQuery = Symbol("invalid_issue_query");
+const issueQueryShape = organizationIssuesQuerySchema.shape;
+
+const mcpListIssuesInputSchema = z
+  .object({
+    view: issueQueryShape.view.catch(invalidIssueQuery as never).meta({ default: undefined }),
+    status: issueQueryShape.status.catch(invalidIssueQuery as never).meta({ default: undefined }),
+    issueType: issueQueryShape.issueType
+      .catch(invalidIssueQuery as never)
+      .meta({ default: undefined }),
+    priority: issueQueryShape.priority
+      .catch(invalidIssueQuery as never)
+      .meta({ default: undefined }),
+    locale: issueQueryShape.locale.catch(invalidIssueQuery as never).meta({ default: undefined }),
+    assignee: issueQueryShape.assignee
+      .catch(invalidIssueQuery as never)
+      .meta({ default: undefined }),
+    projectId: issueQueryShape.projectId
+      .catch(invalidIssueQuery as never)
+      .meta({ default: undefined }),
+    search: issueQueryShape.search.catch(invalidIssueQuery as never).meta({ default: undefined }),
+    sort: issueQueryShape.sort.catch(invalidIssueQuery as never).meta({ default: "status" }),
+    sortDir: issueQueryShape.sortDir.catch(invalidIssueQuery as never).meta({ default: undefined }),
+    limit: issueQueryShape.limit.catch(invalidIssueQuery as never).meta({ default: 50 }),
+    offset: issueQueryShape.offset.catch(invalidIssueQuery as never).meta({ default: 0 }),
+  })
+  .check((context) => {
+    if (Object.values(context.value).some((value) => (value as unknown) === invalidIssueQuery)) {
+      context.issues.push({
+        code: "custom",
+        input: context.value,
+        message: "invalid_issue_query",
+        path: [],
+      });
+    }
+  });
+
+function compactMcpIssue(issue: OrganizationIssueListItem) {
+  return {
+    id: issue.id,
+    identifier: issue.identifier,
+    projectId: issue.projectId,
+    projectName: issue.projectName,
+    title: issue.title,
+    description: issue.description.slice(0, 500),
+    issueType: issue.issueType,
+    status: issue.status,
+    priority: issue.priority,
+    targetLocale: issue.targetLocale,
+    assignee: issue.assignee,
+    assigneeUserId: issue.assigneeUserId,
+    sourcePath: issue.sourcePath,
+    segmentId: issue.segmentId,
+    linkKind: issue.linkKind,
+    linkLabel: issue.linkLabel,
+    linkUrl: issue.linkUrl,
+    templateKey: issue.templateKey,
+    key: issue.key,
+    sourceText: issue.sourceText,
+    createdAt: issue.createdAt,
+    updatedAt: issue.updatedAt,
+    resolvedAt: issue.resolvedAt,
+  };
+}
 
 async function createMcpServerForRequest(auth: McpAuthVariables["mcpAuth"]) {
   const apiAuth = apiAuthContextFromMcpAuth(auth);
@@ -347,6 +459,41 @@ async function createMcpServerForRequest(auth: McpAuthVariables["mcpAuth"]) {
   );
 
   server.registerTool(
+    "list_issues",
+    {
+      description:
+        "List issues visible to the authenticated organization with filtering, sorting, and pagination.",
+      inputSchema: mcpListIssuesInputSchema,
+    },
+    async (query: OrganizationIssuesQuery) => {
+      const result = await organizationIssueService.list(apiAuth, query);
+      const nextOffset = query.offset + result.issues.length;
+      const hasMore = nextOffset < result.total;
+
+      const output = {
+        total: result.total,
+        summary: result.summary,
+        pagination: {
+          limit: query.limit,
+          offset: query.offset,
+          hasMore,
+          nextOffset: hasMore ? nextOffset : null,
+        },
+        issues: result.issues.map(compactMcpIssue),
+      };
+
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(output),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerTool(
     "list_glossaries",
     {
       description: "List glossaries for the authenticated organization.",
@@ -393,19 +540,38 @@ async function createMcpServerForRequest(auth: McpAuthVariables["mcpAuth"]) {
         };
       }
 
-      const entries = await db
+      const rows = await db
         .select({
           id: schema.glossaryTerms.id,
-          sourceTerm: schema.glossaryTerms.sourceTerm,
-          targetTerm: schema.glossaryTerms.targetTerm,
+          conceptId: schema.glossaryTerms.conceptId,
+          locale: schema.glossaryTerms.locale,
+          term: schema.glossaryTerms.term,
           description: schema.glossaryTerms.description,
           partOfSpeech: schema.glossaryTerms.partOfSpeech,
+          status: schema.glossaryTerms.status,
           forbidden: schema.glossaryTerms.forbidden,
         })
         .from(schema.glossaryTerms)
-        .where(eq(schema.glossaryTerms.glossaryId, glossaryId))
-        .orderBy(schema.glossaryTerms.sourceTerm)
+        .where(
+          and(
+            eq(schema.glossaryTerms.glossaryId, glossaryId),
+            isNotNull(schema.glossaryTerms.conceptId),
+            isNotNull(schema.glossaryTerms.term),
+          ),
+        )
+        .orderBy(schema.glossaryTerms.term)
         .limit(limit);
+
+      const entries = rows.map((row) => ({
+        id: row.id,
+        conceptId: row.conceptId,
+        locale: row.locale,
+        term: row.term,
+        description: row.description,
+        partOfSpeech: row.partOfSpeech,
+        status: row.status,
+        forbidden: row.forbidden || normalizedGlossaryTermStatusFromStatus(row.status).forbidden,
+      }));
 
       return {
         content: [{ type: "text", text: JSON.stringify({ entries }, null, 2) }],
@@ -441,17 +607,27 @@ async function createMcpServerForRequest(auth: McpAuthVariables["mcpAuth"]) {
 }
 
 async function handleMcpTransport(request: Request, auth: McpAuthVariables["mcpAuth"]) {
+  if (request.method !== "POST") {
+    return new Response(null, {
+      status: 405,
+      headers: {
+        Allow: "POST",
+      },
+    });
+  }
+
   const server = await createMcpServerForRequest(auth);
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
   });
 
-  await server.connect(transport);
-  const response = await transport.handleRequest(request);
-  await server.close();
-
-  return response;
+  try {
+    await server.connect(transport);
+    return await transport.handleRequest(request);
+  } finally {
+    await server.close();
+  }
 }
 
 const validateAuthorizationQuery = validator("query", (value, c) => {
@@ -477,9 +653,14 @@ const validateRegisterBody = validator("json", (value, c) => {
 export function createMcpRoutes(options: { apiBasePath?: string } = {}) {
   const apiBasePath = options.apiBasePath ?? "/api";
 
+  // `/mcp/sse` is the canonical Streamable HTTP endpoint advertised by
+  // protected-resource metadata. `/mcp/message` remains a compatibility alias.
   return new Hono<{ Variables: McpAuthVariables }>()
     .get("/.well-known/oauth-authorization-server", (c) =>
       c.json(getMcpAuthorizationServerMetadata(endpointOrigin(c), apiBasePath), 200),
+    )
+    .get("/.well-known/oauth-protected-resource", (c) =>
+      c.json(getMcpProtectedResourceMetadata(endpointOrigin(c), apiBasePath), 200),
     )
     .use("/mcp/*", mcpAuthEnabledMiddleware)
     .post(
@@ -539,13 +720,15 @@ export function createMcpRoutes(options: { apiBasePath?: string } = {}) {
         return c.json({ error: "invalid_redirect_uri" }, 400);
       }
 
-      const client = await findRegisteredMcpClient(query.client_id, query.redirect_uri);
+      const client = await findMcpClient(query.client_id, query.redirect_uri);
+
       if (!client) {
         return c.json({ error: "invalid_client" }, 400);
       }
 
       const authRequest = createMcpAuthorizationRequest({
         clientId: query.client_id,
+        clientName: client.clientName ?? undefined,
         redirectUri: query.redirect_uri,
         codeChallenge: query.code_challenge,
         codeChallengeMethod: query.code_challenge_method,
@@ -553,7 +736,10 @@ export function createMcpRoutes(options: { apiBasePath?: string } = {}) {
         state: query.state,
         organizationSlug: query.organizationSlug,
       });
-      storeMcpAuthRequestCookie(c, authRequest);
+
+      if (!storeMcpAuthRequestCookie(c, authRequest)) {
+        return c.json({ error: "invalid_request" }, 400);
+      }
 
       const callbackUrl = buildCallbackUrl(apiBasePath, endpointOrigin(c), query);
       const signInUrl = new URL("/auth/sign-in", endpointOrigin(c));
@@ -575,11 +761,6 @@ export function createMcpRoutes(options: { apiBasePath?: string } = {}) {
         return c.json({ error: "invalid_request" }, 400);
       }
 
-      const client = await findRegisteredMcpClient(query.client_id, query.redirect_uri);
-      if (!client) {
-        return c.json({ error: "invalid_client" }, 400);
-      }
-
       const auth = await resolveApiAuthContextFromSession({
         organizationSlug: query.organizationSlug ?? authRequest.organizationSlug,
       });
@@ -591,12 +772,6 @@ export function createMcpRoutes(options: { apiBasePath?: string } = {}) {
         return c.redirect(signInUrl.toString(), 302);
       }
 
-      const [registeredClient] = await db
-        .select({ clientName: schema.mcpOAuthClients.clientName })
-        .from(schema.mcpOAuthClients)
-        .where(eq(schema.mcpOAuthClients.clientId, query.client_id))
-        .limit(1);
-
       const consentUrl = new URL(`${apiBasePath}/mcp/consent`, endpointOrigin(c));
       for (const [key, value] of Object.entries(query)) {
         if (value !== undefined) {
@@ -606,7 +781,7 @@ export function createMcpRoutes(options: { apiBasePath?: string } = {}) {
 
       return c.html(
         renderMcpConsentPage({
-          clientName: registeredClient?.clientName ?? null,
+          clientName: authRequest.clientName ?? null,
           redirectUri: query.redirect_uri,
           organizationName: auth.organization.name,
           scope: query.scope,
@@ -629,11 +804,6 @@ export function createMcpRoutes(options: { apiBasePath?: string } = {}) {
         return c.json({ error: "invalid_request" }, 400);
       }
 
-      const client = await findRegisteredMcpClient(query.client_id, query.redirect_uri);
-      if (!client) {
-        return c.json({ error: "invalid_client" }, 400);
-      }
-
       const auth = await resolveApiAuthContextFromSession({
         organizationSlug: query.organizationSlug ?? authRequest.organizationSlug,
       });
@@ -654,15 +824,13 @@ export function createMcpRoutes(options: { apiBasePath?: string } = {}) {
     })
     .get("/mcp/callback", validateAuthorizationQuery, async (c) => {
       const query = c.req.valid("query");
-      const client = await findRegisteredMcpClient(query.client_id, query.redirect_uri);
 
-      if (!client) {
-        return c.json({ error: "invalid_client" }, 400);
+      if (!isAllowedRedirectUri(query.redirect_uri)) {
+        return c.json({ error: "invalid_redirect_uri" }, 400);
       }
 
       const authRequestToken = getCookie(c, MCP_AUTH_REQUEST_COOKIE);
       const authRequest = authRequestToken ? parseMcpAuthorizationRequest(authRequestToken) : null;
-
       if (
         !authRequest ||
         authRequest.clientId !== query.client_id ||

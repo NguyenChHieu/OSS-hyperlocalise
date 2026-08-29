@@ -18,7 +18,7 @@
  * attempt to wrap the full Crowdin API surface.
  */
 
-import type { ProjectFileCatQueueFilter } from "@/api/routes/project/project.schema";
+import type { ProjectFileContentEditorQueueFilter } from "@/api/routes/project/project.schema";
 import { createLogger } from "@/lib/log";
 import { mapWithConcurrency } from "@/lib/primitives/map-with-concurrency/map-with-concurrency";
 import {
@@ -82,7 +82,7 @@ function crowdinLanguageSummaryPredicate(locale: string) {
 }
 
 function crowdinQueueFilterPredicates(
-  queueFilter: ProjectFileCatQueueFilter | undefined,
+  queueFilter: ProjectFileContentEditorQueueFilter | undefined,
   languageSummary: string,
   locale: string,
 ) {
@@ -135,7 +135,7 @@ export function buildCrowdinFileQueueCroql(input: {
   fileId?: number;
   fileIds?: readonly number[];
   targetLocale: string;
-  queueFilter?: ProjectFileCatQueueFilter;
+  queueFilter?: ProjectFileContentEditorQueueFilter;
   search?: string;
   statusBand?: CrowdinQueueStatusBand;
 }) {
@@ -708,15 +708,27 @@ export interface CrowdinGlossaryConcordanceTerm {
   text: string;
   description?: string | null;
   status?: string | null;
+  partOfSpeech?: string | null;
+  type?: string | null;
+  gender?: string | null;
+  conceptId?: number | null;
 }
 
 export interface CrowdinGlossaryConcordanceSearchResult {
   glossary: {
     id: number;
     name: string;
+    webUrl?: string | null;
   };
   sourceTerms: CrowdinGlossaryConcordanceTerm[];
   targetTerms: CrowdinGlossaryConcordanceTerm[];
+  concept?: {
+    id: number;
+    subject?: string | null;
+    definition?: string | null;
+    url?: string | null;
+    translatable?: boolean;
+  } | null;
 }
 
 interface CrowdinListResponse<T> {

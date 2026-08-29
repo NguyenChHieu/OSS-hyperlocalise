@@ -10,15 +10,16 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { and, asc, desc, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
 
 import type { ApiAuthContext } from "@/api/auth/workos";
 import {
   openJobStatusValues,
   overviewTriageJobStatusValues,
+  overviewTriageLookbackCutoff,
 } from "@/api/routes/project/job.schema";
 import { buildAccessibleJobsWhere, buildOrganizationJobsListWhere } from "@/api/auth/team-access";
-import { db, schema } from "@/lib/database";
+import { db, schema } from "@/lib/database/client";
 import { getCurrentUserProviderAssigneeCandidates } from "@/lib/providers/jobs/tms-provider-assignee-candidates";
 import { providerAssignedUsersMatch } from "@/lib/providers/jobs/tms-provider-assignee-match";
 import { ProjectServiceBase } from "@/lib/projects/project-service-base";
@@ -36,6 +37,7 @@ const jobWithProjectSelect = {
   projectId: schema.jobs.projectId,
   createdByUserId: schema.jobs.createdByUserId,
   ownerUserId: schema.jobs.ownerUserId,
+  assigneeType: schema.jobs.assigneeType,
   kind: schema.jobs.kind,
   type: schema.translationJobDetails.type,
   status: schema.jobs.status,
@@ -105,6 +107,7 @@ function jobListFilters(input: {
 
   if (input.triage) {
     filters.push(inArray(schema.jobs.status, [...overviewTriageJobStatusValues]));
+    filters.push(gte(schema.jobs.updatedAt, overviewTriageLookbackCutoff()));
   } else if (input.open) {
     filters.push(inArray(schema.jobs.status, [...openJobStatusValues]));
   } else if (input.status) {

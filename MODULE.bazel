@@ -3,8 +3,8 @@ module(
     version = "0.1.0",
 )
 
-bazel_dep(name = "rules_go", version = "0.61.1")
-bazel_dep(name = "gazelle", version = "0.51.3")
+bazel_dep(name = "rules_go", version = "0.63.0")
+bazel_dep(name = "gazelle", version = "0.53.0")
 
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
 go_sdk.download(version = "1.26.0")
@@ -31,7 +31,7 @@ use_repo(
     "com_github_stretchr_testify",
     "com_github_subosito_gotenv",
     "com_github_tidwall_jsonc",
-    "com_github_workos_workos_go_v9",
+    "com_github_workos_workos_go_v10",
     "com_github_yuin_goldmark",
     "in_gopkg_yaml_v3",
     "io_opentelemetry_go_otel",

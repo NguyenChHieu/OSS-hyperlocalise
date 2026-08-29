@@ -20,26 +20,26 @@ import {
   WORKSPACE_DOMAINS_FLAG,
   WORKSPACE_KNOWLEDGE_FLAG,
 } from "@/lib/flags/workos-flag-entities";
-import { supportsCatAllFilesProvider } from "@/lib/projects/cat-all-files";
+import { supportsContentEditorAllFilesProvider } from "@/lib/projects/content-editor-all-files";
 import { parseProviderProjectId } from "@/lib/providers/jobs/tms-provider-resource-id";
 import {
-  AiBrain01Icon,
-  AiChipIcon,
   BookOpenTextIcon,
-  Chat01Icon,
-  ClipboardListIcon,
+  Bookmark01Icon,
+  CenterFocusIcon,
+  Copy01Icon,
+  CubeIcon,
   DashboardSquare01Icon,
-  DatabaseSyncIcon,
+  Database01Icon,
   File01Icon,
-  LanguageCircleIcon,
-  FolderKanbanIcon,
+  FlashIcon,
   Globe02Icon,
   InboxIcon,
-  LinkSquare02Icon,
+  LanguageCircleIcon,
+  PuzzleIcon,
+  SentIcon,
   Settings01Icon,
-  Task01Icon,
+  SparklesIcon,
   UserMultiple02Icon,
-  WorkHistoryIcon,
 } from "@hugeicons/core-free-icons";
 import type { HugeiconsIcon } from "@hugeicons/react";
 
@@ -58,6 +58,8 @@ export type NavigationItem = {
     | typeof WORKSPACE_KNOWLEDGE_FLAG
     | typeof WORKSPACE_DOMAINS_FLAG
     | typeof RELEASE_CAT_ALL_FILES_FLAG;
+  /** When true, the feature flag is off and the nav item links to a teaser page. */
+  preview?: boolean;
 };
 
 export type NavigationGroup = {
@@ -119,7 +121,7 @@ export function buildGlobalNavigationGroups(
             description: "Sidebar navigation item for the current user’s jobs",
           }),
           href: org("my-work"),
-          icon: WorkHistoryIcon,
+          icon: CenterFocusIcon,
         },
         {
           label: intl.formatMessage({
@@ -128,7 +130,7 @@ export function buildGlobalNavigationGroups(
             description: "Sidebar navigation item for workspace issues",
           }),
           href: org("issues"),
-          icon: ClipboardListIcon,
+          icon: Copy01Icon,
         },
         {
           label: intl.formatMessage({
@@ -156,7 +158,7 @@ export function buildGlobalNavigationGroups(
           }),
           href: org("inbox/new"),
           exact: true,
-          icon: Chat01Icon,
+          icon: SentIcon,
           description: intl.formatMessage({
             defaultMessage: "Ask the localisation agent to prepare work",
             id: "z45OPLD254",
@@ -170,7 +172,7 @@ export function buildGlobalNavigationGroups(
             description: "Sidebar navigation item for workspace automations",
           }),
           href: org("automations"),
-          icon: Task01Icon,
+          icon: FlashIcon,
           description: intl.formatMessage({
             defaultMessage: "Scheduled and GitHub-triggered deterministic workflows",
             id: "TBagRGINiT",
@@ -190,7 +192,7 @@ export function buildGlobalNavigationGroups(
             description: "Sidebar navigation item for workspace AI model providers",
           }),
           href: org("ai-engine"),
-          icon: AiChipIcon,
+          icon: SparklesIcon,
           description: intl.formatMessage({
             defaultMessage: "Choose the model provider agents use",
             id: "ZnnVLUSfjR",
@@ -213,7 +215,7 @@ export function buildGlobalNavigationGroups(
             description: "Sidebar navigation item for the projects list",
           }),
           href: org("projects"),
-          icon: FolderKanbanIcon,
+          icon: CubeIcon,
         },
         {
           label: intl.formatMessage({
@@ -237,7 +239,7 @@ export function buildGlobalNavigationGroups(
             description: "Sidebar navigation item for workspace guideline",
           }),
           href: org("knowledge"),
-          icon: AiBrain01Icon,
+          icon: Bookmark01Icon,
           description: intl.formatMessage({
             defaultMessage: "Shared guidance for agents and teams",
             id: "dEzuHMWHq4",
@@ -261,7 +263,7 @@ export function buildGlobalNavigationGroups(
             description: "Sidebar navigation item for translation memories",
           }),
           href: org("translation-memories"),
-          icon: DatabaseSyncIcon,
+          icon: Database01Icon,
         },
         {
           label: intl.formatMessage({
@@ -270,7 +272,7 @@ export function buildGlobalNavigationGroups(
             description: "Sidebar navigation item for integrations",
           }),
           href: org("integrations"),
-          icon: LinkSquare02Icon,
+          icon: PuzzleIcon,
         },
         {
           label: intl.formatMessage({
@@ -307,7 +309,7 @@ export function buildProjectNavigationItems(
 ): readonly NavigationItem[] {
   const project = (section: string) => buildProjectPath(organizationSlug, projectId, section);
   const providerKind = parseProviderProjectId(projectId)?.providerKind ?? null;
-  const showStrings = supportsCatAllFilesProvider(providerKind);
+  const showContentEditor = supportsContentEditorAllFilesProvider(providerKind);
 
   const items: NavigationItem[] = [
     {
@@ -317,7 +319,7 @@ export function buildProjectNavigationItems(
         description: "Project sidebar navigation item for the project overview",
       }),
       href: buildProjectPath(organizationSlug, projectId),
-      icon: FolderKanbanIcon,
+      icon: CubeIcon,
     },
     {
       label: intl.formatMessage({
@@ -330,12 +332,12 @@ export function buildProjectNavigationItems(
     },
   ];
 
-  if (showStrings) {
+  if (showContentEditor) {
     items.push({
       label: intl.formatMessage({
-        defaultMessage: "Strings",
-        id: "CWdGpW4jOj",
-        description: "Project sidebar navigation item for the CAT strings workspace",
+        defaultMessage: "Content Editor",
+        id: "1XfD1U3TWk",
+        description: "Project sidebar navigation item for the Content Editor",
       }),
       href: project("strings"),
       icon: LanguageCircleIcon,
@@ -351,7 +353,7 @@ export function buildProjectNavigationItems(
         description: "Project sidebar navigation item for project jobs",
       }),
       href: project("jobs"),
-      icon: Task01Icon,
+      icon: CenterFocusIcon,
     },
     {
       label: intl.formatMessage({
@@ -360,7 +362,7 @@ export function buildProjectNavigationItems(
         description: "Project sidebar navigation item for the project issue sheet",
       }),
       href: project("issue-sheet"),
-      icon: ClipboardListIcon,
+      icon: Copy01Icon,
     },
     {
       label: intl.formatMessage({
@@ -369,7 +371,7 @@ export function buildProjectNavigationItems(
         description: "Project sidebar navigation item for project automations",
       }),
       href: project("automations"),
-      icon: Task01Icon,
+      icon: FlashIcon,
       featureFlagKey: WORKSPACE_AUTOMATIONS_FLAG,
     },
     {
@@ -379,7 +381,7 @@ export function buildProjectNavigationItems(
         description: "Project sidebar navigation item for project guideline",
       }),
       href: project("knowledge"),
-      icon: AiBrain01Icon,
+      icon: Bookmark01Icon,
       description: intl.formatMessage({
         defaultMessage: "Project-specific guidance for agents and teams",
         id: "tMOiEvbyBd",

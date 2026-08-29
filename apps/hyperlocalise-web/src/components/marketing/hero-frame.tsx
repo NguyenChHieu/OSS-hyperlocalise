@@ -16,14 +16,14 @@ import { motion, useReducedMotion } from "motion/react";
 import type { IntlShape } from "react-intl";
 import { useIntl } from "react-intl";
 
-import { CatWorkspaceContainer } from "@/components/cat/workspace/cat-workspace-container";
-import { toQueueSegment } from "@/components/cat/workspace/store/cat-segment-view";
+import { ContentEditorWorkspaceContainer } from "@/components/content-editor/workspace/content-editor-workspace-container";
+import { toQueueSegment } from "@/components/content-editor/workspace/store/content-editor-segment-view";
 import type {
-  CatFormatCheck,
-  CatSegment,
-  CatSegmentIntelligence,
-  CatWorkspaceState,
-} from "@/components/cat/shared/types";
+  ContentEditorFormatCheck,
+  ContentEditorSegment,
+  ContentEditorSegmentIntelligence,
+  ContentEditorWorkspaceState,
+} from "@/components/content-editor/shared/types";
 import { cn } from "@/lib/primitives/cn";
 
 import { heroFrameMessages } from "./hero-frame.messages";
@@ -32,9 +32,16 @@ type HeroFrameProps = {
   /** `breakout` spans near the viewport; `contained` fills a parent stage. */
   layout?: "breakout" | "contained";
   className?: string;
+  /** Override the initially focused segment in the demo workspace. */
+  initialSelectedSegmentId?: string;
+  /** Override the workspace viewport height (contained layouts). */
+  workspaceClassName?: string;
 };
 
-const heroDemoSegments: CatSegment[] = [
+const DEFAULT_WORKSPACE_CLASSNAME =
+  "flex h-[min(42rem,78svh)] min-h-136 flex-col lg:h-176 xl:h-184";
+
+const heroDemoSegments: ContentEditorSegment[] = [
   {
     id: "hero-title",
     index: 1,
@@ -350,7 +357,7 @@ const heroDemoSegments: CatSegment[] = [
   },
 ];
 
-function buildHeroDemoChecks(intl: IntlShape): CatFormatCheck[] {
+function buildHeroDemoChecks(intl: IntlShape): ContentEditorFormatCheck[] {
   return [
     {
       id: "check-tone",
@@ -383,7 +390,7 @@ function buildHeroDemoChecks(intl: IntlShape): CatFormatCheck[] {
   ];
 }
 
-function buildHeroTitleIntelligence(intl: IntlShape): CatSegmentIntelligence {
+function buildHeroTitleIntelligence(intl: IntlShape): ContentEditorSegmentIntelligence {
   return {
     productMeaning: intl.formatMessage(heroFrameMessages.intelligenceProductMeaning),
     intent: intl.formatMessage(heroFrameMessages.intelligenceIntent),
@@ -475,7 +482,7 @@ function buildHeroTitleIntelligence(intl: IntlShape): CatSegmentIntelligence {
   };
 }
 
-function localizeHeroDemoSegments(intl: IntlShape): CatSegment[] {
+function localizeHeroDemoSegments(intl: IntlShape): ContentEditorSegment[] {
   const contextById: Record<string, string> = {
     "hero-title": intl.formatMessage(heroFrameMessages.contextLabelHomepageHero),
     "hero-cta": intl.formatMessage(heroFrameMessages.contextLabelPrimaryCta),
@@ -509,7 +516,7 @@ function localizeHeroDemoSegments(intl: IntlShape): CatSegment[] {
   }));
 }
 
-function buildHeroDemoState(intl: IntlShape): CatWorkspaceState {
+function buildHeroDemoState(intl: IntlShape): ContentEditorWorkspaceState {
   const segments = localizeHeroDemoSegments(intl);
   const heroDemoChecks = buildHeroDemoChecks(intl);
   const heroTitleIntelligence = buildHeroTitleIntelligence(intl);
@@ -572,8 +579,9 @@ function buildHeroDemoState(intl: IntlShape): CatWorkspaceState {
         productMeaning: intl.formatMessage(heroFrameMessages.qaProductMeaning),
         intent: intl.formatMessage(heroFrameMessages.qaIntent),
         locationBreadcrumb: intl.formatMessage(heroFrameMessages.qaBreadcrumb),
-        filePath: "apps/hyperlocalise-web/src/components/cat/queue/cat-queue-panel.tsx",
-        componentName: "CatQueuePanel",
+        filePath:
+          "apps/hyperlocalise-web/src/components/content-editor/queue/content-editor-queue-panel.tsx",
+        componentName: "ContentEditorQueuePanel",
         constraints: intl.formatMessage(heroFrameMessages.qaConstraints),
         glossaryTerms: [
           {
@@ -611,12 +619,12 @@ function wait(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function createHeroDemoServices(intl: IntlShape, heroDemoState: CatWorkspaceState) {
+function createHeroDemoServices(intl: IntlShape, heroDemoState: ContentEditorWorkspaceState) {
   const heroDemoChecks = heroDemoState.formatChecks;
   const heroTitleIntelligence =
     heroDemoState.segmentIntelligence?.["hero-title"] ?? heroDemoState.intelligence;
 
-  async function lookupHeroDemoContext(segment: CatSegment) {
+  async function lookupHeroDemoContext(segment: ContentEditorSegment) {
     await wait(1700);
 
     if (segment.id === "hero-title") {
@@ -640,7 +648,7 @@ function createHeroDemoServices(intl: IntlShape, heroDemoState: CatWorkspaceStat
     return intl.formatMessage(heroFrameMessages.contextFallback, { key: segment.key });
   }
 
-  async function lookupHeroDemoVisualContext(segment: CatSegment) {
+  async function lookupHeroDemoVisualContext(segment: ContentEditorSegment) {
     if (segment.id === "hero-title" && heroTitleIntelligence.visualContext) {
       return heroTitleIntelligence.visualContext;
     }
@@ -649,10 +657,14 @@ function createHeroDemoServices(intl: IntlShape, heroDemoState: CatWorkspaceStat
   }
 
   async function generateHeroAiRecommendation(
-    segment: CatSegment,
+    segment: ContentEditorSegment,
     _targetText: string,
-    intelligence?: CatSegmentIntelligence,
-  ): Promise<{ aiSuggestion: string; aiReasoning: string; formatChecks: CatFormatCheck[] }> {
+    intelligence?: ContentEditorSegmentIntelligence,
+  ): Promise<{
+    aiSuggestion: string;
+    aiReasoning: string;
+    formatChecks: ContentEditorFormatCheck[];
+  }> {
     await wait(1200);
 
     if (segment.id === "hero-title") {
@@ -679,9 +691,9 @@ function createHeroDemoServices(intl: IntlShape, heroDemoState: CatWorkspaceStat
   }
 
   async function validateHeroDemoFormat(
-    segment: CatSegment,
+    segment: ContentEditorSegment,
     value: string,
-  ): Promise<CatFormatCheck[]> {
+  ): Promise<ContentEditorFormatCheck[]> {
     const checks = [...(heroDemoState.segmentFormatChecks?.[segment.id] ?? heroDemoChecks)];
 
     if (segment.maxLength && value.length > segment.maxLength) {
@@ -710,19 +722,28 @@ function createHeroDemoServices(intl: IntlShape, heroDemoState: CatWorkspaceStat
   };
 }
 
-export function HeroFrame({ layout = "breakout", className }: HeroFrameProps) {
+export function HeroFrame({
+  layout = "breakout",
+  className,
+  initialSelectedSegmentId,
+  workspaceClassName = DEFAULT_WORKSPACE_CLASSNAME,
+}: HeroFrameProps) {
   const intl = useIntl();
   const shouldReduceMotion = useReducedMotion();
   const heroDemoState = buildHeroDemoState(intl);
+  const initialState =
+    initialSelectedSegmentId != null
+      ? { ...heroDemoState, selectedSegmentId: initialSelectedSegmentId }
+      : heroDemoState;
   const services = createHeroDemoServices(intl, heroDemoState);
   const frameClassName = cn(
     "relative overflow-hidden rounded-2xl border border-border bg-background shadow-2xl shadow-gray-alpha-200",
     className,
   );
   const workspace = (
-    <div className="flex h-[min(42rem,78svh)] min-h-136 flex-col lg:h-176 xl:h-184">
-      <CatWorkspaceContainer
-        initialState={heroDemoState}
+    <div className={workspaceClassName}>
+      <ContentEditorWorkspaceContainer
+        initialState={initialState}
         initialViewMode="comfortable"
         services={services}
       />

@@ -1,0 +1,71 @@
+---
+title: "Path templates"
+description: "Use source and target placeholders safely in bucket file mappings."
+---
+
+## Supported placeholders
+
+- `{{source}}`: source locale
+- `{{target}}`: target locale
+- `{{localeDir}}`: empty for source locale output, otherwise target locale
+
+## Examples
+
+### JSON locale files
+
+```jsonc
+{
+  "from": "packages/ui/lang/{{source}}.json",
+  "to": "apps/web/lang/{{target}}.json"
+}
+```
+
+### Locale template with `[locale]` token
+
+```jsonc
+{
+  "from": "lang/en.json",
+  "to": "lang/[locale].json"
+}
+```
+
+
+### Mintlify recursive mapping with globs
+
+```jsonc
+{
+  "from": "docs/cli/**/*.mdx",
+  "to": "docs/{{localeDir}}/cli/**/*.mdx"
+}
+```
+
+This keeps the source file structure and writes translated files into the same relative paths under each locale folder.
+
+With `source=en` and targets `fr`, `es`, and `zh`:
+
+- `target=en` resolves `docs/{{localeDir}}/cli/index.mdx` to `docs/cli/index.mdx`
+- `target=fr` resolves `docs/{{localeDir}}/cli/index.mdx` to `docs/fr/cli/index.mdx`
+- `target=es` resolves `docs/{{localeDir}}/cli/index.mdx` to `docs/es/cli/index.mdx`
+- `target=zh` resolves `docs/{{localeDir}}/cli/index.mdx` to `docs/zh/cli/index.mdx`
+
+Use this pattern when English source pages live under a product folder such as `docs/cli/` and translated pages should be written into the same relative paths under each locale folder.
+
+## Good patterns
+
+- Keep source and target trees separate.
+- Use stable bucket names by domain (`ui`, `marketing`, `emails`).
+- Keep one responsibility per file mapping.
+
+## Anti-patterns
+
+- Writing `to` paths back into source directories.
+- Reusing the same output path for multiple buckets.
+- Mixing locale tokens with ad-hoc string replacement outside templates.
+
+## Quick checks
+
+Before running:
+
+1. confirm `from` resolves for source locale,
+2. confirm `to` can be created for each target locale,
+3. run `hyperlocalise run --dry-run` to inspect planned tasks.

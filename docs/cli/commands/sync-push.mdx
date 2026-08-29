@@ -1,0 +1,48 @@
+---
+title: "sync push"
+description: "Upload source files to Hyperlocalise."
+---
+
+## Usage
+
+```bash
+hyperlocalise sync push [--config <path>] [flags]
+```
+
+## Default behavior
+
+`sync push` uploads source files to Hyperlocalise. Use `--dry-run` when you want to preview the report without uploading files.
+
+During a real push, Hyperlocalise reads configured source files from `i18n.yml` and uploads each source file to the public Hyperlocalise API. It does not create translation jobs. Configure automation in Hyperlocalise when you want AI translation to run after upload.
+
+`sync push` uses the top-level `hyperlocalise` config block. It does not use the `storage` TMS adapter block.
+
+## Flags
+
+- `--config`: config path
+- `--locale`: target locale(s), repeatable
+- `--dry-run`: preview only
+- `--output`: `text`, `json`, or `markdown`
+- `--force-conflicts`: not supported for Hyperlocalise sync
+
+## Example
+
+```bash
+hyperlocalise sync push --locale es-ES
+```
+
+```bash
+hl push --locale es-ES
+```
+
+## Notes
+
+- Push exits non-zero when one or more uploads fail.
+- Provider-specific TMS commands such as `crowdin` and `phrase` keep their own config and behavior.
+
+## See also
+
+- [Connect the CLI](/platform/cli)
+- [Public API](/platform/api)
+- [sync pull](/cli/commands/sync-pull)
+- [CI automation](/cli/workflows/ci-automation)

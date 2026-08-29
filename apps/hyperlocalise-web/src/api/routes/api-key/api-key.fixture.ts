@@ -10,11 +10,13 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
+import { eq } from "drizzle-orm";
+
 import type { AppType } from "@/api/app";
 import type { WorkosAuthIdentity } from "@/api/auth/workos";
 import { createAuthTestFixture } from "@/api/test-auth.fixture";
 import { generateApiKey, getApiKeyPrefix, hashApiKey } from "@/lib/security/api-keys";
-import { db, schema } from "@/lib/database";
+import { db, schema } from "@/lib/database/client";
 import { testClient } from "hono/testing";
 
 import {
@@ -55,6 +57,20 @@ export function createApiKeyTestFixture(client?: Client) {
     );
   }
 
+  async function getLocalOrganizationId(workosOrganizationId: string) {
+    const [organization] = await db
+      .select({ id: schema.organizations.id })
+      .from(schema.organizations)
+      .where(eq(schema.organizations.workosOrganizationId, workosOrganizationId))
+      .limit(1);
+
+    if (!organization) {
+      throw new Error(`expected local organization for ${workosOrganizationId}`);
+    }
+
+    return organization.id;
+  }
+
   async function insertApiKey(input: InsertApiKeyInput) {
     const plainKey = generateApiKey();
     const keyHash = hashApiKey(plainKey);
@@ -83,6 +99,7 @@ export function createApiKeyTestFixture(client?: Client) {
     createWorkosIdentity: authFixture.createWorkosIdentity,
     createWorkosIdentityForOrganization: authFixture.createWorkosIdentityForOrganization,
     createWorkosIdentityWithRole: authFixture.createWorkosIdentityWithRole,
+    getLocalOrganizationId,
     getLocalUserId: authFixture.getLocalUserId,
     insertApiKey,
   };

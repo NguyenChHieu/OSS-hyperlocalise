@@ -25,8 +25,12 @@ import {
   forbiddenResponse as sharedForbiddenResponse,
   notFoundResponse,
   serviceUnavailableResponse,
-} from "@/api/errors";
+} from "@/api/response.schema";
 import { createProjectKnowledgeMemoryRoutes } from "@/api/routes/knowledge-memory/project-knowledge-memory.route";
+import {
+  deleteProjectWithTeamGlossaryGuard,
+  glossaryTeamProjectRequiredResponse,
+} from "@/api/routes/glossary/glossary.shared";
 import { translationsNotFoundResponse } from "@/api/routes/public-translations/public-translations.shared";
 import {
   withWorkspaceResourceLimit,
@@ -34,12 +38,13 @@ import {
   workspaceResourceLimitErrorDetails,
   workspaceResourceLimitMessage,
 } from "@/lib/billing/workspace-resource-limits";
-import { db, schema, type DatabaseClient } from "@/lib/database";
+import { db, schema, type DatabaseClient } from "@/lib/database/client";
 import type { Project } from "@/lib/database/types";
-import { getFileStorageAdapter, type FileStorageAdapter } from "@/lib/file-storage";
+import { getFileStorageAdapter } from "@/lib/file-storage/get-file-storage-adapter";
+import type { FileStorageAdapter } from "@/lib/file-storage/types";
 import { PRODUCT_USAGE_ANALYTICS_EVENTS } from "@/lib/analytics/events";
 import { serverAnalytics } from "@/lib/analytics/server";
-import { isReleaseCatAllFilesEnabled } from "@/lib/flags/release-flags";
+import { isReleaseContentEditorAllFilesEnabled } from "@/lib/flags/release-flags";
 import { createLogger } from "@/lib/log";
 import {
   insertWithAllocatedProjectIdentifier,
@@ -52,11 +57,14 @@ import {
   getLatestRepositorySourceFileVersion,
 } from "@/lib/file-storage/records";
 import { sourceContentType } from "@/lib/file-storage/source-file-metadata";
-import { isCatAllFilesSourcePath, parseCatSourcePathsFilter } from "@/lib/projects/cat-all-files";
+import {
+  isContentEditorAllFilesSourcePath,
+  parseCatSourcePathsFilter,
+} from "@/lib/projects/content-editor-all-files";
 
 import {
   countTmsProviderLiveOpenJobsForProject,
-  getTmsProviderLiveCatAllFiles,
+  getTmsProviderLiveContentEditorAllFiles,
   getTmsProviderLiveCatFile,
   getTmsProviderLiveCatSegmentComments,
   getTmsProviderLiveCatSegmentTarget,
@@ -71,35 +79,36 @@ import {
 } from "@/lib/providers/jobs/tms-provider-live";
 import { listOrganizationProjects } from "@/lib/projects/organization/organization-project-service";
 import {
-  getNativeProjectCatFile,
-  getNativeProjectCatSegmentComments,
+  getNativeProjectContentEditorFile,
+  getNativeProjectContentEditorSegmentComments,
   fileBackedCatSegmentIds,
-  getNativeProjectCatSegmentTarget,
-  resolveNativeProjectCatLegacyIssueComment,
-  saveNativeProjectCatComment,
-  saveNativeProjectCatTranslation,
-  setNativeProjectCatStringsHidden,
+  getNativeProjectContentEditorSegmentTarget,
+  resolveNativeProjectContentEditorLegacyIssueComment,
+  saveNativeProjectContentEditorComment,
+  saveNativeProjectContentEditorTranslation,
+  setNativeProjectContentEditorStringsHidden,
+  setNativeProjectContentEditorKeyMaxLength,
   updateNativeProjectTranslationStatus,
-} from "@/lib/projects/cat/native-cat-service";
+} from "@/lib/projects/content-editor/native-content-editor-service";
 import {
-  enrichExternalCatFileImageFields,
-  enrichExternalCatTranslationImageFields,
-  getExternalCatStringOverlay,
-  setExternalCatStringTreatAsImage,
-  storeExternalCatImageUpload,
-  cleanupFailedExternalCatImageUpload,
-} from "@/lib/projects/cat/external-cat-string-overlay-service";
+  enrichExternalContentEditorFileImageFields,
+  enrichExternalContentEditorTranslationImageFields,
+  getExternalContentEditorStringOverlay,
+  setExternalContentEditorStringTreatAsImage,
+  storeExternalContentEditorImageUpload,
+  cleanupFailedExternalContentEditorImageUpload,
+} from "@/lib/projects/content-editor/external-content-editor-string-overlay-service";
 import {
   attachCatSegmentLocks,
   listLockedCatSegmentIds,
   setCatSegmentLocks,
-} from "@/lib/projects/cat/cat-segment-lock-service";
-import { resolveProjectFileCatPagination } from "@/lib/projects/cat/project-file-cat-pagination";
+} from "@/lib/projects/content-editor/content-editor-segment-lock-service";
+import { resolveProjectFileContentEditorPagination } from "@/lib/projects/content-editor/project-file-content-editor-pagination";
 import {
   buildCatFilteredExportPayload,
   collectCatFilteredExportRows,
-} from "@/lib/projects/cat/cat-filtered-export-service";
-import { maxCatFilteredExportSegments } from "@/lib/projects/cat/cat-filtered-export";
+} from "@/lib/projects/content-editor/content-editor-filtered-export-service";
+import { maxCatFilteredExportSegments } from "@/lib/projects/content-editor/content-editor-filtered-export";
 import {
   getProjectFileDetail,
   listFilteredProjectFiles,
@@ -160,6 +169,7 @@ import {
   projectFileCatCommentResolveBodySchema,
   projectFileCatHiddenStringsBodySchema,
   projectFileCatLockedStringsBodySchema,
+  projectFileCatMaxLengthBodySchema,
   projectFileCatImageRegenerateBodySchema,
   projectFileCatImageStatusBodySchema,
   projectFileCatRecommendationBodySchema,
@@ -177,9 +187,10 @@ import {
   projectIdParamsSchema,
   projectFileCatCommentIdParamsSchema,
   updateProjectBodySchema,
-  updateProjectCatBehaviorBodySchema,
+  updateProjectContentEditorBehaviorBodySchema,
   type CreateProjectBody,
-  type ProjectFileCatQuery,
+  type ProjectFileContentEditorQuery,
+  type ProjectFileContentEditorQueueFile,
   type UpdateProjectBody,
 } from "./project.schema";
 import { getVisibleTeamIds, hasOrganizationWideProjectAccess } from "@/api/auth/team-access";
@@ -194,15 +205,25 @@ import { normalizeProjectId } from "@/lib/projects/identity/project-id";
 import { parseProviderProjectId } from "@/lib/providers/jobs/tms-provider-resource-id";
 
 import {
+  getProjectTeamContext,
+  hasAttachedGlossarySourceLocaleConflict,
+  listAttachedTeamGlossaries,
+  listContributorTeams,
+} from "@/lib/glossary/attached-team-glossaries";
+import {
+  isGlossaryContributorRole,
+  isGlossaryManageAllowed,
+} from "@/api/routes/glossary/glossary.shared";
+import {
   isAiActionAllowed,
-  isProjectCatBehaviorMutationAllowed,
+  isProjectContentEditorBehaviorMutationAllowed,
   isReviewApproveAllowed,
   isWriteBackTranslationAllowed,
 } from "@/api/auth/capability-guards";
 import {
   previewIdenticalStringGrouping,
-  updateProjectCatGroupingPolicy,
-} from "@/lib/projects/cat/project-cat-behavior-service";
+  updateProjectContentEditorGroupingPolicy,
+} from "@/lib/projects/content-editor/project-content-editor-behavior-service";
 import {
   buildAccessibleProjectsWhere,
   projectForbiddenResponse,
@@ -214,7 +235,7 @@ import {
   ownedProjectWhere,
   projectNotFoundResponse,
   providerProjectUnavailableResponse,
-  catAllFilesProviderKindFromTarget,
+  contentEditorAllFilesProviderKindFromTarget,
   resolveProjectResourceTarget,
   scheduleProjectNotFoundDiagnostics,
   tmsProviderLiveErrorResponse,
@@ -224,16 +245,16 @@ import { createJobRoutes } from "./job.route";
 import { createIssueSheetRoutes } from "./issue-sheet.route";
 import { createProjectAssetRoutes } from "./project-assets.route";
 import {
-  generateCatAiRecommendation,
-  loadCatSegmentConcordance,
-  loadCatSegmentVisualContext,
-} from "@/lib/translation/cat";
+  generateContentEditorAiRecommendation,
+  loadContentEditorSegmentConcordance,
+  loadContentEditorSegmentVisualContext,
+} from "@/lib/translation/content-editor-core";
 import {
   inferSupportedFileTranslationFileFormat,
-  inferSupportedBinaryTranslationFileFormat,
   inferSupportedImageTranslationFileFormat,
   inferSupportedSourceUploadFormat,
   inferSupportedVideoTranslationFileFormat,
+  inferSupportedWholeFileTranslationFileFormat,
   looksLikeImageUrl,
   looksLikeVideoUrl,
 } from "@/lib/translation/file-formats";
@@ -241,6 +262,7 @@ import {
 type ProjectUpdateErrorCode =
   | "invalid_project_team"
   | "external_project_locales_readonly"
+  | "project_source_locale_attached_glossaries"
   | "identifier_taken"
   | "invalid_identifier"
   | ProjectLocalePatchError;
@@ -260,6 +282,8 @@ const projectLocalePatchErrorMessages: Record<
   string
 > = {
   external_project_locales_readonly: "External TMS project locales are read-only",
+  project_source_locale_attached_glossaries:
+    "Cannot change the project source locale while attached glossaries use a different source locale",
   invalid_source_locale: "Invalid source locale",
   invalid_target_locales: "Invalid target locales",
   source_in_targets: "Source locale cannot also be a target locale",
@@ -478,6 +502,39 @@ const projectStore: ProjectStore = {
       return ok(existing);
     }
 
+    if (updateValues.sourceLocale !== undefined) {
+      const projectWhere = await ownedProjectWhere(auth, projectId);
+      return db.transaction(async (tx) => {
+        const [lockedProject] = await tx
+          .select({ id: schema.projects.id })
+          .from(schema.projects)
+          .where(projectWhere)
+          .limit(1)
+          .for("update");
+
+        if (!lockedProject) {
+          return ok(null);
+        }
+
+        if (
+          await hasAttachedGlossarySourceLocaleConflict(projectId, updateValues.sourceLocale!, tx)
+        ) {
+          return err({
+            code: "project_source_locale_attached_glossaries",
+            message: projectLocalePatchErrorMessages.project_source_locale_attached_glossaries,
+          });
+        }
+
+        const [project] = await tx
+          .update(schema.projects)
+          .set(updateValues)
+          .where(projectWhere)
+          .returning();
+
+        return ok(project ?? null);
+      });
+    }
+
     const [project] = await db
       .update(schema.projects)
       .set(updateValues)
@@ -521,7 +578,7 @@ const validateProjectParams = validator("param", (value, c) => {
   return parsed.data;
 });
 
-const validateProjectFileCatCommentIdParams = validator("param", (value, c) => {
+const validateProjectFileContentEditorCommentIdParams = validator("param", (value, c) => {
   const parsed = projectFileCatCommentIdParamsSchema.safeParse(value);
 
   if (!parsed.success) {
@@ -541,7 +598,7 @@ const validateProjectFileDetailQuery = validator("query", (value, c) => {
   return parsed.data;
 });
 
-const validateProjectFileCatSegmentParams = validator("param", (value, c) => {
+const validateProjectFileContentEditorSegmentParams = validator("param", (value, c) => {
   const parsed = projectFileCatSegmentParamsSchema.safeParse(value);
 
   if (!parsed.success) {
@@ -551,7 +608,7 @@ const validateProjectFileCatSegmentParams = validator("param", (value, c) => {
   return parsed.data;
 });
 
-const validateProjectFileCatSegmentQuery = validator("query", (value, c) => {
+const validateProjectFileContentEditorSegmentQuery = validator("query", (value, c) => {
   const parsed = projectFileCatSegmentQuerySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -561,7 +618,7 @@ const validateProjectFileCatSegmentQuery = validator("query", (value, c) => {
   return parsed.data;
 });
 
-const validateProjectFileCatQuery = validator("query", (value, c) => {
+const validateProjectFileContentEditorQuery = validator("query", (value, c) => {
   const parsed = projectFileCatQuerySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -571,7 +628,7 @@ const validateProjectFileCatQuery = validator("query", (value, c) => {
   return parsed.data;
 });
 
-const validateProjectFileCatExportQuery = validator("query", (value, c) => {
+const validateProjectFileContentEditorExportQuery = validator("query", (value, c) => {
   const parsed = projectFileCatExportQuerySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -581,7 +638,7 @@ const validateProjectFileCatExportQuery = validator("query", (value, c) => {
   return parsed.data;
 });
 
-const validateProjectFileCatTranslationBody = validator("json", (value, c) => {
+const validateProjectFileContentEditorTranslationBody = validator("json", (value, c) => {
   const parsed = projectFileCatTranslationBodySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -591,7 +648,7 @@ const validateProjectFileCatTranslationBody = validator("json", (value, c) => {
   return parsed.data;
 });
 
-const validateProjectFileCatCommentBody = validator("json", (value, c) => {
+const validateProjectFileContentEditorCommentBody = validator("json", (value, c) => {
   const parsed = projectFileCatCommentBodySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -601,7 +658,7 @@ const validateProjectFileCatCommentBody = validator("json", (value, c) => {
   return parsed.data;
 });
 
-const validateProjectFileCatCommentResolveBody = validator("json", (value, c) => {
+const validateProjectFileContentEditorCommentResolveBody = validator("json", (value, c) => {
   const parsed = projectFileCatCommentResolveBodySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -611,7 +668,7 @@ const validateProjectFileCatCommentResolveBody = validator("json", (value, c) =>
   return parsed.data;
 });
 
-const validateProjectFileCatConcordanceBody = validator("json", (value, c) => {
+const validateProjectFileContentEditorConcordanceBody = validator("json", (value, c) => {
   const parsed = projectFileCatConcordanceBodySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -621,7 +678,7 @@ const validateProjectFileCatConcordanceBody = validator("json", (value, c) => {
   return parsed.data;
 });
 
-const validateProjectFileCatVisualContextBody = validator("json", (value, c) => {
+const validateProjectFileContentEditorVisualContextBody = validator("json", (value, c) => {
   const parsed = projectFileCatVisualContextBodySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -631,7 +688,7 @@ const validateProjectFileCatVisualContextBody = validator("json", (value, c) => 
   return parsed.data;
 });
 
-const validateProjectFileCatRecommendationBody = validator("json", (value, c) => {
+const validateProjectFileContentEditorRecommendationBody = validator("json", (value, c) => {
   const parsed = projectFileCatRecommendationBodySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -641,7 +698,7 @@ const validateProjectFileCatRecommendationBody = validator("json", (value, c) =>
   return parsed.data;
 });
 
-const validateProjectFileCatStatusBody = validator("json", (value, c) => {
+const validateProjectFileContentEditorStatusBody = validator("json", (value, c) => {
   const parsed = projectFileCatStatusBodySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -651,7 +708,7 @@ const validateProjectFileCatStatusBody = validator("json", (value, c) => {
   return parsed.data;
 });
 
-const validateProjectFileCatHiddenStringsBody = validator("json", (value, c) => {
+const validateProjectFileContentEditorHiddenStringsBody = validator("json", (value, c) => {
   const parsed = projectFileCatHiddenStringsBodySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -661,7 +718,7 @@ const validateProjectFileCatHiddenStringsBody = validator("json", (value, c) => 
   return parsed.data;
 });
 
-const validateProjectFileCatLockedStringsBody = validator("json", (value, c) => {
+const validateProjectFileContentEditorLockedStringsBody = validator("json", (value, c) => {
   const parsed = projectFileCatLockedStringsBodySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -671,7 +728,17 @@ const validateProjectFileCatLockedStringsBody = validator("json", (value, c) => 
   return parsed.data;
 });
 
-const validateProjectFileCatImageRegenerateBody = validator("json", (value, c) => {
+const validateProjectFileContentEditorMaxLengthBody = validator("json", (value, c) => {
+  const parsed = projectFileCatMaxLengthBodySchema.safeParse(value);
+
+  if (!parsed.success) {
+    return invalidProjectPayloadResponse(c);
+  }
+
+  return parsed.data;
+});
+
+const validateProjectFileContentEditorImageRegenerateBody = validator("json", (value, c) => {
   const parsed = projectFileCatImageRegenerateBodySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -681,7 +748,7 @@ const validateProjectFileCatImageRegenerateBody = validator("json", (value, c) =
   return parsed.data;
 });
 
-const validateProjectFileCatImageStatusBody = validator("json", (value, c) => {
+const validateProjectFileContentEditorImageStatusBody = validator("json", (value, c) => {
   const parsed = projectFileCatImageStatusBodySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -691,7 +758,7 @@ const validateProjectFileCatImageStatusBody = validator("json", (value, c) => {
   return parsed.data;
 });
 
-const validateProjectFileCatTreatAsImageBody = validator("json", (value, c) => {
+const validateProjectFileContentEditorTreatAsImageBody = validator("json", (value, c) => {
   const parsed = projectFileCatTreatAsImageBodySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -701,7 +768,7 @@ const validateProjectFileCatTreatAsImageBody = validator("json", (value, c) => {
   return parsed.data;
 });
 
-const validateProjectFileCatTreatAsVideoBody = validator("json", (value, c) => {
+const validateProjectFileContentEditorTreatAsVideoBody = validator("json", (value, c) => {
   const parsed = projectFileCatTreatAsVideoBodySchema.safeParse(value);
 
   if (!parsed.success) {
@@ -730,7 +797,7 @@ function asFile(value: unknown) {
   return values.find((item): item is File => item instanceof File && item.size > 0) ?? null;
 }
 
-async function getNativeCatTranslationKey(input: {
+async function getNativeContentEditorTranslationKey(input: {
   organizationId: string;
   projectId: string;
   translationKeyId: string;
@@ -817,8 +884,8 @@ const validateUpdateProjectBody = validator("json", (value, c) => {
   return parsed.data;
 });
 
-const validateUpdateProjectCatBehaviorBody = validator("json", (value, c) => {
-  const parsed = updateProjectCatBehaviorBodySchema.safeParse(value);
+const validateUpdateProjectContentEditorBehaviorBody = validator("json", (value, c) => {
+  const parsed = updateProjectContentEditorBehaviorBodySchema.safeParse(value);
 
   if (!parsed.success) {
     return invalidProjectPayloadResponse(c);
@@ -833,21 +900,45 @@ type CreateProjectRoutesOptions = {
   translationFileImportQueue?: TranslationFileImportQueue;
 };
 
-export async function loadProjectFileCatQueue(
+async function withCatTeamGlossaryContext(
   auth: AuthVariables["auth"],
   projectId: string,
-  query: ProjectFileCatQuery,
+  contentEditorQueue: ProjectFileContentEditorQueueFile,
+): Promise<ProjectFileContentEditorQueueFile> {
+  const [teamGlossaries, projectTeam, contributorTeams] = await Promise.all([
+    listAttachedTeamGlossaries(projectId),
+    getProjectTeamContext(projectId),
+    listContributorTeams(auth.user.localUserId, auth.organization.localOrganizationId, {
+      organizationWideAccess: isGlossaryManageAllowed(auth.membership.role),
+    }),
+  ]);
+  return {
+    ...contentEditorQueue,
+    teamGlossaries,
+    contributorTeams,
+    canContributeTeamGlossary:
+      contentEditorQueue.provider == null && isGlossaryContributorRole(auth.membership.role),
+    ...(projectTeam?.teamId ? { projectTeamId: projectTeam.teamId } : {}),
+    ...(projectTeam?.teamName ? { teamName: projectTeam.teamName } : {}),
+    ...(projectTeam?.teamSlug ? { projectTeamSlug: projectTeam.teamSlug } : {}),
+  };
+}
+
+export async function loadProjectFileContentEditorQueue(
+  auth: AuthVariables["auth"],
+  projectId: string,
+  query: ProjectFileContentEditorQuery,
 ) {
-  const pagination = resolveProjectFileCatPagination(query);
+  const pagination = resolveProjectFileContentEditorPagination(query);
   const target = await resolveProjectResourceTarget(auth, projectId);
   const organizationSlug = auth.organization.slug ?? auth.organization.localOrganizationId;
-  const allFiles = isCatAllFilesSourcePath(query.sourcePath);
+  const allFiles = isContentEditorAllFilesSourcePath(query.sourcePath);
   const sourcePathsFilter = allFiles ? parseCatSourcePathsFilter(query.sourcePaths) : null;
 
   if (allFiles) {
-    const providerKind = catAllFilesProviderKindFromTarget(target);
+    const providerKind = contentEditorAllFilesProviderKindFromTarget(target);
     // Provider support lives in decide(); Flags Explorer overrides still win.
-    if (!(await isReleaseCatAllFilesEnabled(providerKind))) {
+    if (!(await isReleaseContentEditorAllFilesEnabled(providerKind))) {
       return { kind: "feature_unavailable" as const };
     }
   }
@@ -862,7 +953,7 @@ export async function loadProjectFileCatQueue(
       return { kind: "project_not_found" as const };
     }
 
-    const catQueue = await getNativeProjectCatFile({
+    const contentEditorQueue = await getNativeProjectContentEditorFile({
       organizationId: auth.organization.localOrganizationId,
       projectId,
       sourcePath: query.sourcePath,
@@ -873,23 +964,27 @@ export async function loadProjectFileCatQueue(
       sourcePaths: sourcePathsFilter,
     });
 
-    if (!catQueue) {
+    if (!contentEditorQueue) {
       return { kind: "source_file_not_found" as const };
     }
 
     return {
       kind: "ok" as const,
-      catQueue: await attachCatSegmentLocks({
-        organizationId: auth.organization.localOrganizationId,
+      contentEditorQueue: await withCatTeamGlossaryContext(
+        auth,
         projectId,
-        catQueue,
-      }),
+        await attachCatSegmentLocks({
+          organizationId: auth.organization.localOrganizationId,
+          projectId,
+          contentEditorQueue,
+        }),
+      ),
     };
   }
 
   try {
-    const catQueue = allFiles
-      ? await getTmsProviderLiveCatAllFiles(
+    const contentEditorQueue = allFiles
+      ? await getTmsProviderLiveContentEditorAllFiles(
           auth.organization.localOrganizationId,
           target.externalProjectId,
           query.targetLocale,
@@ -914,30 +1009,34 @@ export async function loadProjectFileCatQueue(
           },
         );
 
-    if (!catQueue) {
+    if (!contentEditorQueue) {
       return { kind: "project_not_found" as const };
     }
 
-    const enrichedCatQueue = await enrichExternalCatFileImageFields({
+    const enrichedCatQueue = await enrichExternalContentEditorFileImageFields({
       organizationId: auth.organization.localOrganizationId,
       projectId,
-      catFile: catQueue,
+      contentEditorFile: contentEditorQueue,
     });
 
     return {
       kind: "ok" as const,
-      catQueue: await attachCatSegmentLocks({
-        organizationId: auth.organization.localOrganizationId,
+      contentEditorQueue: await withCatTeamGlossaryContext(
+        auth,
         projectId,
-        catQueue: enrichedCatQueue,
-      }),
+        await attachCatSegmentLocks({
+          organizationId: auth.organization.localOrganizationId,
+          projectId,
+          contentEditorQueue: enrichedCatQueue,
+        }),
+      ),
     };
   } catch (error) {
     return { kind: "provider_error" as const, error };
   }
 }
 
-async function catSegmentLockedResponse(
+async function contentEditorSegmentLockedResponse(
   c: Parameters<typeof conflictResponse>[0],
   input: {
     organizationId: string;
@@ -1034,11 +1133,11 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     .get(
       "/:projectId/files/detail/cat/queue",
       validateProjectParams,
-      validateProjectFileCatQuery,
+      validateProjectFileContentEditorQuery,
       async (c) => {
         const params = c.req.valid("param");
         const query = c.req.valid("query");
-        const result = await loadProjectFileCatQueue(c.var.auth, params.projectId, query);
+        const result = await loadProjectFileContentEditorQueue(c.var.auth, params.projectId, query);
 
         if (result.kind === "feature_unavailable") {
           return sharedForbiddenResponse(
@@ -1064,13 +1163,13 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           return tmsProviderLiveErrorResponse(c, result.error);
         }
 
-        return c.json({ catQueue: result.catQueue }, 200);
+        return c.json({ contentEditorQueue: result.contentEditorQueue }, 200);
       },
     )
     .get(
       "/:projectId/files/detail/cat/export",
       validateProjectParams,
-      validateProjectFileCatExportQuery,
+      validateProjectFileContentEditorExportQuery,
       async (c) => {
         const params = c.req.valid("param");
         const query = c.req.valid("query");
@@ -1092,13 +1191,13 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           }
         }
 
-        const { format, sourceLocale: _sourceLocale, ...catQuery } = query;
+        const { format, sourceLocale: _sourceLocale, ...contentEditorQuery } = query;
         const collected = await collectCatFilteredExportRows({
           auth: c.var.auth,
           projectId: params.projectId,
-          query: catQuery,
+          query: contentEditorQuery,
           sourceLocale,
-          loadCatQueue: loadProjectFileCatQueue,
+          loadCatQueue: loadProjectFileContentEditorQueue,
           externalProjectId: target.kind === "provider" ? target.externalProjectId : null,
         });
 
@@ -1151,11 +1250,11 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     .get(
       "/:projectId/files/detail/cat",
       validateProjectParams,
-      validateProjectFileCatQuery,
+      validateProjectFileContentEditorQuery,
       async (c) => {
         const params = c.req.valid("param");
         const query = c.req.valid("query");
-        const result = await loadProjectFileCatQueue(c.var.auth, params.projectId, query);
+        const result = await loadProjectFileContentEditorQueue(c.var.auth, params.projectId, query);
 
         if (result.kind === "feature_unavailable") {
           return sharedForbiddenResponse(
@@ -1181,14 +1280,14 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           return tmsProviderLiveErrorResponse(c, result.error);
         }
 
-        return c.json({ catFile: result.catQueue }, 200);
+        return c.json({ contentEditorFile: result.contentEditorQueue }, 200);
       },
     )
     .get(
       "/:projectId/files/detail/cat/segments/:externalStringId/target",
       validateProjectParams,
-      validateProjectFileCatSegmentParams,
-      validateProjectFileCatSegmentQuery,
+      validateProjectFileContentEditorSegmentParams,
+      validateProjectFileContentEditorSegmentQuery,
       async (c) => {
         const params = c.req.valid("param");
         const query = c.req.valid("query");
@@ -1203,7 +1302,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             return projectNotFoundResponse(c);
           }
 
-          const segmentTarget = await getNativeProjectCatSegmentTarget({
+          const segmentTarget = await getNativeProjectContentEditorSegmentTarget({
             organizationId: c.var.auth.organization.localOrganizationId,
             projectId: params.projectId,
             sourcePath: query.sourcePath,
@@ -1241,7 +1340,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             return c.json({ target: segmentTarget }, 200);
           }
 
-          const overlay = await getExternalCatStringOverlay({
+          const overlay = await getExternalContentEditorStringOverlay({
             organizationId: c.var.auth.organization.localOrganizationId,
             projectId: params.projectId,
             sourcePath: query.sourcePath,
@@ -1252,7 +1351,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           return c.json(
             {
               target: segmentTarget
-                ? enrichExternalCatTranslationImageFields(segmentTarget, overlay)
+                ? enrichExternalContentEditorTranslationImageFields(segmentTarget, overlay)
                 : segmentTarget,
             },
             200,
@@ -1265,8 +1364,8 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     .get(
       "/:projectId/files/detail/cat/segments/:externalStringId/comments",
       validateProjectParams,
-      validateProjectFileCatSegmentParams,
-      validateProjectFileCatSegmentQuery,
+      validateProjectFileContentEditorSegmentParams,
+      validateProjectFileContentEditorSegmentQuery,
       async (c) => {
         const params = c.req.valid("param");
         const query = c.req.valid("query");
@@ -1281,7 +1380,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             return projectNotFoundResponse(c);
           }
 
-          const comments = await getNativeProjectCatSegmentComments({
+          const comments = await getNativeProjectContentEditorSegmentComments({
             organizationId: c.var.auth.organization.localOrganizationId,
             projectId: params.projectId,
             sourcePath: query.sourcePath,
@@ -1315,7 +1414,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     .post(
       "/:projectId/files/detail/cat/translations",
       validateProjectParams,
-      validateProjectFileCatTranslationBody,
+      validateProjectFileContentEditorTranslationBody,
       async (c) => {
         if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {
           return projectForbiddenResponse(c);
@@ -1328,7 +1427,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           return providerProjectUnavailableResponse(c, target);
         }
 
-        const lockedResponse = await catSegmentLockedResponse(c, {
+        const lockedResponse = await contentEditorSegmentLockedResponse(c, {
           organizationId: c.var.auth.organization.localOrganizationId,
           projectId: params.projectId,
           targetLocale: body.targetLocale,
@@ -1358,7 +1457,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             );
           }
 
-          const translation = await saveNativeProjectCatTranslation({
+          const translation = await saveNativeProjectContentEditorTranslation({
             organizationId: c.var.auth.organization.localOrganizationId,
             projectId: params.projectId,
             sourcePath: body.sourcePath,
@@ -1375,8 +1474,8 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
 
           serverAnalytics.track(
             body.approve
-              ? PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentApproved
-              : PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentDraftSaved,
+              ? PRODUCT_USAGE_ANALYTICS_EVENTS.contentEditorSegmentApproved
+              : PRODUCT_USAGE_ANALYTICS_EVENTS.contentEditorSegmentDraftSaved,
             {
               source: "native",
               status: body.approve ? "approved" : "draft",
@@ -1405,8 +1504,8 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
 
           serverAnalytics.track(
             translation.isApproved
-              ? PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentApproved
-              : PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentDraftSaved,
+              ? PRODUCT_USAGE_ANALYTICS_EVENTS.contentEditorSegmentApproved
+              : PRODUCT_USAGE_ANALYTICS_EVENTS.contentEditorSegmentDraftSaved,
             {
               source: "external_tms",
               status: translation.isApproved ? "approved" : "draft",
@@ -1422,7 +1521,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     .post(
       "/:projectId/files/detail/cat/comments",
       validateProjectParams,
-      validateProjectFileCatCommentBody,
+      validateProjectFileContentEditorCommentBody,
       async (c) => {
         if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {
           return projectForbiddenResponse(c);
@@ -1449,7 +1548,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             );
           }
 
-          const comment = await saveNativeProjectCatComment({
+          const comment = await saveNativeProjectContentEditorComment({
             organizationId: c.var.auth.organization.localOrganizationId,
             projectId: params.projectId,
             sourcePath: body.sourcePath,
@@ -1468,7 +1567,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             );
           }
 
-          serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.catCommentCreated, {
+          serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.contentEditorCommentCreated, {
             source: "native",
             feature: "comment",
           });
@@ -1495,7 +1594,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             return projectNotFoundResponse(c);
           }
 
-          serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.catCommentCreated, {
+          serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.contentEditorCommentCreated, {
             source: "external_tms",
             feature: body.type === "issue" ? "issue" : "comment",
           });
@@ -1508,8 +1607,8 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     )
     .patch(
       "/:projectId/files/detail/cat/comments/:commentId/resolve",
-      validateProjectFileCatCommentIdParams,
-      validateProjectFileCatCommentResolveBody,
+      validateProjectFileContentEditorCommentIdParams,
+      validateProjectFileContentEditorCommentResolveBody,
       async (c) => {
         if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {
           return projectForbiddenResponse(c);
@@ -1530,7 +1629,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
 
           // Native issues live in the issue sheet now. Only comments raised as
           // issues before that change are still resolvable here.
-          const comment = await resolveNativeProjectCatLegacyIssueComment({
+          const comment = await resolveNativeProjectContentEditorLegacyIssueComment({
             organizationId: c.var.auth.organization.localOrganizationId,
             projectId: params.projectId,
             commentId: params.commentId,
@@ -1573,7 +1672,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     .post(
       "/:projectId/files/detail/cat/concordance",
       validateProjectParams,
-      validateProjectFileCatConcordanceBody,
+      validateProjectFileContentEditorConcordanceBody,
       async (c) => {
         const params = c.req.valid("param");
         const body = c.req.valid("json");
@@ -1590,8 +1689,9 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         }
 
         try {
-          const concordance = await loadCatSegmentConcordance({
+          const concordance = await loadContentEditorSegmentConcordance({
             organizationId: c.var.auth.organization.localOrganizationId,
+            organizationSlug: c.var.auth.organization.slug ?? undefined,
             projectId: params.projectId,
             providerKind: target.kind === "provider" ? target.providerKind : null,
             actorUserId: c.var.auth.user.localUserId,
@@ -1609,7 +1709,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     .post(
       "/:projectId/files/detail/cat/visual-context",
       validateProjectParams,
-      validateProjectFileCatVisualContextBody,
+      validateProjectFileContentEditorVisualContextBody,
       async (c) => {
         const params = c.req.valid("param");
         const body = c.req.valid("json");
@@ -1627,7 +1727,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         }
 
         try {
-          const visualContext = await loadCatSegmentVisualContext({
+          const visualContext = await loadContentEditorSegmentVisualContext({
             organizationId: c.var.auth.organization.localOrganizationId,
             providerKind: target.providerKind,
             externalProjectId: target.externalProjectId,
@@ -1645,7 +1745,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     .post(
       "/:projectId/files/detail/cat/recommendation",
       validateProjectParams,
-      validateProjectFileCatRecommendationBody,
+      validateProjectFileContentEditorRecommendationBody,
       async (c) => {
         if (!isAiActionAllowed(c.var.auth.membership.role)) {
           return projectForbiddenResponse(c);
@@ -1678,7 +1778,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         }
 
         const filename = body.sourcePath.split("/").pop() ?? body.sourcePath;
-        const result = await generateCatAiRecommendation({
+        const result = await generateContentEditorAiRecommendation({
           projectId: recommendationProjectId,
           organizationId: c.var.auth.organization.localOrganizationId,
           sourcePath: body.sourcePath,
@@ -1700,9 +1800,12 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           return badRequestResponse(c, result.error.code, result.error.message);
         }
 
-        serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.catAiRecommendationRequested, {
-          source: target.kind === "provider" ? "external_tms" : "native",
-        });
+        serverAnalytics.track(
+          PRODUCT_USAGE_ANALYTICS_EVENTS.contentEditorAiRecommendationRequested,
+          {
+            source: target.kind === "provider" ? "external_tms" : "native",
+          },
+        );
 
         return c.json({ recommendation: result.value }, 200);
       },
@@ -1710,7 +1813,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     .post(
       "/:projectId/files/detail/cat/translations/status",
       validateProjectParams,
-      validateProjectFileCatStatusBody,
+      validateProjectFileContentEditorStatusBody,
       async (c) => {
         if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {
           return projectForbiddenResponse(c);
@@ -1736,7 +1839,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           return projectNotFoundResponse(c);
         }
 
-        const lockedStatusResponse = await catSegmentLockedResponse(c, {
+        const lockedStatusResponse = await contentEditorSegmentLockedResponse(c, {
           organizationId: c.var.auth.organization.localOrganizationId,
           projectId: params.projectId,
           targetLocale: body.targetLocale,
@@ -1760,7 +1863,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         }
 
         if (body.status === "approved") {
-          serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.catSegmentApproved, {
+          serverAnalytics.track(PRODUCT_USAGE_ANALYTICS_EVENTS.contentEditorSegmentApproved, {
             source: "native",
             status: "approved",
           });
@@ -1772,7 +1875,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     .post(
       "/:projectId/files/detail/cat/strings/hidden",
       validateProjectParams,
-      validateProjectFileCatHiddenStringsBody,
+      validateProjectFileContentEditorHiddenStringsBody,
       async (c) => {
         if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {
           return projectForbiddenResponse(c);
@@ -1822,7 +1925,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           return projectNotFoundResponse(c);
         }
 
-        const result = await setNativeProjectCatStringsHidden({
+        const result = await setNativeProjectContentEditorStringsHidden({
           organizationId: c.var.auth.organization.localOrganizationId,
           projectId: params.projectId,
           translationKeyIds: body.externalStringIds,
@@ -1842,7 +1945,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     .post(
       "/:projectId/files/detail/cat/strings/locked",
       validateProjectParams,
-      validateProjectFileCatLockedStringsBody,
+      validateProjectFileContentEditorLockedStringsBody,
       async (c) => {
         if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {
           return projectForbiddenResponse(c);
@@ -1871,13 +1974,72 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           actorUserId: c.var.auth.user.localUserId,
         });
 
-        return c.json({ catSegmentLock: result }, 200);
+        return c.json({ contentEditorSegmentLock: result }, 200);
+      },
+    )
+    .post(
+      "/:projectId/files/detail/cat/segments/:externalStringId/max-length",
+      validateProjectParams,
+      validateProjectFileContentEditorSegmentParams,
+      validateProjectFileContentEditorMaxLengthBody,
+      async (c) => {
+        if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {
+          return projectForbiddenResponse(c);
+        }
+
+        const params = c.req.valid("param");
+        const body = c.req.valid("json");
+        if (params.externalStringId !== body.externalStringId) {
+          return invalidProjectPayloadResponse(c);
+        }
+
+        const target = await resolveProjectResourceTarget(c.var.auth, params.projectId);
+        if (target.kind === "provider_unavailable") {
+          return providerProjectUnavailableResponse(c, target);
+        }
+
+        if (target.kind === "provider") {
+          return badRequestResponse(
+            c,
+            "provider_cat_unsupported",
+            "Max length can only be updated for native CAT.",
+          );
+        }
+
+        const project = await getOwnedProject(c.var.auth, params.projectId);
+        if (!project) {
+          return projectNotFoundResponse(c);
+        }
+
+        const result = await setNativeProjectContentEditorKeyMaxLength({
+          organizationId: c.var.auth.organization.localOrganizationId,
+          projectId: params.projectId,
+          translationKeyId: body.externalStringId,
+          maxLength: body.maxLength,
+          sourcePath: body.sourcePath,
+        });
+
+        if (!result.updated) {
+          return notFoundResponse(c, "translation_key_not_found");
+        }
+
+        return c.json(
+          {
+            segment: {
+              externalStringId: body.externalStringId,
+              ...(result.maxLength != null && result.maxLength > 0
+                ? { maxLength: result.maxLength }
+                : {}),
+            },
+          },
+          200,
+        );
       },
     )
     .post(
       "/:projectId/files/detail/cat/images/regenerate",
       validateProjectParams,
-      validateProjectFileCatImageRegenerateBody,
+      validateProjectFileContentEditorImageRegenerateBody,
       async (c) => {
         if (!isAiActionAllowed(c.var.auth.membership.role)) {
           return projectForbiddenResponse(c);
@@ -1909,7 +2071,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         // File-backed segments may be locked under sourceFile.id or binary:/image:/video:
         // aliases. Expand aliases before the write so omitting or aliasing externalStringId
         // cannot bypass a lock (status already uses fileBackedCatSegmentIds).
-        const fileBackedSourceFile = inferSupportedBinaryTranslationFileFormat(body.sourcePath)
+        const fileBackedSourceFile = inferSupportedWholeFileTranslationFileFormat(body.sourcePath)
           ? await getRepositorySourceFileByPath({
               organizationId,
               projectId: params.projectId,
@@ -1917,9 +2079,9 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             })
           : null;
         const isFileBackedAsset = Boolean(
-          inferSupportedBinaryTranslationFileFormat(body.sourcePath),
+          inferSupportedWholeFileTranslationFileFormat(body.sourcePath),
         );
-        const lockedImageResponse = await catSegmentLockedResponse(c, {
+        const lockedImageResponse = await contentEditorSegmentLockedResponse(c, {
           organizationId,
           projectId: params.projectId,
           targetLocale: body.targetLocale,
@@ -2061,7 +2223,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           );
         }
 
-        const translationKey = await getNativeCatTranslationKey({
+        const translationKey = await getNativeContentEditorTranslationKey({
           organizationId,
           projectId: params.projectId,
           translationKeyId: body.externalStringId,
@@ -2163,7 +2325,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         const organizationId = c.var.auth.organization.localOrganizationId;
         const isFileBackedUpload =
           target.kind !== "provider" &&
-          Boolean(inferSupportedBinaryTranslationFileFormat(sourcePath));
+          Boolean(inferSupportedWholeFileTranslationFileFormat(sourcePath));
         const fileBackedUploadSourceFile = isFileBackedUpload
           ? await getRepositorySourceFileByPath({
               organizationId,
@@ -2171,7 +2333,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
               sourcePath,
             })
           : null;
-        const lockedUploadResponse = await catSegmentLockedResponse(c, {
+        const lockedUploadResponse = await contentEditorSegmentLockedResponse(c, {
           organizationId,
           projectId: params.projectId,
           targetLocale,
@@ -2234,7 +2396,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             return projectNotFoundResponse(c);
           }
 
-          const stored = await storeExternalCatImageUpload({
+          const stored = await storeExternalContentEditorImageUpload({
             organizationId,
             projectId: ensured.value,
             externalStringId,
@@ -2262,7 +2424,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
               { actorUserId: c.var.auth.user.localUserId },
             );
           } catch (error) {
-            await cleanupFailedExternalCatImageUpload({
+            await cleanupFailedExternalContentEditorImageUpload({
               organizationId,
               projectId: ensured.value,
               storedFileId: stored.storedFileId,
@@ -2271,7 +2433,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           }
 
           if (!translation) {
-            await cleanupFailedExternalCatImageUpload({
+            await cleanupFailedExternalContentEditorImageUpload({
               organizationId,
               projectId: ensured.value,
               storedFileId: stored.storedFileId,
@@ -2282,7 +2444,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           // Overlay is local metadata after a committed provider write-back.
           // Never delete public media here — the provider already points at stored.assetUrl.
           try {
-            await setExternalCatStringTreatAsImage({
+            await setExternalContentEditorStringTreatAsImage({
               organizationId,
               projectId: params.projectId,
               sourcePath,
@@ -2362,7 +2524,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           );
         }
 
-        if (inferSupportedBinaryTranslationFileFormat(sourcePath)) {
+        if (inferSupportedWholeFileTranslationFileFormat(sourcePath)) {
           const sourceFile = fileBackedUploadSourceFile;
           if (!sourceFile) {
             return badRequestResponse(
@@ -2418,7 +2580,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           );
         }
 
-        const translationKey = await getNativeCatTranslationKey({
+        const translationKey = await getNativeContentEditorTranslationKey({
           organizationId,
           projectId: params.projectId,
           translationKeyId: externalStringId,
@@ -2489,7 +2651,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     .patch(
       "/:projectId/files/detail/cat/images/status",
       validateProjectParams,
-      validateProjectFileCatImageStatusBody,
+      validateProjectFileContentEditorImageStatusBody,
       async (c) => {
         if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {
           return projectForbiddenResponse(c);
@@ -2523,7 +2685,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           projectId: params.projectId,
           sourcePath: body.sourcePath,
         });
-        const lockedImageStatusResponse = await catSegmentLockedResponse(c, {
+        const lockedImageStatusResponse = await contentEditorSegmentLockedResponse(c, {
           organizationId,
           projectId: params.projectId,
           targetLocale: body.targetLocale,
@@ -2568,7 +2730,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           );
         }
 
-        if (inferSupportedBinaryTranslationFileFormat(body.sourcePath)) {
+        if (inferSupportedWholeFileTranslationFileFormat(body.sourcePath)) {
           const result = await updateImageVariantStatus({
             organizationId,
             projectId: params.projectId,
@@ -2613,8 +2775,8 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     .post(
       "/:projectId/files/detail/cat/segments/:externalStringId/treat-as-image",
       validateProjectParams,
-      validateProjectFileCatSegmentParams,
-      validateProjectFileCatTreatAsImageBody,
+      validateProjectFileContentEditorSegmentParams,
+      validateProjectFileContentEditorTreatAsImageBody,
       async (c) => {
         if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {
           return projectForbiddenResponse(c);
@@ -2640,7 +2802,7 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
             );
           }
 
-          const result = await setExternalCatStringTreatAsImage({
+          const result = await setExternalContentEditorStringTreatAsImage({
             organizationId: c.var.auth.organization.localOrganizationId,
             projectId: params.projectId,
             sourcePath: body.sourcePath,
@@ -2707,8 +2869,8 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
     .post(
       "/:projectId/files/detail/cat/segments/:externalStringId/treat-as-video",
       validateProjectParams,
-      validateProjectFileCatSegmentParams,
-      validateProjectFileCatTreatAsVideoBody,
+      validateProjectFileContentEditorSegmentParams,
+      validateProjectFileContentEditorTreatAsVideoBody,
       async (c) => {
         if (!isWriteBackTranslationAllowed(c.var.auth.membership.role)) {
           return projectForbiddenResponse(c);
@@ -3335,24 +3497,24 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
       const openJobCount = await countOpenJobs(c.var.auth, project.id);
       return c.json({ openJobCount }, 200);
     })
-    .get("/:projectId/cat-behavior", validateProjectParams, async (c) => {
+    .get("/:projectId/content-editor-behavior", validateProjectParams, async (c) => {
       const params = c.req.valid("param");
       const project = await getOwnedProjectRecord(c.var.auth, params.projectId);
       if (!project) return projectNotFoundResponse(c);
 
       return c.json(
         {
-          catBehavior: {
+          contentEditorBehavior: {
             automaticallyGroupIdenticalStrings: project.automaticallyGroupIdenticalStrings,
-            groupingRevision: project.catGroupingRevision,
-            canManage: isProjectCatBehaviorMutationAllowed(c.var.auth.membership.role),
+            groupingRevision: project.contentEditorGroupingRevision,
+            canManage: isProjectContentEditorBehaviorMutationAllowed(c.var.auth.membership.role),
           },
         },
         200,
       );
     })
-    .get("/:projectId/cat-behavior/preview", validateProjectParams, async (c) => {
-      if (!isProjectCatBehaviorMutationAllowed(c.var.auth.membership.role)) {
+    .get("/:projectId/content-editor-behavior/preview", validateProjectParams, async (c) => {
+      if (!isProjectContentEditorBehaviorMutationAllowed(c.var.auth.membership.role)) {
         return projectForbiddenResponse(c);
       }
 
@@ -3367,11 +3529,11 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
       return c.json({ preview }, 200);
     })
     .patch(
-      "/:projectId/cat-behavior",
+      "/:projectId/content-editor-behavior",
       validateProjectParams,
-      validateUpdateProjectCatBehaviorBody,
+      validateUpdateProjectContentEditorBehaviorBody,
       async (c) => {
-        if (!isProjectCatBehaviorMutationAllowed(c.var.auth.membership.role)) {
+        if (!isProjectContentEditorBehaviorMutationAllowed(c.var.auth.membership.role)) {
           return projectForbiddenResponse(c);
         }
 
@@ -3380,18 +3542,18 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         if (!project) return projectNotFoundResponse(c);
 
         const payload = c.req.valid("json");
-        const catBehavior = await updateProjectCatGroupingPolicy({
+        const contentEditorBehavior = await updateProjectContentEditorGroupingPolicy({
           organizationId: c.var.auth.organization.localOrganizationId,
           projectId: project.id,
           automaticallyGroupIdenticalStrings: payload.automaticallyGroupIdenticalStrings,
           actorUserId: c.var.auth.user.localUserId,
         });
-        if (!catBehavior) return projectNotFoundResponse(c);
+        if (!contentEditorBehavior) return projectNotFoundResponse(c);
 
         return c.json(
           {
-            catBehavior: {
-              ...catBehavior,
+            contentEditorBehavior: {
+              ...contentEditorBehavior,
               canManage: true,
             },
           },
@@ -3594,9 +3756,13 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
       }
 
       const params = c.req.valid("param");
-      const deleted = await projectStore.delete(c.var.auth, params.projectId);
+      const deleteResult = await deleteProjectWithTeamGlossaryGuard(c.var.auth, params.projectId);
 
-      if (!deleted) {
+      if (deleteResult === "team_project_required") {
+        return glossaryTeamProjectRequiredResponse(c);
+      }
+
+      if (deleteResult === "not_found") {
         return projectNotFoundResponse(c);
       }
 

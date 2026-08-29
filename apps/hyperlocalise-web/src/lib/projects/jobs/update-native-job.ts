@@ -12,7 +12,7 @@
  */
 import { and, eq, type SQL } from "drizzle-orm";
 
-import { db, schema, type DatabaseClient } from "@/lib/database";
+import { db, schema, type DatabaseClient } from "@/lib/database/client";
 import { assertAssignableIssueAssignee } from "@/lib/projects/issue-sheet/issue-sheet-assignee";
 import { err, isErr, ok, type Result } from "@/lib/primitives/result/results";
 
@@ -120,6 +120,7 @@ export async function updateNativeJob(input: {
     }
 
     const updates: {
+      assigneeType?: "user" | "agent" | null;
       ownerUserId?: string | null;
       inputPayload?: Record<string, unknown>;
       updatedAt: Date;
@@ -130,6 +131,7 @@ export async function updateNativeJob(input: {
     if (ownerChanging) {
       if (input.body.ownerWorkosUserId == null) {
         updates.ownerUserId = null;
+        updates.assigneeType = null;
       } else {
         const resolvedOwnerId = await resolveOwnerUserId({
           organizationId: input.organizationId,
@@ -156,6 +158,7 @@ export async function updateNativeJob(input: {
           });
         }
         updates.ownerUserId = resolvedOwnerId;
+        updates.assigneeType = "user";
       }
     }
 

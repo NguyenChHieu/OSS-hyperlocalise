@@ -1,0 +1,48 @@
+---
+title: "Storage overview"
+description: "How local files, sidecar metadata, and remote adapters work during sync."
+---
+
+## What the storage layer does
+
+Storage connects:
+
+- local translation files,
+- sidecar provenance metadata,
+- remote adapter APIs.
+
+## Supported adapters
+
+- [Crowdin](/cli/storage/crowdin)
+- [LILT AI](/cli/storage/lilt)
+- [Lokalise](/cli/storage/lokalise)
+- [Phrase](/cli/storage/phrase)
+- [POEditor](/cli/storage/poeditor)
+- [Smartling](/cli/storage/smartling)
+
+## Entry identity
+
+Each translation entry is identified by:
+
+- `key`
+- `context`
+- `locale`
+
+## Why sidecar metadata exists
+
+Your user-facing text stays in normal translation files. Operational metadata (for example draft vs curated state) stays in sidecar metadata files so translation content remains clean.
+
+## Pull and push lifecycle
+
+1. `run` generates local drafts (`origin=llm`, `state=draft`).
+2. `sync push` sends local changes to remote storage.
+3. Human translators curate values in remote TMS.
+4. `sync pull` applies curated changes locally.
+
+## Conflict rules
+
+- Pull can auto-apply curated-over-draft when enabled.
+- Push protects curated remote values by default.
+- `--force-conflicts` is opt-in for risky overwrite paths.
+
+For specific conflict decisions, see [conflicts](/cli/troubleshooting/conflicts).

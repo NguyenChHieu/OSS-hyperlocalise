@@ -1,0 +1,46 @@
+---
+title: "sync pull"
+description: "Download translated files reconstructed by the Hyperlocalise API."
+---
+
+## Usage
+
+```bash
+hyperlocalise sync pull [--config <path>] [flags]
+```
+
+## Default behavior
+
+`sync pull` writes translated files to local paths from `i18n.yml`. Use `--dry-run` when you want to preview the report without writing files.
+
+For each configured source file and target locale, the CLI calls the public Hyperlocalise API to reconstruct the translated file from project translation state. The CLI does not read job IDs or a local jobs manifest.
+
+## Flags
+
+- `--config`: config path
+- `--locale`: target locale(s), repeatable
+- `--dry-run`: preview only
+- `--output`: `text`, `json`, or `markdown`
+
+## Example
+
+```bash
+hyperlocalise sync pull --locale es-ES
+```
+
+```bash
+hl pull --locale es-ES
+```
+
+## Notes
+
+- When no translation exists for a source path and locale, pull skips that target file.
+- Output files are mapped by locale to the target paths from `i18n.yml`.
+- Provider-specific TMS commands such as `crowdin` and `phrase` keep their own config and behavior.
+
+## See also
+
+- [Connect the CLI](/platform/cli)
+- [Public API](/platform/api)
+- [sync push](/cli/commands/sync-push)
+- [CI automation](/cli/workflows/ci-automation)

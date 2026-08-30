@@ -195,7 +195,7 @@ func newCrowdinStatusCmd() *cobra.Command {
 			if writeErr := writeCrowdinStatusReport(cmd.OutOrStdout(), rows, o.output); writeErr != nil {
 				return writeErr
 			}
-			if o.failIfIncomplete && crowdinStatusIncomplete(rows) {
+			if o.failIfIncomplete && crowdinStatusIncomplete(rows, o.languages) {
 				return fmt.Errorf("crowdin status: project is not fully translated and approved")
 			}
 			return nil
@@ -234,7 +234,24 @@ func writeCrowdinStatusReport(w io.Writer, rows []crowdinstorage.LanguageProgres
 	}
 }
 
-func crowdinStatusIncomplete(rows []crowdinstorage.LanguageProgress) bool {
+func crowdinStatusIncomplete(rows []crowdinstorage.LanguageProgress, requestedLanguages []string) bool {
+	requested := crowdinStatusLanguageIDs(requestedLanguages)
+	if len(requested) > 0 {
+		byID := make(map[string]crowdinstorage.LanguageProgress, len(rows))
+		for _, row := range rows {
+			languageID := strings.TrimSpace(row.LanguageID)
+			if languageID != "" {
+				byID[languageID] = row
+			}
+		}
+		for _, languageID := range requested {
+			row, ok := byID[languageID]
+			if !ok || row.TranslationProgress < 100 || row.ApprovalProgress < 100 {
+				return true
+			}
+		}
+		return false
+	}
 	if len(rows) == 0 {
 		return true
 	}
@@ -244,6 +261,17 @@ func crowdinStatusIncomplete(rows []crowdinstorage.LanguageProgress) bool {
 		}
 	}
 	return false
+}
+
+func crowdinStatusLanguageIDs(languages []string) []string {
+	ids := make([]string, 0, len(languages))
+	for _, language := range languages {
+		language = strings.TrimSpace(language)
+		if language != "" {
+			ids = append(ids, language)
+		}
+	}
+	return ids
 }
 
 func newCrowdinUploadCmd() *cobra.Command {

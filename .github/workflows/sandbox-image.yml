@@ -42,6 +42,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      - name: Verify vendored dictionary fetch files
+        run: |
+          set -euo pipefail
+          cmp -s internal/i18n/spellcheck/DICTIONARIES.md apps/sandbox-image/DICTIONARIES.md
+          cmp -s apps/go-svc/build/fetch-dictionaries.sh apps/sandbox-image/fetch-dictionaries.sh
+
       - name: Compute image tags
         id: meta
         env:
@@ -104,9 +110,8 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
-          # Repository root: the dictionary stage stages files from
-          # internal/i18n/spellcheck and apps/go-svc/build.
-          context: .
+          # Same context as `vercel vcr build docker apps/sandbox-image`.
+          context: apps/sandbox-image
           file: apps/sandbox-image/Dockerfile
           platforms: linux/amd64
           # PRs: build-only with a local tag (no registry auth).

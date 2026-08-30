@@ -34,12 +34,15 @@ Keep those `ARG`s aligned with
 
 ## Hunspell
 
-The build context is the **repository root** (not this directory) so a first
-stage can run [`apps/go-svc/build/fetch-dictionaries.sh`](../go-svc/build/fetch-dictionaries.sh) —
-the same script [`Dockerfile.vercel`](../../Dockerfile.vercel) uses for
-`go-svc`. Both images therefore carry byte-identical dictionaries for the
-locales in [`DICTIONARIES.md`](../../internal/i18n/spellcheck/DICTIONARIES.md),
-verified against pinned upstream commits and SHA-256 checksums.
+The build context is **this directory**, so
+`vercel vcr build docker apps/sandbox-image` can `COPY` the dictionary fetch
+files. A first stage runs [`fetch-dictionaries.sh`](fetch-dictionaries.sh), a
+copy of the script [`Dockerfile.vercel`](../../Dockerfile.vercel) uses for
+`go-svc`. Keep that copy and [`DICTIONARIES.md`](DICTIONARIES.md) identical to
+[`apps/go-svc/build/fetch-dictionaries.sh`](../go-svc/build/fetch-dictionaries.sh)
+and [`internal/i18n/spellcheck/DICTIONARIES.md`](../../internal/i18n/spellcheck/DICTIONARIES.md).
+CI and unit tests compare both pairs. Both images then carry byte-identical
+dictionaries, checked against pinned upstream commits and SHA-256 checksums.
 
 | Path | Contents |
 |------|----------|
@@ -65,8 +68,10 @@ caller-side transcoding is needed. The CGO wrapper in
 [`apps/go-svc/internal/hunspell`](../go-svc/internal/hunspell) still needs its
 own transcoding because it talks to the C API directly.
 
-Rebuild and push the image when `DICTIONARIES.md` or `fetch-dictionaries.sh`
-changes; the workflow triggers on both paths.
+Rebuild and push the image when the canonical `DICTIONARIES.md` or
+`fetch-dictionaries.sh` changes. Copy those files into this directory in the
+same change; the workflow triggers on both the canonical paths and this
+directory.
 
 ## CI
 
@@ -98,10 +103,7 @@ vcr.vercel.com/<VERCEL_TEAM_SLUG>/<VERCEL_PROJECT_SLUG>/hyperlocalise-sandbox:la
 
 ## Local build and push
 
-Build from the repository root. The dictionary stage copies
-`internal/i18n/spellcheck/DICTIONARIES.md` and
-`apps/go-svc/build/fetch-dictionaries.sh`, which are outside
-`apps/sandbox-image`.
+Build with this directory as the context (from the repository root):
 
 ```bash
 # Authenticate Docker to VCR (OIDC, 12h credentials)
@@ -109,8 +111,7 @@ vercel link   # if not already linked to hyperlocalise-web
 vercel vcr login docker
 
 # Build + push (recommended). Flags after -- go to Docker.
-vercel vcr build docker . hyperlocalise-sandbox:latest --push \
-  -- --file apps/sandbox-image/Dockerfile
+vercel vcr build docker apps/sandbox-image hyperlocalise-sandbox:latest --push
 ```
 
 Or with Docker Buildx:
@@ -123,7 +124,7 @@ docker buildx build \
   --file apps/sandbox-image/Dockerfile \
   --output "type=image,name=${IMAGE},push=true,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true" \
   --push \
-  .
+  apps/sandbox-image
 ```
 
 Sandbox only accepts prepared `linux/amd64` images. After push, wait until the
@@ -131,11 +132,11 @@ repository shows **Ready** in the project Images dashboard.
 
 ## Local smoke test
 
-Build from the repository root, since the build context is the root:
+Build with this directory as the context (from the repository root):
 
 ```bash
 docker build --platform linux/amd64 \
-  -f apps/sandbox-image/Dockerfile -t hyperlocalise-sandbox:local .
+  -f apps/sandbox-image/Dockerfile -t hyperlocalise-sandbox:local apps/sandbox-image
 
 docker run --rm hyperlocalise-sandbox:local rg --version
 docker run --rm hyperlocalise-sandbox:local volta --version

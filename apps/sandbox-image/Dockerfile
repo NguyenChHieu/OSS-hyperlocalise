@@ -11,8 +11,11 @@
 # passwordless sudo. Adds Node 24, ripgrep, Volta, hl, Playwright Chromium, and
 # Hunspell with the pinned dictionary set.
 #
-# Build context is the repository root so the dictionary stage can reuse the
-# manifest and staging script that Dockerfile.vercel uses for go-svc.
+# Build context is this directory (vercel vcr build docker apps/sandbox-image).
+# The dictionary stage runs the same fetch-dictionaries.sh as Dockerfile.vercel;
+# copies of that script and DICTIONARIES.md live here so they are inside the
+# context. Keep those copies identical to the canonical files (CI and unit tests
+# compare them).
 #
 # Build for linux/amd64 (Sandbox requirement), then push to Vercel Container
 # Registry. See README.md in this directory.
@@ -20,6 +23,11 @@
 # Stage the approved Hunspell dictionaries with the same script the go-svc
 # image runs, so both images carry byte-identical dictionaries for the locales
 # in internal/i18n/spellcheck/DICTIONARIES.md.
+#
+# libarchive-tools provides bsdtar, which is linked to /usr/local/bin/tar so
+# fetch-dictionaries.sh (shared with go-svc, unchanged) uses it. Ubuntu 26.04
+# GNU tar returns ENOSYS ("Function not implemented") extracting the
+# LibreOffice archive under linux/amd64 emulation on Docker Desktop.
 FROM ubuntu:26.04 AS dictionaries
 
 ARG DEBIAN_FRONTEND=noninteractive
@@ -27,12 +35,14 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
+        findutils \
         gawk \
-        tar \
+        libarchive-tools \
+    && ln -sfn /usr/bin/bsdtar /usr/local/bin/tar \
     && rm -rf /var/lib/apt/lists/*
 
-COPY internal/i18n/spellcheck/DICTIONARIES.md /repo/internal/i18n/spellcheck/DICTIONARIES.md
-COPY apps/go-svc/build/fetch-dictionaries.sh /repo/apps/go-svc/build/fetch-dictionaries.sh
+COPY DICTIONARIES.md /repo/internal/i18n/spellcheck/DICTIONARIES.md
+COPY fetch-dictionaries.sh /repo/apps/go-svc/build/fetch-dictionaries.sh
 
 RUN bash /repo/apps/go-svc/build/fetch-dictionaries.sh /repo /dictionaries-staging/hunspell /dictionaries-staging/licenses
 

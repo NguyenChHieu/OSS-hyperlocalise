@@ -4,6 +4,8 @@
 set -euo pipefail
 
 SCRIPT="$(cd "$(dirname "$0")" && pwd)/fetch-dictionaries.sh"
+SANDBOX_IMAGE="$(cd "$(dirname "$0")/../../sandbox-image" && pwd)"
+MANIFEST="$(cd "$(dirname "$0")/../../../internal/i18n/spellcheck" && pwd)/DICTIONARIES.md"
 fail=0
 
 assert_header() {
@@ -67,6 +69,19 @@ else
     fi
 fi
 rm -rf "$bom_dir"
+
+if ! cmp -s "$SCRIPT" "$SANDBOX_IMAGE/fetch-dictionaries.sh"; then
+    echo "FAIL sandbox-image/fetch-dictionaries.sh differs from apps/go-svc/build/fetch-dictionaries.sh"
+    fail=$((fail + 1))
+else
+    echo "ok   sandbox-image fetch-dictionaries.sh"
+fi
+if ! cmp -s "$MANIFEST" "$SANDBOX_IMAGE/DICTIONARIES.md"; then
+    echo "FAIL sandbox-image/DICTIONARIES.md differs from internal/i18n/spellcheck/DICTIONARIES.md"
+    fail=$((fail + 1))
+else
+    echo "ok   sandbox-image DICTIONARIES.md"
+fi
 
 echo
 if [ "$fail" -ne 0 ]; then

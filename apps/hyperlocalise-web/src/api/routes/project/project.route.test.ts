@@ -19,12 +19,15 @@ import { testClient } from "hono/testing";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
 import { app } from "@/api/app";
-import { db, schema } from "@/lib/database";
+import { db, schema } from "@/lib/database/client";
 import { upsertOrganizationExternalTmsProviderCredential } from "@/lib/providers/credentials/organization-external-tms-provider-credentials";
 import { encodeProviderProjectId } from "@/lib/providers/jobs/tms-provider-resource-id";
 import { uniqueTestProjectIdentifier } from "@/lib/projects/issue-identifier/test-project-identifier";
 import { ensureDefaultWorkspaceTeam } from "@/lib/teams/default-workspace-team";
 
+import { ensureRepositorySourceFileVersionForStoredFile } from "@/lib/file-storage/records";
+
+import { insertStoredSourceFile } from "../public-jobs/public-jobs.fixture";
 import { createProjectTestFixture } from "./project.fixture";
 import type {
   ProjectFilesResponse,
@@ -111,14 +114,14 @@ describe("project CAT behavior routes", () => {
     ]);
 
     const current = await client.api.orgs[":organizationSlug"].projects[":projectId"][
-      "cat-behavior"
+      "content-editor-behavior"
     ].$get(
       { param: { organizationSlug: identity.organization.slug!, projectId: project.id } },
       { headers },
     );
     expect(current.status).toBe(200);
     await expect(current.json()).resolves.toMatchObject({
-      catBehavior: {
+      contentEditorBehavior: {
         automaticallyGroupIdenticalStrings: false,
         groupingRevision: 0,
         canManage: true,
@@ -126,7 +129,7 @@ describe("project CAT behavior routes", () => {
     });
 
     const preview = await client.api.orgs[":organizationSlug"].projects[":projectId"][
-      "cat-behavior"
+      "content-editor-behavior"
     ].preview.$get(
       { param: { organizationSlug: identity.organization.slug!, projectId: project.id } },
       { headers },
@@ -141,7 +144,7 @@ describe("project CAT behavior routes", () => {
     const { identity, project } = await projectFixture.createStoredProjectFixture();
     const headers = await projectFixture.authHeadersFor(identity);
     const response = await client.api.orgs[":organizationSlug"].projects[":projectId"][
-      "cat-behavior"
+      "content-editor-behavior"
     ].$patch(
       {
         param: { organizationSlug: identity.organization.slug!, projectId: project.id },
@@ -152,7 +155,7 @@ describe("project CAT behavior routes", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      catBehavior: { automaticallyGroupIdenticalStrings: true, groupingRevision: 1 },
+      contentEditorBehavior: { automaticallyGroupIdenticalStrings: true, groupingRevision: 1 },
     });
     const [stored] = await db
       .select()
@@ -161,7 +164,7 @@ describe("project CAT behavior routes", () => {
     expect(stored).toMatchObject({
       name: project.name,
       automaticallyGroupIdenticalStrings: true,
-      catGroupingRevision: 1,
+      contentEditorGroupingRevision: 1,
     });
   });
 
@@ -186,7 +189,7 @@ describe("project CAT behavior routes", () => {
     ]);
 
     const preview = await client.api.orgs[":organizationSlug"].projects[":projectId"][
-      "cat-behavior"
+      "content-editor-behavior"
     ].preview.$get(
       { param: { organizationSlug: identity.organization.slug!, projectId: project.id } },
       { headers },
@@ -203,7 +206,7 @@ describe("project CAT behavior routes", () => {
     const headers = await projectFixture.authHeadersFor(identity);
 
     const enable = await client.api.orgs[":organizationSlug"].projects[":projectId"][
-      "cat-behavior"
+      "content-editor-behavior"
     ].$patch(
       {
         param: { organizationSlug: identity.organization.slug!, projectId: project.id },
@@ -214,7 +217,7 @@ describe("project CAT behavior routes", () => {
     expect(enable.status).toBe(200);
 
     const noop = await client.api.orgs[":organizationSlug"].projects[":projectId"][
-      "cat-behavior"
+      "content-editor-behavior"
     ].$patch(
       {
         param: { organizationSlug: identity.organization.slug!, projectId: project.id },
@@ -225,13 +228,13 @@ describe("project CAT behavior routes", () => {
 
     expect(noop.status).toBe(200);
     await expect(noop.json()).resolves.toMatchObject({
-      catBehavior: { automaticallyGroupIdenticalStrings: true, groupingRevision: 1 },
+      contentEditorBehavior: { automaticallyGroupIdenticalStrings: true, groupingRevision: 1 },
     });
     const [stored] = await db
       .select()
       .from(schema.projects)
       .where(eq(schema.projects.id, project.id));
-    expect(stored?.catGroupingRevision).toBe(1);
+    expect(stored?.contentEditorGroupingRevision).toBe(1);
   });
 
   it("forbids translators from previewing or changing CAT policy", async () => {
@@ -258,13 +261,13 @@ describe("project CAT behavior routes", () => {
     const translatorHeaders = await projectFixture.authHeadersFor(translator);
 
     const preview = await client.api.orgs[":organizationSlug"].projects[":projectId"][
-      "cat-behavior"
+      "content-editor-behavior"
     ].preview.$get(
       { param: { organizationSlug: translator.organization.slug!, projectId: project.id } },
       { headers: translatorHeaders },
     );
     const update = await client.api.orgs[":organizationSlug"].projects[":projectId"][
-      "cat-behavior"
+      "content-editor-behavior"
     ].$patch(
       {
         param: { organizationSlug: translator.organization.slug!, projectId: project.id },
@@ -648,6 +651,97 @@ describe("project file provider routes", () => {
       { limit: 25, branch: "release/ios", actorUserId: userId },
     );
   });
+
+  it("searches and pages native repository source paths on the server", async () => {
+    const { identity, organization, project } = await projectFixture.createStoredProjectFixture();
+    const headers = await projectFixture.authHeadersFor(identity);
+    const sourcePaths = ["locales/aaa.json", "locales/bbb.json", "locales/zzz-late.json"];
+
+    for (const sourcePath of sourcePaths) {
+      const storedFile = await insertStoredSourceFile({
+        organizationId: organization.id,
+        projectId: project.id,
+        filename: sourcePath.split("/").at(-1),
+        contentType: "application/json",
+        sourceKind: "repository_file",
+        metadata: { sourcePath, sourceHash: `hash-${sourcePath}` },
+      });
+      const version = await ensureRepositorySourceFileVersionForStoredFile({
+        db,
+        fileId: storedFile.id,
+        organizationId: organization.id,
+        projectId: project.id,
+      });
+      if (!version) {
+        throw new Error(`expected repository source file version for ${sourcePath}`);
+      }
+    }
+
+    const searchResponse = await client.api.orgs[":organizationSlug"].projects[
+      ":projectId"
+    ].files.$get(
+      {
+        param: {
+          organizationSlug: identity.organization.slug ?? "missing-slug",
+          projectId: project.id,
+        },
+        query: {
+          limit: "2",
+          origin: "repository",
+          search: "zzz-late",
+        },
+      },
+      { headers },
+    );
+
+    expect(searchResponse.status).toBe(200);
+    const searchBody = (await searchResponse.json()) as ProjectFilesResponse;
+    expect(searchBody.files.map((file) => file.sourcePath)).toEqual(["locales/zzz-late.json"]);
+
+    const firstPageResponse = await client.api.orgs[":organizationSlug"].projects[
+      ":projectId"
+    ].files.$get(
+      {
+        param: {
+          organizationSlug: identity.organization.slug ?? "missing-slug",
+          projectId: project.id,
+        },
+        query: {
+          limit: "2",
+          offset: 0,
+          origin: "repository",
+        },
+      },
+      { headers },
+    );
+    const secondPageResponse = await client.api.orgs[":organizationSlug"].projects[
+      ":projectId"
+    ].files.$get(
+      {
+        param: {
+          organizationSlug: identity.organization.slug ?? "missing-slug",
+          projectId: project.id,
+        },
+        query: {
+          limit: "2",
+          offset: 2,
+          origin: "repository",
+        },
+      },
+      { headers },
+    );
+
+    expect(firstPageResponse.status).toBe(200);
+    expect(secondPageResponse.status).toBe(200);
+    const firstPage = ((await firstPageResponse.json()) as ProjectFilesResponse).files.map(
+      (file) => file.sourcePath,
+    );
+    const secondPage = ((await secondPageResponse.json()) as ProjectFilesResponse).files.map(
+      (file) => file.sourcePath,
+    );
+    expect(firstPage).toEqual(["locales/aaa.json", "locales/bbb.json"]);
+    expect(secondPage).toEqual(["locales/zzz-late.json"]);
+  });
 });
 
 describe("project identifier uniqueness", () => {
@@ -756,6 +850,58 @@ describe("project identifier uniqueness", () => {
       name: "Provider Name",
       description: "Provider description",
       translationContext: "Provider context",
+    });
+  });
+});
+
+describe("project source locale updates", () => {
+  it("rejects changing source locale when attached glossaries use a different locale", async () => {
+    const admin = projectFixture.createWorkosIdentityWithRole("admin");
+    const headers = await projectFixture.authHeadersFor(admin);
+    const organizationSlug = admin.organization.slug ?? "missing-slug";
+    const team = await ensureDefaultWorkspaceTeam(
+      globalThis.__testApiAuthContext!.organization.localOrganizationId,
+    );
+
+    const projectResponse = await client.api.orgs[":organizationSlug"].projects.$post(
+      {
+        param: { organizationSlug },
+        json: {
+          name: "Locale Guard Project",
+          teamId: team.id,
+          sourceLocale: "en-US",
+          targetLocales: ["es-ES"],
+        },
+      },
+      { headers },
+    );
+    expect(projectResponse.status).toBe(201);
+    const project = ((await projectResponse.json()) as ProjectResponse).project;
+
+    const glossaryResponse = await client.api.orgs[":organizationSlug"].glossaries.$post(
+      {
+        param: { organizationSlug },
+        json: {
+          name: "Locale Guard Glossary",
+          sourceLocale: "en-US",
+          projectIds: [project.id],
+        },
+      },
+      { headers },
+    );
+    expect(glossaryResponse.status).toBe(201);
+
+    const patchResponse = await client.api.orgs[":organizationSlug"].projects[":projectId"].$patch(
+      {
+        param: { organizationSlug, projectId: project.id },
+        json: { sourceLocale: "fr-FR" },
+      },
+      { headers },
+    );
+
+    expect(patchResponse.status).toBe(400);
+    await expect(patchResponse.json()).resolves.toMatchObject({
+      error: "project_source_locale_attached_glossaries",
     });
   });
 });

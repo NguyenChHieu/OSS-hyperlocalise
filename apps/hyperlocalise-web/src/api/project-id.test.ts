@@ -38,7 +38,7 @@ import {
   projectIdParamsSchema,
 } from "@/api/routes/project/project.schema";
 import { projectAutomationParamsSchema } from "@/api/routes/tms-agent-automation/tms-agent-automation.schema";
-import { workspaceAutomationConfigSchema } from "@/lib/agents/workspace-automations";
+import { workspaceAutomationConfigSchema } from "@/lib/agents/workspace-automation-types";
 
 describe("project id schemas", () => {
   it("normalizes double-encoded external project ids", () => {
@@ -53,6 +53,7 @@ describe("project id schemas", () => {
 
     expect(projectIdParamsSchema.parse({ projectId: encoded }).projectId).toBe(decoded);
     expect(projectFilesQuerySchema.parse({ projectId: encoded }).projectId).toBe(decoded);
+    expect(projectFilesQuerySchema.parse({ offset: "75" }).offset).toBe(75);
     expect(
       uploadBodySchema.parse({ projectId: encoded, sourcePath: "src/en.json" }).projectId,
     ).toBe(decoded);

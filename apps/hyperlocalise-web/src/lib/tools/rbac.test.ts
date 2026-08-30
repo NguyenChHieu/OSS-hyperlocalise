@@ -44,7 +44,7 @@ vi.mock("@/lib/file-storage/records", () => ({
   getStoredFileForJobScope: vi.fn(),
 }));
 
-vi.mock("@/lib/database", () => ({
+vi.mock("@/lib/database/client", () => ({
   db: {
     transaction: vi.fn(),
     insert: vi.fn(() => ({
@@ -60,6 +60,7 @@ vi.mock("@/lib/database", () => ({
     syncJobDetails: { jobId: "syncJobId" },
     assetManagementJobDetails: { jobId: "assetJobId" },
     glossaries: { id: "glossaries" },
+    glossaryConcepts: { id: "glossaryConcepts" },
     glossaryTerms: { id: "glossaryTerms" },
     memories: { id: "memories" },
     memoryEntries: { id: "memoryEntries" },
@@ -80,7 +81,13 @@ vi.mock("@/lib/agent-runtime/tools/tool-access", () => ({
   toolCanAccessProject: vi.fn(async () => ({ id: "project_123" })),
   toolCanAccessGlossary: vi.fn(async () => true),
   toolCanAccessMemory: vi.fn(async () => true),
-  toolGetAccessibleGlossary: vi.fn(async () => ({ id: "glossary_123" })),
+  toolGetAccessibleGlossary: vi.fn(async () => ({
+    id: "glossary_123",
+    source: "native",
+    controlLevel: "team",
+    sourceLocale: "en",
+    targetLocale: "fr",
+  })),
   toolGetAccessibleMemory: vi.fn(async () => ({ id: "memory_123" })),
   toolGlossaryOrgMutationWhere: vi.fn(() => ({})),
   toolMemoryOrgMutationWhere: vi.fn(() => ({})),
@@ -109,10 +116,7 @@ import {
 import type { OrganizationMembershipRole } from "@/lib/database/types";
 import {
   createCreateGlossaryTool,
-  createCreateGlossaryTermTool,
-  createDeleteGlossaryTermTool,
   createDeleteGlossaryTool,
-  createUpdateGlossaryTermTool,
   createUpdateGlossaryTool,
 } from "./glossary-tools";
 import {
@@ -161,6 +165,9 @@ describe("Agent Tools RBAC", () => {
           insert: vi.fn(() => ({
             values: vi.fn(() => ({
               returning: vi.fn(() => [{ id: "mutated_123", status: "queued" }]),
+              onConflictDoNothing: vi.fn(() => ({
+                returning: vi.fn(() => [{ id: "mutated_123", status: "queued" }]),
+              })),
             })),
           })),
           update: vi.fn(() => ({
@@ -204,7 +211,15 @@ describe("Agent Tools RBAC", () => {
           })),
           innerJoin: vi.fn(() => ({
             where: vi.fn(() => ({
-              limit: vi.fn(async () => [{ glossaryOrgId: "org_123", memoryOrgId: "org_123" }]),
+              limit: vi.fn(async () => [
+                {
+                  glossaryId: "g_123",
+                  glossaryOrgId: "org_123",
+                  memoryOrgId: "org_123",
+                  controlLevel: "team",
+                  source: "native",
+                },
+              ]),
             })),
           })),
         })),
@@ -509,7 +524,6 @@ describe("Agent Tools RBAC", () => {
       const result = await executeTool(tool, {
         name: "Test",
         sourceLocale: "en",
-        targetLocale: "fr",
       });
       expect(result.success).toBe(false);
       expect(result.error).toContain("permission");
@@ -520,7 +534,6 @@ describe("Agent Tools RBAC", () => {
       const result = await executeTool(tool, {
         name: "Test",
         sourceLocale: "en",
-        targetLocale: "fr",
       });
       expect(result.success).not.toBe(false);
       expect(result.error).toBeUndefined();
@@ -544,58 +557,6 @@ describe("Agent Tools RBAC", () => {
       expect(result.success).toBe(false);
       expect(result.error).toContain("permission");
     });
-
-    it.each(WRITE_DENIED_ROLES)("denies glossary term create for %s", async (role) => {
-      const ctx = mockCtx(role);
-      const tool = createCreateGlossaryTermTool(ctx);
-      const result = await executeTool(tool, {
-        glossaryId: "g_123",
-        sourceTerm: "Hello",
-        targetTerm: "Bonjour",
-      });
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("permission");
-      expect(dbSpy(ctx, "insert")).not.toHaveBeenCalled();
-    });
-
-    it.each(WRITE_DENIED_ROLES)("denies glossary term update for %s", async (role) => {
-      const ctx = mockCtx(role);
-      const tool = createUpdateGlossaryTermTool(ctx);
-      const result = await executeTool(tool, {
-        termId: "term_123",
-        targetTerm: "Salut",
-      });
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("permission");
-      expect(dbSpy(ctx, "select")).not.toHaveBeenCalled();
-      expect(dbSpy(ctx, "update")).not.toHaveBeenCalled();
-    });
-
-    it.each(WRITE_DENIED_ROLES)("denies glossary term delete for %s", async (role) => {
-      const ctx = mockCtx(role);
-      const tool = createDeleteGlossaryTermTool(ctx);
-      const result = await executeTool(tool, {
-        termId: "term_123",
-      });
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("permission");
-      expect(dbSpy(ctx, "select")).not.toHaveBeenCalled();
-      expect(dbSpy(ctx, "delete")).not.toHaveBeenCalled();
-    });
-
-    it.each(WRITE_ALLOWED_ROLES)(
-      "allows glossary term create past the capability gate for %s",
-      async (role) => {
-        const tool = createCreateGlossaryTermTool(mockCtx(role));
-        const result = await executeTool(tool, {
-          glossaryId: "g_123",
-          sourceTerm: "Hello",
-          targetTerm: "Bonjour",
-        });
-        expect(result.success).toBe(true);
-        expect(result.error).toBeUndefined();
-      },
-    );
   });
 
   describe("Translation Memory Tools", () => {

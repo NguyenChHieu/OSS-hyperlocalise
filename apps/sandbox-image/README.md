@@ -26,9 +26,52 @@ passwordless sudo), with:
 | Volta | `/vercel/.volta` (`VOLTA_VERSION` optional pin) |
 | hyperlocalise CLI (`hl`) | pinned (`HYPERLOCALISE_VERSION`) |
 | Playwright + Chromium | pinned (`PLAYWRIGHT_VERSION`), under `/tmp/hyperlocalise-browser-runtime` |
+| Hunspell (`hunspell`) | apt |
+| Hunspell dictionaries (20 locales) | pinned by [`DICTIONARIES.md`](../../internal/i18n/spellcheck/DICTIONARIES.md), under `/usr/share/hunspell` |
 
 Keep those `ARG`s aligned with
 `apps/hyperlocalise-web/src/lib/vercel-sandbox-config.ts`.
+
+## Hunspell
+
+The build context is **this directory**, so
+`vercel vcr build docker apps/sandbox-image` can `COPY` the dictionary fetch
+files. A first stage runs [`fetch-dictionaries.sh`](fetch-dictionaries.sh), a
+copy of the script [`Dockerfile.vercel`](../../Dockerfile.vercel) uses for
+`go-svc`. Keep that copy and [`DICTIONARIES.md`](DICTIONARIES.md) identical to
+[`apps/go-svc/build/fetch-dictionaries.sh`](../go-svc/build/fetch-dictionaries.sh)
+and [`internal/i18n/spellcheck/DICTIONARIES.md`](../../internal/i18n/spellcheck/DICTIONARIES.md).
+CI and unit tests compare both pairs. Both images then carry byte-identical
+dictionaries, checked against pinned upstream commits and SHA-256 checksums.
+
+| Path | Contents |
+|------|----------|
+| `/usr/share/hunspell` (override with `HUNSPELL_DICT_DIR`) | 20 `.aff`/`.dic` pairs; `DICPATH` is set to the same path so `hunspell -d en_US` resolves without an absolute path |
+| `/usr/share/doc/hunspell-dictionaries/<locale>` | licence evidence, required because the dictionaries are redistributed under GPL/LGPL/MPL terms |
+| `/usr/share/doc/hunspell-dictionaries/SHA256SUMS` | checksums of the staged dictionaries, asserted at build time |
+
+The apt `hunspell` package depends on `hunspell-en-us`, which ships its own
+`en_US` into `/usr/share/hunspell`. The pinned set has to win, which today it
+does only because the `COPY` runs after the apt install. Rather than rely on
+that ordering, the build verifies the shipped files against `SHA256SUMS` and
+fails if anything replaced them — so moving those steps breaks the build
+instead of silently swapping a dictionary.
+
+Dictionary basenames do **not** always follow the BCP 47 tag: `de-DE` maps to
+`de_DE_frami` and `fr-FR` to `fr`. Resolve them through
+`spellcheck.LoadRegistry()` rather than transforming the tag.
+
+Four dictionaries declare legacy 8-bit encodings (`de_DE_frami` and `id_ID`
+ISO8859-1, `ms_MY` ISO8859-1, `pl_PL` ISO8859-2). The `hunspell` binary
+transcodes these itself, so pass `-i UTF-8` and send UTF-8 words; no
+caller-side transcoding is needed. The CGO wrapper in
+[`apps/go-svc/internal/hunspell`](../go-svc/internal/hunspell) still needs its
+own transcoding because it talks to the C API directly.
+
+Rebuild and push the image when the canonical `DICTIONARIES.md` or
+`fetch-dictionaries.sh` changes. Copy those files into this directory in the
+same change; the workflow triggers on both the canonical paths and this
+directory.
 
 ## CI
 
@@ -60,15 +103,15 @@ vcr.vercel.com/<VERCEL_TEAM_SLUG>/<VERCEL_PROJECT_SLUG>/hyperlocalise-sandbox:la
 
 ## Local build and push
 
-```bash
-cd apps/sandbox-image
+Build with this directory as the context (from the repository root):
 
+```bash
 # Authenticate Docker to VCR (OIDC, 12h credentials)
 vercel link   # if not already linked to hyperlocalise-web
 vercel vcr login docker
 
-# Build + push (recommended)
-vercel vcr build docker . hyperlocalise-sandbox:latest --push
+# Build + push (recommended). Flags after -- go to Docker.
+vercel vcr build docker apps/sandbox-image hyperlocalise-sandbox:latest --push
 ```
 
 Or with Docker Buildx:
@@ -78,9 +121,10 @@ IMAGE=vcr.vercel.com/<team-slug>/<project-slug>/hyperlocalise-sandbox:latest
 
 docker buildx build \
   --platform linux/amd64 \
+  --file apps/sandbox-image/Dockerfile \
   --output "type=image,name=${IMAGE},push=true,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true" \
   --push \
-  .
+  apps/sandbox-image
 ```
 
 Sandbox only accepts prepared `linux/amd64` images. After push, wait until the
@@ -88,13 +132,28 @@ repository shows **Ready** in the project Images dashboard.
 
 ## Local smoke test
 
+Build with this directory as the context (from the repository root):
+
 ```bash
-docker build --platform linux/amd64 -t hyperlocalise-sandbox:local .
+docker build --platform linux/amd64 \
+  -f apps/sandbox-image/Dockerfile -t hyperlocalise-sandbox:local apps/sandbox-image
+
 docker run --rm hyperlocalise-sandbox:local rg --version
 docker run --rm hyperlocalise-sandbox:local volta --version
 docker run --rm hyperlocalise-sandbox:local hl --help
 docker run --rm hyperlocalise-sandbox:local \
   node -e "require('/tmp/hyperlocalise-browser-runtime/node_modules/playwright'); console.log('ok')"
+```
+
+[`verify-hunspell.sh`](verify-hunspell.sh) checks every locale in the manifest:
+that the `.aff`/`.dic` pair is readable by the `ubuntu` user, that Hunspell
+reports it loaded, and that its word list is non-empty. The last check matters
+because Hunspell loads an **empty** word list — silently flagging every word —
+when it cannot parse the word-count header on the first `.dic` line.
+
+```bash
+docker run --rm -v "$PWD/apps/sandbox-image/verify-hunspell.sh:/verify.sh:ro" \
+  hyperlocalise-sandbox:local bash /verify.sh
 ```
 
 ## App cutover

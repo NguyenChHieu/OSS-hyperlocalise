@@ -13,13 +13,15 @@
 import type { AppType } from "@/api/app";
 import type { WorkosAuthIdentity } from "@/api/auth/workos";
 import { createAuthTestFixture } from "@/api/test-auth.fixture";
-import { db, schema } from "@/lib/database";
+import { db, schema } from "@/lib/database/client";
 import { testClient } from "hono/testing";
 
 type CreateGlossaryInput = Partial<{
   name: string;
   description: string;
   sourceLocale: string;
+  controlLevel: "org" | "team";
+  projectIds: string[];
 }>;
 
 type Client = ReturnType<typeof testClient<AppType>>;
@@ -43,6 +45,8 @@ export function createGlossaryTestFixture(client?: Client) {
           name: input?.name ?? "Marketing Glossary",
           description: input?.description ?? "Marketing terminology",
           sourceLocale: input?.sourceLocale ?? "en",
+          ...(input?.controlLevel ? { controlLevel: input.controlLevel } : {}),
+          ...(input?.projectIds ? { projectIds: input.projectIds } : {}),
         },
       },
       {

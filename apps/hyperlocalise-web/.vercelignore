@@ -1,4 +1,5 @@
-# Exclude dev-only files from Vercel uploads.
+# Fallback ignore when the dashboard Root Directory is this app.
+# Keep the repo-root .vercelignore in sync for Vercel Services.
 # See https://vercel.com/docs/deployments/vercel-ignore
 # Vercel already ignores node_modules, .next, .git, and .env* by default.
 

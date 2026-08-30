@@ -12,9 +12,9 @@
  */
 import { and, eq } from "drizzle-orm";
 
-import { db, schema } from "@/lib/database";
-import type { FileStorageAdapter } from "@/lib/file-storage";
-import { getFileStorageAdapter } from "@/lib/file-storage";
+import { db, schema } from "@/lib/database/client";
+import type { FileStorageAdapter } from "@/lib/file-storage/types";
+import { getFileStorageAdapter } from "@/lib/file-storage/get-file-storage-adapter";
 import { createRepositorySourceFileVersion, createStoredFile } from "@/lib/file-storage/records";
 import { createLogger } from "@/lib/log";
 import { getTmsProvider } from "@/lib/providers/adapters/tms-provider-registry";
@@ -47,6 +47,7 @@ export type SourceFileUploadInput = {
   uploadedByApiKeyId?: string | null;
   uploadedByUserId?: string | null;
   actorUserId?: string | null;
+  targetAutomationId?: string;
   fileStorageAdapter?: FileStorageAdapter;
 };
 
@@ -152,6 +153,7 @@ async function uploadNativeSourceFile(
     sourceFileVersionId: version.id,
     sourcePath: input.sourcePath,
     sourceHash: input.sourceHash ?? storedFile.sha256,
+    targetAutomationId: input.targetAutomationId,
   }).catch((error) => {
     logger.warn(
       {

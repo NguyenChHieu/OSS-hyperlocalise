@@ -11,7 +11,7 @@
  * Version 2.0 or later.
  */
 import type { StringTranslationJobInput } from "@/api/routes/project/job.schema";
-import type { schema } from "@/lib/database";
+import type * as schema from "@/lib/database/schema";
 import type { ContextGlossaryMatch } from "@/lib/providers/contracts/glossary-match";
 import type { ContextTranslationMemoryMatch } from "@/lib/providers/contracts/translation-memory-match";
 
@@ -121,7 +121,7 @@ export type StringTranslationGenerator = (
   input: StringTranslationGeneratorInput,
 ) => Promise<StringTranslationJobResult>;
 
-export type CatAiRecommendationInput = {
+export type ContentEditorAiRecommendationInput = {
   projectId: string;
   organizationId: string;
   sourcePath: string;
@@ -150,12 +150,12 @@ export type CatAiRecommendationInput = {
   }>;
 };
 
-export type CatAiRecommendationResult = {
+export type ContentEditorAiRecommendationResult = {
   aiSuggestion: string;
   aiReasoning: string;
 };
 
-export type CatAiRecommendationError = {
+export type ContentEditorAiRecommendationError = {
   code:
     | "translation_project_not_found"
     | "provider_credential_invalid"
@@ -218,7 +218,7 @@ export class TranslationContext {
   }
 
   toCatRecommendationContext(): Pick<
-    CatAiRecommendationInput,
+    ContentEditorAiRecommendationInput,
     "glossaryTerms" | "translationMemoryMatches"
   > {
     return {

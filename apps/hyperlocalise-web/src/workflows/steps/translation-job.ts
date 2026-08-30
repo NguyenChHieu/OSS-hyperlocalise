@@ -58,7 +58,7 @@ export async function markEmailTranslationJobRunning(input: {
 }) {
   "use step";
   const { and, eq, isNull, or } = await import("drizzle-orm");
-  const { db, schema } = await import("@/lib/database");
+  const { db, schema } = await import("@/lib/database/client");
 
   const [updatedJob] = await db
     .update(schema.jobs)
@@ -97,7 +97,7 @@ export async function markEmailTranslationJobSucceeded(input: {
 }) {
   "use step";
   const { and, eq } = await import("drizzle-orm");
-  const { db, schema } = await import("@/lib/database");
+  const { db, schema } = await import("@/lib/database/client");
 
   const succeededJob = await db.transaction(async (tx) => {
     const [updatedJob] = await tx
@@ -165,7 +165,7 @@ export async function markEmailTranslationJobFailed(input: {
 }) {
   "use step";
   const { and, eq } = await import("drizzle-orm");
-  const { db, schema } = await import("@/lib/database");
+  const { db, schema } = await import("@/lib/database/client");
 
   await db.transaction(async (tx) => {
     const [updatedJob] = await tx
@@ -211,7 +211,7 @@ export async function markEmailTranslationJobFailed(input: {
 export async function getProjectOrganizationStep(projectId: string): Promise<string> {
   "use step";
   const { eq } = await import("drizzle-orm");
-  const { db, schema } = await import("@/lib/database");
+  const { db, schema } = await import("@/lib/database/client");
 
   const [project] = await db
     .select({ organizationId: schema.projects.organizationId })
@@ -229,7 +229,7 @@ export async function getProjectOrganizationStep(projectId: string): Promise<str
 export async function getStoredFileStep(fileId: string, organizationId: string) {
   "use step";
   const { and, eq } = await import("drizzle-orm");
-  const { db, schema } = await import("@/lib/database");
+  const { db, schema } = await import("@/lib/database/client");
 
   const [file] = await db
     .select()
@@ -265,7 +265,7 @@ export async function getStoredFileContentStep(fileId: string, organizationId: s
   "use step";
   const { get } = await import("@vercel/blob");
   const { and, eq } = await import("drizzle-orm");
-  const { db, schema } = await import("@/lib/database");
+  const { db, schema } = await import("@/lib/database/client");
   const { env } = await import("@/lib/env");
 
   const [file] = await db
@@ -303,7 +303,7 @@ export async function storeOutputFileStep(input: {
 }) {
   "use step";
   const { del, put } = await import("@vercel/blob");
-  const { db, schema } = await import("@/lib/database");
+  const { db, schema } = await import("@/lib/database/client");
   const { env } = await import("@/lib/env");
   const { createStoredFileId, sha256Hex, storageKey } = await import("@/lib/file-storage/records");
 
@@ -411,6 +411,49 @@ export async function persistFileProjectTranslationsStep(input: {
   return persistFileJobTranslations(input);
 }
 
+export async function persistDocumentVariantBytesStep(input: {
+  organizationId: string;
+  projectId: string;
+  sourcePath: string;
+  targetLocale: string;
+  content: Buffer;
+  contentType: string;
+  filename: string;
+  repositorySourceFileId?: string | null;
+  sourceJobId?: string | null;
+}) {
+  "use step";
+  const { getImageVariant, replaceImageVariantBytes } =
+    await import("@/lib/projects/files/image-variant-service");
+  const result = await replaceImageVariantBytes({
+    organizationId: input.organizationId,
+    projectId: input.projectId,
+    sourcePath: input.sourcePath,
+    targetLocale: input.targetLocale,
+    content: input.content,
+    contentType: input.contentType,
+    filename: input.filename,
+    repositorySourceFileId: input.repositorySourceFileId,
+    sourceJobId: input.sourceJobId,
+    provenance: "translation_job",
+  });
+  if (!result.ok) {
+    if (result.error.code === "approved_locked") {
+      const existing = await getImageVariant({
+        organizationId: input.organizationId,
+        projectId: input.projectId,
+        sourcePath: input.sourcePath,
+        targetLocale: input.targetLocale,
+      });
+      if (existing?.storedFileId) {
+        return existing;
+      }
+    }
+    throw new Error(`failed to persist document variant: ${result.error.code}`);
+  }
+  return result.value;
+}
+
 export async function completeFileTranslationJobStep(input: {
   jobId: string;
   projectId: string;
@@ -419,7 +462,7 @@ export async function completeFileTranslationJobStep(input: {
 }) {
   "use step";
   const { and, eq } = await import("drizzle-orm");
-  const { db, schema } = await import("@/lib/database");
+  const { db, schema } = await import("@/lib/database/client");
 
   const didSucceed = await db.transaction(async (tx) => {
     const [updatedJob] = await tx

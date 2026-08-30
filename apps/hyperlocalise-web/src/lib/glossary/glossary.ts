@@ -11,7 +11,36 @@
  * Version 2.0 or later.
  */
 import type { Glossary as NativeGlossaryRecord } from "@/lib/database/types";
+import type { NormalizedGlossaryMatch } from "@/lib/providers/contracts/glossary-match";
 import { mapWithConcurrency } from "@/lib/primitives/map-with-concurrency/map-with-concurrency";
+
+export type GlossaryConcordanceQuery = {
+  sourceLocale: string;
+  targetLocales: string[];
+  sourceText: string;
+  limit?: number;
+};
+
+export type GlossaryConcordanceContext = {
+  organizationId: string;
+  projectId: string;
+  actorUserId?: string | null;
+};
+
+const maxConcordanceSearchTerms = 50;
+
+export function buildGlossaryTsQuery(input: string): string | null {
+  const tsQuery = input
+    .replace(/[&|!():*<>'"-]/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, maxConcordanceSearchTerms)
+    .map((word) => `${word}:*`)
+    .join(" | ");
+
+  return tsQuery.length > 0 ? tsQuery : null;
+}
 
 export type NativeGlossary = NativeGlossaryRecord;
 
@@ -57,45 +86,15 @@ export const glossaryTermStatusValues = [
 ] as const;
 export type GlossaryTermStatus = (typeof glossaryTermStatusValues)[number];
 
-export type GlossaryTermRecord = {
-  id: string;
-  glossaryId: string;
-  glossaryName: string;
-  sourceTerm: string;
-  targetTerm: string;
-  targetLocale: string | null;
-  description: string;
-  partOfSpeech: string;
-  url?: string | null;
-  lemma?: string | null;
-  forbidden: boolean;
-  caseSensitive: boolean;
-  provenance: string;
-  externalKey: string | null;
-  reviewStatus: string;
-};
-
 export type GlossaryProjectRecord = {
   projectId: string;
   projectName: string;
   priority: number;
   sourceLocale: string | null;
   targetLocales: string[];
+  source: string;
   externalUrl: string | null;
 };
-
-export type GlossaryTermCreateInput = {
-  sourceTerm: string;
-  targetTerm: string;
-  description?: string;
-  partOfSpeech?: string;
-  url?: string;
-  lemma?: string | null;
-  caseSensitive: boolean;
-  forbidden: boolean;
-};
-
-export type GlossaryTermUpdateInput = Partial<GlossaryTermCreateInput>;
 
 export type GlossaryConceptImportEntry = {
   conceptKey: string;
@@ -218,7 +217,9 @@ export class GlossaryValidationError extends Error {
     readonly code:
       | "invalid_part_of_speech"
       | "stale_glossary_term_id"
-      | "crowdin_validation_failed",
+      | "crowdin_validation_failed"
+      | "glossary_target_locale_required"
+      | "glossary_target_locale_ambiguous",
     message: string,
     readonly details?: unknown,
   ) {
@@ -302,7 +303,11 @@ export abstract class Glossary {
 
   abstract get(): Promise<NativeGlossary | null>;
   abstract listProjects(): Promise<GlossaryProjectRecord[]>;
-  abstract update(payload: { name?: string; description?: string }): Promise<NativeGlossary | null>;
+  abstract update(payload: {
+    name?: string;
+    description?: string;
+    sourceLocale?: string;
+  }): Promise<NativeGlossary | null>;
   abstract delete(): Promise<boolean>;
   abstract listConcepts(): Promise<GlossaryConcept[]>;
   abstract getConcept(conceptId: string): Promise<GlossaryConcept | null>;
@@ -315,16 +320,6 @@ export abstract class Glossary {
   abstract importConcepts(
     entries: GlossaryConceptImportEntry[],
   ): Promise<{ concepts: GlossaryConcept[]; skipped: number }>;
-  abstract listTerms(): Promise<GlossaryTermRecord[]>;
-  abstract createGlossaryTerm(input: GlossaryTermCreateInput): Promise<GlossaryTermRecord | null>;
-  abstract createGlossaryTerms(
-    inputs: GlossaryTermCreateInput[],
-  ): Promise<{ created: GlossaryTermRecord[]; skipped: number }>;
-  abstract updateGlossaryTerm(
-    termId: string,
-    input: GlossaryTermUpdateInput,
-  ): Promise<GlossaryTermRecord | { error: "duplicate" } | null>;
-  abstract deleteGlossaryTerm(termId: string): Promise<boolean>;
   abstract attachProject(projectId: string, priority: number): Promise<void>;
   abstract detachProject(projectId: string): Promise<void>;
   abstract createTerm(
@@ -337,4 +332,8 @@ export abstract class Glossary {
     term: NativeGlossaryTermInput,
   ): Promise<GlossaryConcept | GlossaryConceptTerm | null>;
   abstract deleteTerm(conceptId: string, termId: string): Promise<boolean>;
+  abstract searchConcordance(
+    query: GlossaryConcordanceQuery,
+    ctx: GlossaryConcordanceContext,
+  ): Promise<NormalizedGlossaryMatch[]>;
 }

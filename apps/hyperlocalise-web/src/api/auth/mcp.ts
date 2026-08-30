@@ -23,12 +23,12 @@ import { and, eq, gt, isNotNull, isNull, lt, ne } from "drizzle-orm";
 import { createMiddleware } from "hono/factory";
 import type { EvlogVariables } from "evlog/hono";
 
-import { forbiddenResponse } from "@/api/errors";
+import { forbiddenResponse } from "@/api/response.schema";
 import {
   isMembershipReconcileFresh,
   reconcileWorkosMembershipsForUser,
 } from "@/api/auth/workos-membership-reconcile";
-import { db, schema } from "@/lib/database";
+import { db, schema } from "@/lib/database/client";
 import type { OrganizationMembershipRole } from "@/lib/database/types";
 import { env } from "@/lib/env";
 import { REPLACING_WORKOS_MEMBERSHIP_ID } from "@/lib/workos/constants";
@@ -132,6 +132,7 @@ export function createAuthorizationCode(
 
 export type McpAuthorizationRequestPayload = {
   clientId: string;
+  clientName?: string;
   redirectUri: string;
   codeChallenge: string;
   codeChallengeMethod: "S256";
@@ -404,15 +405,21 @@ export const mcpBearerAuthMiddleware = createMiddleware<{ Variables: McpAuthVari
       return c.json({ error: "mcp_auth_disabled" }, 503);
     }
 
+    const unauthorizedResponse = () => {
+      const resourceMetadataUrl = new URL("/.well-known/oauth-protected-resource", c.req.url);
+
+      return c.json({ error: "unauthorized" }, 401, {
+        "WWW-Authenticate": `Bearer resource_metadata="${resourceMetadataUrl.toString()}", scope="mcp"`,
+      });
+    };
+
     const authorization = c.req.header("authorization");
     const token = authorization?.startsWith("Bearer ")
       ? authorization.slice("Bearer ".length)
       : null;
 
     if (!token) {
-      return c.json({ error: "unauthorized" }, 401, {
-        "WWW-Authenticate": `Bearer resource_metadata="${new URL("/.well-known/oauth-authorization-server", c.req.url).origin}/.well-known/oauth-authorization-server"`,
-      });
+      return unauthorizedResponse();
     }
 
     const [session] = await db
@@ -443,13 +450,13 @@ export const mcpBearerAuthMiddleware = createMiddleware<{ Variables: McpAuthVari
       .limit(1);
 
     if (!session) {
-      return c.json({ error: "unauthorized" }, 401);
+      return unauthorizedResponse();
     }
 
     const authResult = await resolveAuthoritativeMcpSessionAuth(session);
 
     if (authResult.status === "unauthorized") {
-      return c.json({ error: "unauthorized" }, 401);
+      return unauthorizedResponse();
     }
 
     if (authResult.status === "workspace_archived") {

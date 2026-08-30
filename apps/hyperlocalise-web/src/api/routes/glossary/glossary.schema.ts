@@ -30,10 +30,6 @@ export const glossaryIdParamsSchema = z.object({
   glossaryId: z.string().trim().min(1).max(128),
 });
 
-export const glossaryTermIdParamsSchema = glossaryIdParamsSchema.extend({
-  termId: z.string().trim().min(1).max(128),
-});
-
 export const glossaryConceptIdParamsSchema = glossaryIdParamsSchema.extend({
   conceptId: z.string().trim().min(1).max(128),
 });
@@ -58,14 +54,36 @@ export const listGlossaryQuerySchema = z
   })
   .optional();
 
-export const createGlossaryBodySchema = z.object({
-  name: z.string().trim().min(1).max(200),
-  description: z.string().max(10_000).optional(),
-  sourceLocale: localeInputSchema,
-  projectIds: z.array(projectIdSchema).max(100).optional(),
-  // Keep accepting the original single-project payload for API compatibility.
-  projectId: projectIdSchema.optional(),
-});
+export const glossaryControlLevelSchema = z.enum(["org", "team"]);
+
+export const createGlossaryBodySchema = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    description: z.string().max(10_000).optional(),
+    sourceLocale: localeInputSchema,
+    controlLevel: glossaryControlLevelSchema.optional(),
+    teamId: z.string().uuid().optional(),
+    projectIds: z.array(projectIdSchema).max(100).optional(),
+    // Keep accepting the original single-project payload for API compatibility.
+    projectId: projectIdSchema.optional(),
+  })
+  .superRefine((value, ctx) => {
+    const projectIds = value.projectIds ?? (value.projectId ? [value.projectId] : []);
+    if (new Set(projectIds).size !== projectIds.length) {
+      ctx.addIssue({
+        code: "custom",
+        message: "projectIds must be unique",
+        path: ["projectIds"],
+      });
+    }
+    if (value.teamId && value.controlLevel !== "team") {
+      ctx.addIssue({
+        code: "custom",
+        message: "teamId is only allowed for team glossaries",
+        path: ["teamId"],
+      });
+    }
+  });
 
 export const updateGlossaryBodySchema = z
   .object({
@@ -78,43 +96,6 @@ export const updateGlossaryBodySchema = z
       value.name !== undefined ||
       value.description !== undefined ||
       value.sourceLocale !== undefined,
-    {
-      message: "at least one field must be provided",
-    },
-  );
-
-export const createGlossaryTermBodySchema = z.object({
-  sourceTerm: z.string().trim().min(1).max(1_000),
-  targetTerm: z.string().trim().min(1).max(1_000),
-  description: z.string().max(10_000).optional(),
-  partOfSpeech: glossaryPartOfSpeechSchema.optional(),
-  url: z.string().url().max(2_000).optional().or(z.literal("")),
-  lemma: z.string().max(1_000).nullable().optional(),
-  caseSensitive: z.boolean().optional().default(false),
-  forbidden: z.boolean().optional().default(false),
-});
-
-export const updateGlossaryTermBodySchema = z
-  .object({
-    sourceTerm: z.string().trim().min(1).max(1_000).optional(),
-    targetTerm: z.string().trim().min(1).max(1_000).optional(),
-    description: z.string().max(10_000).optional(),
-    partOfSpeech: glossaryPartOfSpeechSchema.optional(),
-    url: z.string().url().max(2_000).optional().or(z.literal("")),
-    lemma: z.string().max(1_000).nullable().optional(),
-    caseSensitive: z.boolean().optional(),
-    forbidden: z.boolean().optional(),
-  })
-  .refine(
-    (value) =>
-      value.sourceTerm !== undefined ||
-      value.targetTerm !== undefined ||
-      value.description !== undefined ||
-      value.partOfSpeech !== undefined ||
-      value.url !== undefined ||
-      value.lemma !== undefined ||
-      value.caseSensitive !== undefined ||
-      value.forbidden !== undefined,
     {
       message: "at least one field must be provided",
     },
@@ -216,6 +197,9 @@ export const glossaryRecordSchema = z.object({
   targetLocale: z.string().nullable(),
   status: z.string(),
   source: z.enum(["native", "external_tms"]),
+  controlLevel: glossaryControlLevelSchema,
+  teamId: z.string().uuid().nullable(),
+  teamName: z.string().nullable().optional(),
   externalProviderKind: z.enum(["crowdin", "smartling", "phrase", "lokalise"]).nullable(),
   externalProjectId: z.string().nullable(),
   externalResourceType: z.enum(["glossary", "term_base"]).nullable(),
@@ -238,24 +222,6 @@ export const glossaryRecordSchema = z.object({
   lastSyncErrorMessage: z.string().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
-});
-
-export const glossaryTermRecordSchema = z.object({
-  id: z.string(),
-  glossaryId: z.string(),
-  glossaryName: z.string(),
-  sourceTerm: z.string(),
-  targetTerm: z.string(),
-  targetLocale: z.string().nullable(),
-  description: z.string(),
-  partOfSpeech: z.string().optional(),
-  url: z.string().nullable().optional(),
-  lemma: z.string().nullable().optional(),
-  forbidden: z.boolean(),
-  caseSensitive: z.boolean(),
-  provenance: z.string(),
-  externalKey: z.string().nullable(),
-  reviewStatus: z.string(),
 });
 
 export const glossaryConceptTermRecordSchema = z.object({
@@ -327,20 +293,12 @@ export const glossaryProjectRecordSchema = z.object({
 
 export const glossaryResponseSchema = z.object({
   glossary: glossaryRecordSchema,
-});
-
-export const glossaryTermResponseSchema = z.object({
-  glossaryTerm: glossaryTermRecordSchema,
+  canContribute: z.boolean(),
 });
 
 export const glossariesResponseSchema = z.object({
   glossaries: z.array(glossaryRecordSchema),
   total: z.number().int().nonnegative(),
-});
-
-export const glossaryTermsResponseSchema = z.object({
-  glossaryTerms: z.array(glossaryTermRecordSchema),
-  total: z.number().int().nonnegative().optional(),
 });
 
 export const glossaryProjectsResponseSchema = z.object({
@@ -366,15 +324,12 @@ export const glossaryConceptTermsResponseSchema = z.object({
 });
 
 export type GlossaryIdParams = z.infer<typeof glossaryIdParamsSchema>;
-export type GlossaryTermIdParams = z.infer<typeof glossaryTermIdParamsSchema>;
 export type GlossaryConceptIdParams = z.infer<typeof glossaryConceptIdParamsSchema>;
 export type GlossaryConceptTermIdParams = z.infer<typeof glossaryConceptTermIdParamsSchema>;
 export type GlossaryProjectParams = z.infer<typeof glossaryProjectParamsSchema>;
 export type ListGlossaryQuery = z.infer<typeof listGlossaryQuerySchema>;
 export type CreateGlossaryBody = z.infer<typeof createGlossaryBodySchema>;
 export type UpdateGlossaryBody = z.infer<typeof updateGlossaryBodySchema>;
-export type CreateGlossaryTermBody = z.infer<typeof createGlossaryTermBodySchema>;
-export type UpdateGlossaryTermBody = z.infer<typeof updateGlossaryTermBodySchema>;
 export type ImportGlossaryTermsBody = z.infer<typeof importGlossaryTermsBodySchema>;
 export type AttachGlossaryProjectBody = z.infer<typeof attachGlossaryProjectBodySchema>;
 export type CreateGlossaryConceptBody = z.infer<typeof createGlossaryConceptBodySchema>;
@@ -384,10 +339,7 @@ export type UpsertGlossaryConceptTermBody = z.infer<typeof upsertGlossaryConcept
 export type UpdateGlossaryConceptTermBody = z.infer<typeof updateGlossaryConceptTermBodySchema>;
 export type GlossaryRecord = z.infer<typeof glossaryRecordSchema>;
 export type GlossaryResponse = z.infer<typeof glossaryResponseSchema>;
-export type GlossaryTermResponse = z.infer<typeof glossaryTermResponseSchema>;
 export type GlossariesResponse = z.infer<typeof glossariesResponseSchema>;
-export type GlossaryTermRecord = z.infer<typeof glossaryTermRecordSchema>;
-export type GlossaryTermsResponse = z.infer<typeof glossaryTermsResponseSchema>;
 export type GlossaryProjectRecord = z.infer<typeof glossaryProjectRecordSchema>;
 export type GlossaryProjectsResponse = z.infer<typeof glossaryProjectsResponseSchema>;
 export type GlossaryConceptTermRecord = z.infer<typeof glossaryConceptTermRecordSchema>;

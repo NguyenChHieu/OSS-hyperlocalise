@@ -35,7 +35,7 @@ import {
   workspaceResourceLimitErrorDetails,
   workspaceResourceLimitMessage,
 } from "@/lib/billing/workspace-resource-limits";
-import { db, schema, type DatabaseClient } from "@/lib/database";
+import { db, schema, type DatabaseClient } from "@/lib/database/client";
 import type { OrganizationMembershipRole } from "@/lib/database/types";
 import { createLogger, serializeErrorForLog } from "@/lib/log";
 import { ensureDefaultWorkspaceTeamMembership } from "@/lib/teams/default-workspace-team";
@@ -917,6 +917,8 @@ export function createMemberRoutes() {
           workosMembershipId: member.workosMembershipId ?? undefined,
           workosOrganizationId,
           workosUserId: member.workosUserId,
+          actor: { type: "user", id: c.var.auth.user.localUserId },
+          log: c.get("log"),
         });
 
         return { ok: true as const };

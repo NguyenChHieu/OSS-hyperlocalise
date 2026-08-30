@@ -34,6 +34,8 @@ export const jobStatusEnum = pgEnum("job_status", [
   "waiting_for_review",
   "cancelled",
 ]);
+/** Distinguishes jobs owned by a workspace member from jobs assigned to the translation agent. */
+export const jobAssigneeTypeEnum = pgEnum("job_assignee_type", ["user", "agent"]);
 /**
  * Distinguishes string-based translation jobs from file-based translation jobs so job details can point at the right source inputs and outputs.
  */
@@ -100,6 +102,11 @@ export const externalTmsTerminologyResourceTypeEnum = pgEnum(
  * Records whether a project or localization asset is native to Hyperlocalise or mirrored from an external translation management system.
  */
 export const projectSourceEnum = pgEnum("project_source", ["native", "external_tms"]);
+/**
+ * Distinguishes org-wide terminology from team glossaries. Team control is
+ * Hyperlocalise-owned only; external TMS libraries are always org.
+ */
+export const glossaryControlLevelEnum = pgEnum("glossary_control_level", ["org", "team"]);
 /**
  * Tracks provider-backed terminology and translation-memory sync state for UI status, retries, and diagnostics.
  */

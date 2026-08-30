@@ -119,7 +119,7 @@ async function isAuthoritativeWorkosMembershipActive(workosMembershipId: string)
 }
 
 async function handleWorkosEvent(event: WorkosWebhookEvent): Promise<void> {
-  const { db } = await import("@/lib/database");
+  const { db } = await import("@/lib/database/client");
   const data = event.data;
 
   if (event.event === "invitation.revoked") {
@@ -192,6 +192,7 @@ async function handleWorkosEvent(event: WorkosWebhookEvent): Promise<void> {
         workosMembershipId: readString(data, "id", "membership_id"),
         workosOrganizationId,
         workosUserId,
+        actor: { type: "system", id: "workos_webhook" },
       }),
     );
 
@@ -202,7 +203,7 @@ async function handleWorkosEvent(event: WorkosWebhookEvent): Promise<void> {
     event.event === "organization_membership.created" ||
     event.event === "organization_membership.updated"
   ) {
-    const { db } = await import("@/lib/database");
+    const { db } = await import("@/lib/database/client");
     const workosMembershipId = readString(data, "id", "membership_id");
     const workosOrganizationId = readString(data, "organization_id");
     const workosUserId = readString(data, "user_id");
@@ -275,6 +276,7 @@ async function handleWorkosEvent(event: WorkosWebhookEvent): Promise<void> {
             workosMembershipId,
             workosOrganizationId,
             workosUserId,
+            actor: { type: "system", id: "workos_webhook" },
           }),
         );
         return;

@@ -25,15 +25,15 @@ import {
 } from "@/api/auth/capability-guards";
 import { buildAccessibleJobsWhere } from "@/api/auth/team-access";
 import { workosAuthMiddleware, type ApiAuthContext, type AuthVariables } from "@/api/auth/workos";
+import { validationErrorResponse } from "@/api/errors";
 import {
   badRequestResponse,
   conflictResponse,
   internalErrorResponse,
   notFoundResponse,
   serviceUnavailableResponse,
-  validationErrorResponse,
-} from "@/api/errors";
-import { db, schema } from "@/lib/database";
+} from "@/api/response.schema";
+import { db, schema } from "@/lib/database/client";
 import {
   ensureRepositorySourceFileVersionForStoredFile,
   getStoredFileForJobScope,
@@ -133,6 +133,7 @@ const jobSelect = {
   projectId: schema.jobs.projectId,
   createdByUserId: schema.jobs.createdByUserId,
   ownerUserId: schema.jobs.ownerUserId,
+  assigneeType: schema.jobs.assigneeType,
   kind: schema.jobs.kind,
   type: schema.translationJobDetails.type,
   status: schema.jobs.status,
@@ -532,6 +533,7 @@ export function createJobRoutes(options: CreateJobRoutesOptions) {
               projectId: params.projectId,
               createdByUserId: c.var.auth.user.localUserId,
               ownerUserId,
+              assigneeType: ownerUserId ? "user" : null,
               kind: "translation",
               status: "queued",
               inputPayload: enrichedInputPayload,

@@ -17,6 +17,7 @@ import { flagBasename, HL_WRITE_FLAG_NAMES } from "@/lib/agent-runtime/tools/hl-
 import { err, isErr, ok, type Result } from "@/lib/primitives/result/results";
 
 import { isSuccessfulAllowlistedExit } from "./git-exit";
+import { hardenGitArgs } from "./git-harden";
 import { normalizeWorkspacePath } from "./path";
 import { DEFAULT_MAX_OUTPUT_BYTES, redact, truncate } from "./redact";
 import type { RepoToolContext } from "./types";
@@ -43,9 +44,10 @@ const DISALLOWED_FLAG_NAMES = new Set([
   ...HL_WRITE_FLAG_NAMES,
 ]);
 
-// git log/diff/show `--output`/`-o` writes a file. Keep these git-only:
+// git log/diff/show `--output`/`-o` writes a file. `--textconv` / `--ext-diff`
+// run helper programs from `.git/config`. Keep these git-only:
 // `find -o` is OR, and `hl status --output csv` is a format, not a path.
-const DISALLOWED_GIT_OUTPUT_FLAG_NAMES = new Set(["output", "o"]);
+const DISALLOWED_GIT_FLAG_NAMES = new Set(["output", "o", "textconv", "ext-diff"]);
 
 const ALLOWED_COMMAND_PATTERNS = [
   /^git\s+(status|log|diff|rev-parse|show)\b/i,
@@ -72,7 +74,35 @@ function attachedFlagValueEscapesWorkspace(token: string): boolean {
   if (!value) {
     return false;
   }
-  return value.startsWith("/") || value.split("/").includes("..");
+  return value.startsWith("/") || hasParentPathSegment(value);
+}
+
+/** Same rule as normalizeWorkspacePath: a `/`-separated `..` segment escapes the workspace. */
+function hasParentPathSegment(value: string): boolean {
+  return value.replace(/\\/g, "/").split("/").includes("..");
+}
+
+function tokenHasParentPathSegment(token: string): boolean {
+  if (hasParentPathSegment(token)) {
+    return true;
+  }
+  const separator = token.indexOf("=");
+  if (separator === -1) {
+    return false;
+  }
+  return hasParentPathSegment(unquoteFlagValue(token.slice(separator + 1)));
+}
+
+/** GNU find -L/-H/-follow walk symlinks out of the workspace. Do not treat git -L as the same. */
+function isDisallowedFindFollowFlag(token: string, bin: string): boolean {
+  if (bin !== "find" || !token.startsWith("-")) {
+    return false;
+  }
+  if (/^-[LH]+$/i.test(token)) {
+    return true;
+  }
+  const name = flagBasename(token);
+  return name === "l" || name === "h" || name === "follow";
 }
 
 function isDisallowedGitOutputFlag(token: string): boolean {
@@ -80,7 +110,7 @@ function isDisallowedGitOutputFlag(token: string): boolean {
     return false;
   }
   const name = flagBasename(token);
-  if (DISALLOWED_GIT_OUTPUT_FLAG_NAMES.has(name)) {
+  if (DISALLOWED_GIT_FLAG_NAMES.has(name)) {
     return true;
   }
   // git accepts `-ofile` as `-o` with an attached filename.
@@ -125,7 +155,13 @@ export function isAllowedBashCommand(command: string): boolean {
   if (tokens.some((token) => isDisallowedFlagToken(token, bin))) {
     return false;
   }
+  if (tokens.some((token) => isDisallowedFindFollowFlag(token, bin))) {
+    return false;
+  }
   if (tokens.some(attachedFlagValueEscapesWorkspace)) {
+    return false;
+  }
+  if (tokens.some(tokenHasParentPathSegment)) {
     return false;
   }
 
@@ -210,6 +246,9 @@ IMPORTANT:
           } else if (bin === "find" && args[0] !== workdir) {
             execArgs = [workdir, ...args];
           }
+        }
+        if (bin === "git") {
+          execArgs = hardenGitArgs(execArgs);
         }
 
         const result = await ctx.bash.exec(bin, { args: execArgs });

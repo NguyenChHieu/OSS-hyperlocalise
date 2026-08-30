@@ -1,0 +1,159 @@
+---
+title: "crowdin"
+description: "Crowdin-compatible file workflow commands powered by crowdin.yml."
+---
+
+## Usage
+
+```bash
+hyperlocalise crowdin init
+hyperlocalise crowdin config validate [--config <path>] [--identity <path>]
+hyperlocalise crowdin status [--config <path>] [--identity <path>] [--branch <name>] [--language <id>] [--output text|json] [--fail-if-incomplete]
+hyperlocalise crowdin upload sources [--config <path>] [--identity <path>] [--branch <name>]
+hyperlocalise crowdin upload translations [--config <path>] [--identity <path>] [--branch <name>] [--language <locale>]
+hyperlocalise crowdin download sources [--config <path>] [--identity <path>] [--branch <name>] [--file-id <id>] [--source <path>] [--output <path>] [--force]
+hyperlocalise crowdin download translations [--config <path>] [--identity <path>] [--branch <name>] [--language <locale>] [--export-only-approved] [--skip-untranslated-strings] [--merge-approved] [--include-sources]
+```
+
+## What this command family does
+
+These commands operate on `crowdin.yml` or `crowdin.yaml` directly.
+
+They are separate from Hyperlocalise native `i18n.yml` and `sync push` / `sync pull` workflows.
+
+Use them when you want Crowdin-compatible file mode:
+
+- source-file upload from `files[].source`
+- translation upload from `files[].translation`
+- source download into `files[].source` or a single output file
+- translation download/export back into your repo
+- optional source download alongside translations with `download translations --include-sources`
+- branch-scoped upload and download with root `branch:` or `--branch`
+- translation and approval progress with `status`
+- glossary and translation-memory download
+- strict YAML decoding: only keys Crowdin documents and `hl` recognizes may appear in `crowdin.yml` (unknown keys still error)
+
+## Supported config fields
+
+These drive Hyperlocalise Crowdin file mode:
+
+- `project_id`
+- `project_id_env`
+- `api_token`
+- `api_token_env`
+- `base_url`
+- `base_url_env`
+- `base_path`
+- `base_path_env`
+- `branch`
+- `preserve_hierarchy`
+- `files[].source`
+- `files[].translation`
+- `files[].languages_mapping`
+- `files[].excluded_target_languages`
+- `files[].skip_untranslated_strings`
+- `files[].skip_untranslated_files`
+- `files[].export_only_approved`
+
+## Crowdin CLI compatibility (parsed, not applied)
+
+The decoder also accepts several Crowdin-documented keys so you can reuse a standard `crowdin.yml` without stripping metadata. Hyperlocalise does **not** implement behavior for these yet; they are ignored after parse:
+
+- Root: `export_languages`, `pull_request_title`, `pull_request_labels`, `commit_message`, `append_commit_message`, `pull_request_assignees`, `pull_request_reviewers`
+- Per file: `type`, `dest`, `update_option`, `export_pattern`, `translate_content`, `translate_attributes`, `content_segmentation`, `translatable_elements`, `ignore`, `translation_replace`, `first_line_contains_header`, `scheme`, `custom_segmentation`, `escape_quotes`, `escape_special_characters`, `labels`
+
+## Unsupported features
+
+YAML keys not listed above still cause a decode error (`KnownFields`).
+
+This v1 file-mode implementation does not support:
+
+- screenshot, comment, task, distribution, or app commands
+- glossary or TM upload (download exists)
+- permissive "warn and ignore" compatibility mode
+- interactive Crowdin project bootstrap
+
+## Examples
+
+Validate config:
+
+```bash
+hyperlocalise crowdin config validate
+```
+
+Show translation and approval progress:
+
+```bash
+hyperlocalise crowdin status --language es --output json
+```
+
+Upload source files:
+
+```bash
+hyperlocalise crowdin upload sources
+```
+
+Upload only French translations:
+
+```bash
+hyperlocalise crowdin upload translations --language fr
+```
+
+Upload sources to a Crowdin branch:
+
+```bash
+hyperlocalise crowdin upload sources --branch feature/login
+```
+
+Download source files from `crowdin.yml` into their configured `files[].source` paths:
+
+```bash
+hyperlocalise crowdin download sources
+```
+
+Download one Crowdin source file by file ID:
+
+```bash
+hyperlocalise crowdin download sources --file-id 101 --output /tmp/messages.json --force
+```
+
+When you pass `--file-id`, Hyperlocalise downloads that file directly from Crowdin. Use `--output` to write a file, or omit it to print the source content to stdout. Credentials still come from `crowdin.yml`, `.crowdin.yml`, or the usual `CROWDIN_PROJECT_ID` and `CROWDIN_PERSONAL_TOKEN` environment variables.
+
+Limit a config-based source download to one or more configured paths:
+
+```bash
+hyperlocalise crowdin download sources --source /src/messages.json
+```
+
+Download only approved French translations:
+
+```bash
+hyperlocalise crowdin download translations --language fr --export-only-approved --skip-untranslated-strings
+```
+
+Download French translations and refresh the matching local source files:
+
+```bash
+hyperlocalise crowdin download translations --language fr --include-sources
+```
+
+With `download translations --include-sources`, exact `files[].source` paths can be written even when the file is missing locally. For globbed source paths, local glob expansion still determines which configured files are processed.
+
+Or configure the export behavior in `crowdin.yml`:
+
+```yaml
+files:
+  - source: /src/messages.json
+    translation: /locales/%locale%/%original_file_name%
+    export_only_approved: true
+    skip_untranslated_strings: true
+```
+
+Merge approved JSON strings into the existing local translation file without deleting local keys that are absent from the approved export:
+
+```bash
+hyperlocalise crowdin download translations --language fr --merge-approved
+```
+
+`download translations --merge-approved` currently supports JSON object translation files. It forces an approved-only sparse export for the request, then overwrites only keys present in the approved Crowdin payload.
+Downloaded values that still match the source JSON are treated as Crowdin source-language fallbacks and are not merged over existing local translations.

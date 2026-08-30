@@ -1,9 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -12,6 +17,9 @@ const (
 	serverReadTimeout       = 15 * time.Second
 	serverWriteTimeout      = 15 * time.Second
 	serverIdleTimeout       = 60 * time.Second
+	serverShutdownTimeout   = 10 * time.Second
+
+	defaultHunspellDictDir = "/usr/share/hunspell"
 )
 
 func newHTTPServer(addr string, handler http.Handler) *http.Server {
@@ -26,6 +34,8 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 }
 
 func main() {
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
@@ -36,14 +46,61 @@ func main() {
 		log.Fatalf("configure WorkOS auth: %v", err)
 	}
 
+	dictDir := os.Getenv("HUNSPELL_DICT_DIR")
+	if dictDir == "" {
+		dictDir = defaultHunspellDictDir
+	}
+
+	spellChecker, closeSpellChecker, err := newSpellChecker(dictDir)
+	if err != nil {
+		log.Printf("configure spell checker: %v; continuing without spell check", err)
+		spellChecker = NoopSpellChecker{}
+		closeSpellChecker = func() error { return nil }
+	}
+
+	defer func() {
+		if err := closeSpellChecker(); err != nil {
+			log.Printf("close spell checker: %v", err)
+		}
+	}()
+
 	h := newHandler()
+	h.spellChecker = spellChecker
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", h.health)
-	mux.Handle("POST /v1/validate/segment", authMiddleware(verifier)(http.HandlerFunc(h.validateSegment)))
+	registerRoutes(mux, h, verifier)
 
 	addr := ":" + port
-	log.Printf("go-svc listening on %s", addr)
-	if err := newHTTPServer(addr, mux).ListenAndServe(); err != nil {
-		log.Fatal(err)
+	server := newHTTPServer(addr, requestLogMiddleware(withOptionalPrefix(publicPathPrefix, mux)))
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	serveErrCh := make(chan error, 1)
+	go func() {
+		log.Printf("go-svc listening on %s", addr)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			serveErrCh <- err
+			return
+		}
+		serveErrCh <- nil
+	}()
+
+	select {
+	case err := <-serveErrCh:
+		if err != nil {
+			log.Fatalf("serve: %v", err)
+		}
+	case <-ctx.Done():
+		log.Print("received shutdown signal: no longer accepting new requests")
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), serverShutdownTimeout)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			log.Printf("graceful shutdown: %v", err)
+		}
+		if err := <-serveErrCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Printf("serve after shutdown: %v", err)
+		}
 	}
 }

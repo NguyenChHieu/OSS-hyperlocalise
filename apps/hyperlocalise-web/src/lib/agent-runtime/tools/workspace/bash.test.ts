@@ -14,6 +14,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { Bash, InMemoryFs } from "just-bash";
 
 import { createBashTool, isAllowedBashCommand } from "./bash";
+import { hardenGitArgs } from "./git-harden";
 import type { RepoToolContext } from "./types";
 
 const toolCallInfo = { toolCallId: "test-tool-call", messages: [], context: {} };
@@ -126,6 +127,44 @@ describe("isAllowedBashCommand", () => {
   ])("blocks attached absolute or parent path in %s", (command) => {
     expect(isAllowedBashCommand(command)).toBe(false);
   });
+
+  it.each([
+    "git show --textconv",
+    "git show HEAD --textconv",
+    "git diff --ext-diff",
+    "git diff HEAD --ext-diff",
+    `git show "--textconv"`,
+    "git log --textconv",
+    "git show --textconv=true",
+  ])("blocks git helper-program flag in %s", (command) => {
+    expect(isAllowedBashCommand(command)).toBe(false);
+  });
+
+  it("still allows ordinary git show and diff", () => {
+    expect(isAllowedBashCommand("git show HEAD")).toBe(true);
+    expect(isAllowedBashCommand("git diff HEAD^ HEAD")).toBe(true);
+  });
+
+  it.each([
+    "find ./../ -type f",
+    "ls ./../",
+    "ls foo/../../outside",
+    "find foo/bar/../../etc -type f",
+    "hl check --config foo/../../secret.yml",
+    "hl check --config ./../i18n.yml",
+    "find .\\..\\ -type f",
+  ])("blocks mid-path parent traversal in %s", (command) => {
+    expect(isAllowedBashCommand(command)).toBe(false);
+  });
+
+  it.each([
+    "find -L . -type f",
+    "find -H . -type f",
+    "find -LH . -type f",
+    "find . -follow -type f",
+  ])("blocks find symlink-follow flag in %s", (command) => {
+    expect(isAllowedBashCommand(command)).toBe(false);
+  });
 });
 
 describe("createBashTool", () => {
@@ -190,7 +229,7 @@ describe("createBashTool", () => {
       bash: {
         exec: async (bin, options) => {
           expect(bin).toBe("git");
-          expect(options?.args).toEqual(["diff", "HEAD^", "HEAD"]);
+          expect(options?.args).toEqual(hardenGitArgs(["diff", "HEAD^", "HEAD"]));
           return { stdout: patch, stderr: "", exitCode: 1, env: {} };
         },
         readFile: async () => "",
@@ -212,7 +251,9 @@ describe("createBashTool", () => {
       bash: {
         exec: async (bin, options) => {
           expect(bin).toBe("git");
-          expect(options?.args).toEqual(["-C", "scribe-fe-v2", "diff", "HEAD^", "HEAD"]);
+          expect(options?.args).toEqual(
+            hardenGitArgs(["-C", "scribe-fe-v2", "diff", "HEAD^", "HEAD"]),
+          );
           return { stdout: patch, stderr: "", exitCode: 1, env: {} };
         },
         readFile: async () => "",
@@ -247,5 +288,76 @@ describe("createBashTool", () => {
       exitCode: 129,
       stdout: "usage: git diff [<options>]",
     });
+  });
+
+  it("rejects git show --textconv before execution", async () => {
+    const tool = createBashTool({
+      bash: {
+        exec: async () => {
+          throw new Error("bash.exec must not run for git --textconv");
+        },
+        readFile: async () => "",
+      },
+    });
+    const result = await tool.execute!({ command: "git show HEAD --textconv" }, toolCallInfo);
+    expect(result).toMatchObject({ success: false });
+  });
+
+  it("injects fsmonitor and diff.external disables on git status", async () => {
+    const tool = createBashTool({
+      bash: {
+        exec: async (bin, options) => {
+          expect(bin).toBe("git");
+          expect(options?.args).toEqual(hardenGitArgs(["status", "--short"]));
+          return { stdout: "", stderr: "", exitCode: 0, env: {} };
+        },
+        readFile: async () => "",
+      },
+    });
+
+    const result = await tool.execute!({ command: "git status --short" }, toolCallInfo);
+    expect(result).toMatchObject({ success: true, exitCode: 0 });
+  });
+
+  it("rejects mid-path parent traversal before execution", async () => {
+    const tool = createBashTool({
+      bash: {
+        exec: async () => {
+          throw new Error("bash.exec must not run for ./../ traversal");
+        },
+        readFile: async () => "",
+      },
+    });
+    const result = await tool.execute!({ command: "find ./../ -type f" }, toolCallInfo);
+    expect(result).toMatchObject({ success: false });
+  });
+
+  it("rejects space-separated hl --config traversal before execution", async () => {
+    const tool = createBashTool({
+      bash: {
+        exec: async () => {
+          throw new Error("bash.exec must not run for hl --config traversal");
+        },
+        readFile: async () => "",
+      },
+    });
+    const result = await tool.execute!(
+      { command: "hl check --config foo/../../secret.yml" },
+      toolCallInfo,
+    );
+    expect(result).toMatchObject({ success: false });
+  });
+
+  it("rejects find -L before execution", async () => {
+    const tool = createBashTool({
+      bash: {
+        exec: async () => {
+          throw new Error("bash.exec must not run for find -L");
+        },
+        readFile: async () => "",
+      },
+    });
+    const result = await tool.execute!({ command: "find -L . -type f" }, toolCallInfo);
+    expect(result).toMatchObject({ success: false });
   });
 });

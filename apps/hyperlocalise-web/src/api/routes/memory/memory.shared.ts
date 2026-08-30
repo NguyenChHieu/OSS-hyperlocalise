@@ -12,16 +12,16 @@
  */
 import { and, eq, sql } from "drizzle-orm";
 
+import { validationErrorResponse } from "@/api/errors";
 import {
   forbiddenResponse as sharedForbiddenResponse,
   notFoundResponse,
-  validationErrorResponse,
   type JsonContext,
-} from "@/api/errors";
+} from "@/api/response.schema";
 import { canAccessMemory } from "@/api/auth/team-access";
 import type { ApiAuthContext } from "@/api/auth/workos";
 import { hasCapability } from "@/api/auth/policy";
-import { db, schema } from "@/lib/database";
+import { db, schema } from "@/lib/database/client";
 
 export function invalidMemoryPayloadResponse(c: { json: JsonContext["json"] }) {
   return validationErrorResponse(c, "invalid_memory_payload", "Invalid translation memory payload");
@@ -41,6 +41,21 @@ export function externalTmsMemoryImmutableResponse(c: { json: JsonContext["json"
     "external_tms_memory_immutable",
     "This translation memory is managed by an external TMS and cannot be edited directly",
   );
+}
+
+export function memoryEntryReadOnlyResponse(
+  c: { json: JsonContext["json"] },
+  reason: "external_tms" | "reference_only",
+) {
+  if (reason === "reference_only") {
+    return sharedForbiddenResponse(
+      c,
+      "memory_entry_read_only",
+      "This translation memory is reference-only and cannot be edited",
+    );
+  }
+
+  return externalTmsMemoryImmutableResponse(c);
 }
 
 export function isMemoryMutationAllowed(role: ApiAuthContext["membership"]["role"]) {

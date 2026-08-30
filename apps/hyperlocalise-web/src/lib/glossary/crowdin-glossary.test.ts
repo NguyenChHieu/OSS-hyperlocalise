@@ -30,7 +30,7 @@ vi.mock("@/lib/providers/adapters/crowdin/crowdin-provider", () => ({
   },
 }));
 
-vi.mock("@/lib/database", () => ({
+vi.mock("@/lib/database/client", () => ({
   db: {
     delete: () => ({
       where: (...args: unknown[]) => {
@@ -51,13 +51,34 @@ vi.mock("@/lib/database", () => ({
   },
 }));
 
-vi.mock("./glossary-provider", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./glossary-provider")>();
-  return {
-    ...actual,
-    resolveCrowdinContext: (...args: unknown[]) => mocks.resolveCrowdinContext(...args),
-  };
-});
+vi.mock("./glossary-provider", () => ({
+  parseId: (value: string, label: string) => {
+    const id = Number(value);
+    if (!Number.isSafeInteger(id) || id < 1) {
+      throw new Error(`invalid_crowdin_${label}`);
+    }
+    return id;
+  },
+  resolveCrowdinContext: (...args: unknown[]) => mocks.resolveCrowdinContext(...args),
+  toCrowdinContext: (input: {
+    organizationId: string;
+    externalProjectId: string;
+    sourceLocale: string;
+    targetLocales: string[];
+    credential: unknown;
+    secretMaterial: string;
+    signal?: AbortSignal;
+  }) => ({
+    organizationId: input.organizationId,
+    projectId: input.externalProjectId,
+    externalProjectId: input.externalProjectId,
+    credential: input.credential,
+    sourceLocale: input.sourceLocale,
+    targetLocales: input.targetLocales,
+    secretMaterial: input.secretMaterial,
+    signal: input.signal,
+  }),
+}));
 
 import { CrowdinGlossary } from "./crowdin-glossary";
 
@@ -93,6 +114,8 @@ function liveGlossary(overrides: Partial<GlossaryRecord> = {}): GlossaryRecord {
     lastSyncErrorAt: null,
     lastSyncErrorMessage: null,
     providerMetadata: {},
+    controlLevel: "org",
+    teamId: null,
     createdAt: new Date("2026-08-20T00:00:00Z"),
     updatedAt: new Date("2026-08-20T00:00:00Z"),
     ...overrides,
@@ -173,5 +196,27 @@ describe("CrowdinGlossary.delete", () => {
 
     await expect(glossary.delete()).resolves.toBe(false);
     expect(mocks.deleteLiveGlossary).toHaveBeenCalledWith(expect.anything(), 55);
+  });
+});
+
+describe("CrowdinGlossary.update", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.resolveCrowdinContext.mockResolvedValue({
+      organizationId: "org-1",
+      externalProjectId: "902807",
+      sourceLocale: "en",
+      credential: { id: "cred-1" },
+      secretMaterial: "secret",
+    });
+  });
+
+  it("rejects unsupported source locale updates", async () => {
+    const glossary = new CrowdinGlossary({
+      auth: authContext(),
+      glossary: liveGlossary(),
+    });
+
+    await expect(glossary.update({ sourceLocale: "fr-FR" })).resolves.toBeNull();
   });
 });

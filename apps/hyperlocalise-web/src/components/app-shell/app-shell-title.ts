@@ -40,6 +40,7 @@ type RouteTitleKey =
   | "members"
   | "my-jobs"
   | "my-work"
+  | "personal-access-tokens"
   | "projects"
   | "qa"
   | "reviews"
@@ -90,6 +91,7 @@ function isRouteTitleKey(value: string): value is RouteTitleKey {
     value === "members" ||
     value === "my-jobs" ||
     value === "my-work" ||
+    value === "personal-access-tokens" ||
     value === "projects" ||
     value === "qa" ||
     value === "reviews" ||
@@ -265,6 +267,12 @@ function formatRouteTitle(intl: IntlShape, key: RouteTitleKey): string {
         id: "YM1jd5PwaY",
         description: "App shell breadcrumb title for the my jobs page",
       });
+    case "personal-access-tokens":
+      return intl.formatMessage({
+        defaultMessage: "Personal access tokens",
+        id: "n8n3wB0NdJ",
+        description: "App shell breadcrumb title for the personal access tokens settings page",
+      });
     case "projects":
       return intl.formatMessage({
         defaultMessage: "Projects",
@@ -291,9 +299,9 @@ function formatRouteTitle(intl: IntlShape, key: RouteTitleKey): string {
       });
     case "strings":
       return intl.formatMessage({
-        defaultMessage: "Strings",
-        id: "RbHK79ne0Y",
-        description: "App shell breadcrumb title for the project strings CAT page",
+        defaultMessage: "Content Editor",
+        id: "Z/xptRbaiC",
+        description: "App shell breadcrumb title for the project Content Editor page",
       });
     case "teams":
       return intl.formatMessage({

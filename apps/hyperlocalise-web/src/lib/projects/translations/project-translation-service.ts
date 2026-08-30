@@ -14,11 +14,12 @@ import { and, count, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 
 import type {
-  ProjectFileCatQueueFilter,
-  ProjectFileCatQueueSort,
+  ProjectFileContentEditorQueueFilter,
+  ProjectFileContentEditorQueueSort,
   ProjectSourceStringEntry,
 } from "@/api/routes/project/project.schema";
-import { db, schema } from "@/lib/database";
+import { db, schema } from "@/lib/database/client";
+import { incrementMemoryEntryVersionSql } from "@/lib/memory/memory-entry-lifecycle";
 import { ProjectServiceBase } from "@/lib/projects/project-service-base";
 import { translationKeysQueueOrderBy } from "@/lib/projects/translations/project-translation-queue-order";
 import { shouldRetrySameAsSourcePrefill } from "@/lib/projects/translations/should-retry-same-as-source-prefill";
@@ -110,7 +111,7 @@ function translationKeysQueueFilterCondition(input: {
   organizationId: string;
   projectId: string;
   targetLocale: string;
-  queueFilter?: ProjectFileCatQueueFilter;
+  queueFilter?: ProjectFileContentEditorQueueFilter;
 }) {
   const filter = input.queueFilter;
   if (!filter || filter === "all") {
@@ -227,6 +228,8 @@ export class ProjectTranslationService extends ProjectServiceBase {
         sourceText: entry.text,
         context: entry.context?.trim() || null,
         type: entry.type?.trim() || null,
+        maxLength:
+          entry.maxLength != null && entry.maxLength > 0 ? Math.trunc(entry.maxLength) : null,
         normalizedSourceText: normalizeTranslationMemorySourceText(entry.text),
       }))
       .filter((entry) => entry.key.length > 0 && entry.sourceText.trim().length > 0)
@@ -273,6 +276,7 @@ export class ProjectTranslationService extends ProjectServiceBase {
           normalizedSourceText: entry.normalizedSourceText,
           context: entry.context,
           type: entry.type,
+          maxLength: entry.maxLength,
           sourceFileVersionId: input.sourceFileVersionId ?? null,
         })),
       )
@@ -287,6 +291,7 @@ export class ProjectTranslationService extends ProjectServiceBase {
           normalizedSourceText: sql`excluded.normalized_source_text`,
           context: sql`excluded.context`,
           type: sql`excluded.type`,
+          maxLength: sql`coalesce(excluded.max_length, ${schema.projectTranslationKeys.maxLength})`,
           sourceFileVersionId: sql`excluded.source_file_version_id`,
           updatedAt: sql`now()`,
         },
@@ -305,6 +310,40 @@ export class ProjectTranslationService extends ProjectServiceBase {
     );
 
     return { imported, updated };
+  }
+
+  async setKeyMaxLength(input: {
+    organizationId: string;
+    projectId: string;
+    translationKeyId: string;
+    maxLength: number | null;
+    repositorySourceFileId?: string;
+  }): Promise<{ updated: boolean; maxLength: number | null }> {
+    const normalizedMaxLength =
+      input.maxLength != null && input.maxLength > 0 ? Math.trunc(input.maxLength) : null;
+
+    const updated = await this.database
+      .update(schema.projectTranslationKeys)
+      .set({
+        maxLength: normalizedMaxLength,
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(schema.projectTranslationKeys.organizationId, input.organizationId),
+          eq(schema.projectTranslationKeys.projectId, input.projectId),
+          eq(schema.projectTranslationKeys.id, input.translationKeyId),
+          input.repositorySourceFileId
+            ? eq(schema.projectTranslationKeys.repositorySourceFileId, input.repositorySourceFileId)
+            : undefined,
+        ),
+      )
+      .returning({ maxLength: schema.projectTranslationKeys.maxLength });
+
+    return {
+      updated: updated.length > 0,
+      maxLength: updated[0]?.maxLength ?? null,
+    };
   }
 
   async setKeysHidden(input: {
@@ -412,7 +451,7 @@ export class ProjectTranslationService extends ProjectServiceBase {
     repositorySourceFileId: string;
     targetLocale?: string;
     search?: string;
-    queueFilter?: ProjectFileCatQueueFilter;
+    queueFilter?: ProjectFileContentEditorQueueFilter;
   }) {
     const [row] = await this.database
       .select({ total: count() })
@@ -443,8 +482,8 @@ export class ProjectTranslationService extends ProjectServiceBase {
     limit?: number;
     offset?: number;
     search?: string;
-    queueFilter?: ProjectFileCatQueueFilter;
-    queueSort?: ProjectFileCatQueueSort;
+    queueFilter?: ProjectFileContentEditorQueueFilter;
+    queueSort?: ProjectFileContentEditorQueueSort;
   }) {
     const limit = input.limit ?? 2_000;
     const offset = input.offset ?? 0;
@@ -492,7 +531,7 @@ export class ProjectTranslationService extends ProjectServiceBase {
     projectId: string;
     targetLocale?: string;
     search?: string;
-    queueFilter?: ProjectFileCatQueueFilter;
+    queueFilter?: ProjectFileContentEditorQueueFilter;
     sourcePaths?: readonly string[] | null;
   }) {
     const [row] = await this.database
@@ -528,8 +567,8 @@ export class ProjectTranslationService extends ProjectServiceBase {
     limit?: number;
     offset?: number;
     search?: string;
-    queueFilter?: ProjectFileCatQueueFilter;
-    queueSort?: ProjectFileCatQueueSort;
+    queueFilter?: ProjectFileContentEditorQueueFilter;
+    queueSort?: ProjectFileContentEditorQueueSort;
     sourcePaths?: readonly string[] | null;
   }) {
     const limit = input.limit ?? 2_000;
@@ -884,6 +923,7 @@ export class ProjectTranslationService extends ProjectServiceBase {
           reviewStatus: sql`excluded.review_status`,
           externalKey: sql`excluded.external_key`,
           metadata: sql`excluded.metadata`,
+          version: incrementMemoryEntryVersionSql(),
           updatedAt: sql`now()`,
         },
       });
@@ -1185,6 +1225,10 @@ export const upsertProjectTranslationKeysFromEntries = (
 export const setProjectTranslationKeysHidden = (
   input: Parameters<ProjectTranslationService["setKeysHidden"]>[0],
 ) => projectTranslationService.setKeysHidden(input);
+
+export const setProjectTranslationKeyMaxLength = (
+  input: Parameters<ProjectTranslationService["setKeyMaxLength"]>[0],
+) => projectTranslationService.setKeyMaxLength(input);
 
 export const isProjectTranslationKeyHidden = (
   input: Parameters<ProjectTranslationService["isKeyHidden"]>[0],

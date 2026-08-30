@@ -17,7 +17,7 @@ export const githubRepoUrl = "https://github.com/hyperlocalise/hyperlocalise";
 export const githubActionUrl = "https://github.com/marketplace/actions/hyperlocalise-ci";
 export const githubReleasesUrl = "https://github.com/hyperlocalise/hyperlocalise/releases";
 export const docsUrl = "https://hyperlocalise.dev";
-export const cliDocsUrl = "https://hyperlocalise.dev/commands/overview";
+export const cliDocsUrl = "https://hyperlocalise.dev/cli/commands/overview";
 export const contactUrl = "mailto:minh@hyperlocalise.com";
 export const statusUrl = "https://status.hyperlocalise.com/";
 export const linkedInCompanyUrl = "https://www.linkedin.com/company/hyperlocalise/";
@@ -81,7 +81,7 @@ export const footerColumns: MarketingFooterColumn[] = [
       { labelKey: "footerStartups", href: "/startups" },
       { labelKey: "footerCompany", href: "/company" },
       { labelKey: "footerLocalisationAudit", href: "/localisation-audit" },
-      { label: "Blog", href: "/en/blog" },
+      { label: "Blog", href: "/blog" },
       { labelKey: "footerGitHubAction", href: githubActionUrl },
       { labelKey: "footerContact", href: contactUrl },
       { labelKey: "footerStatus", href: statusUrl },
@@ -90,8 +90,8 @@ export const footerColumns: MarketingFooterColumn[] = [
   {
     title: "Legal",
     links: [
-      { label: "Terms", href: "/en/terms" },
-      { label: "Privacy", href: "/en/privacy" },
+      { label: "Terms", href: "/terms" },
+      { label: "Privacy", href: "/privacy" },
       { label: "Trust Center", href: trustCenterUrl },
     ],
     nested: {

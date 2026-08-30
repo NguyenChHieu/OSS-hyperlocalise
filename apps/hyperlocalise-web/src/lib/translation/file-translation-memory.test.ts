@@ -83,7 +83,7 @@ vi.mock("@/lib/projects/translations/project-translation-service", () => ({
   listHiddenProjectTranslationKeysForSourcePath: listHiddenKeysMock,
 }));
 
-vi.mock("@/lib/database", () => ({
+vi.mock("@/lib/database/client", () => ({
   db: {
     insert: insertMock,
     select: selectMock,
@@ -176,7 +176,10 @@ describe("persistFileTranslationMemoryEntries", () => {
 
     expect(onConflictDoUpdateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        set: expect.objectContaining({ updatedAt: { sql: "now()" } }),
+        set: expect.objectContaining({
+          updatedAt: { sql: "now()" },
+          version: expect.anything(),
+        }),
       }),
     );
   });

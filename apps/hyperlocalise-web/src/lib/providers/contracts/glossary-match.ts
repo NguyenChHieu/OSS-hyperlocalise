@@ -13,6 +13,7 @@
 import type { ExternalTmsProviderKind } from "@/lib/providers/contracts/external-tms-provider-kind";
 import {
   normalizeProviderGlossaryTermFlags,
+  normalizedGlossaryTermStatusFromStatus,
   type ProviderGlossaryTermStatusInput,
 } from "@/lib/providers/contracts/glossary-term-status";
 
@@ -21,6 +22,29 @@ export type GlossaryMatchSource = "synced_database" | "live_provider";
 export type NormalizedGlossaryTermStatus = {
   forbidden: boolean;
   preferred: boolean;
+};
+
+export type NormalizedGlossaryConceptTerm = {
+  id: string;
+  locale: string;
+  text: string;
+  status?: string | null;
+  forbidden?: boolean;
+  preferred?: boolean;
+  termType?: string | null;
+  partOfSpeech?: string | null;
+  gender?: string | null;
+};
+
+export type NormalizedGlossaryConcept = {
+  id: string;
+  primaryTerm: string;
+  subject?: string | null;
+  definition?: string | null;
+  glossaryUrl?: string | null;
+  translatable?: boolean;
+  sourceTerms: NormalizedGlossaryConceptTerm[];
+  targetTerms: NormalizedGlossaryConceptTerm[];
 };
 
 export type NormalizedGlossaryMatch = {
@@ -39,7 +63,9 @@ export type NormalizedGlossaryMatch = {
   resourceId: string;
   externalResourceId: string | null;
   externalTermId: string | null;
+  externalConceptId?: string | null;
   termStatus: NormalizedGlossaryTermStatus;
+  concept?: NormalizedGlossaryConcept;
 };
 
 export type ContextGlossaryMatch = {
@@ -73,6 +99,22 @@ export type AgentRunGlossaryMatchUsage = {
   externalResourceId: string | null;
 };
 
+function isNonEmptyGlossaryTerm(value: string | null | undefined): boolean {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+export function hasGlossaryExpectedTarget(match: {
+  targetTerm: string;
+  sourceTerm: string;
+  concept?: Pick<NormalizedGlossaryConcept, "translatable"> | null;
+}): boolean {
+  if (match.concept?.translatable === false) {
+    return isNonEmptyGlossaryTerm(match.sourceTerm);
+  }
+
+  return isNonEmptyGlossaryTerm(match.targetTerm);
+}
+
 export type ProviderGlossaryMatchInput = {
   sourceTerm: string;
   targetTerm: string;
@@ -84,18 +126,24 @@ export type ProviderGlossaryMatchInput = {
   resourceId: string;
   externalResourceId?: string | null;
   externalTermId?: string | null;
+  externalConceptId?: string | null;
   glossaryName: string;
   rank?: number;
   status?: ProviderGlossaryTermStatusInput;
+  concept?: NormalizedGlossaryConcept;
 };
 
 export function normalizeGlossaryTermStatus(
   input: ProviderGlossaryTermStatusInput,
 ): NormalizedGlossaryTermStatus {
   const { forbidden } = normalizeProviderGlossaryTermFlags(input);
+  const status = input.status?.trim();
+  const preferred = status
+    ? normalizedGlossaryTermStatusFromStatus(status).preferred
+    : input.forbidden === false;
   return {
     forbidden,
-    preferred: !forbidden,
+    preferred: forbidden ? false : preferred,
   };
 }
 
@@ -104,6 +152,7 @@ export function normalizeProviderGlossaryMatch(
 ): NormalizedGlossaryMatch {
   const externalResourceId = input.externalResourceId ?? null;
   const externalTermId = input.externalTermId ?? null;
+  const externalConceptId = input.externalConceptId ?? null;
   const rank = input.rank ?? 1;
   const termStatus = normalizeGlossaryTermStatus(input.status ?? {});
 
@@ -123,7 +172,9 @@ export function normalizeProviderGlossaryMatch(
     resourceId: input.resourceId,
     externalResourceId,
     externalTermId,
+    ...(externalConceptId ? { externalConceptId } : {}),
     termStatus,
+    ...(input.concept ? { concept: input.concept } : {}),
   };
 }
 
@@ -137,11 +188,13 @@ export function normalizeSyncedDatabaseGlossaryMatch(input: {
   targetLocale: string;
   description: string | null;
   forbidden: boolean;
+  preferred?: boolean;
   caseSensitive: boolean;
   rank: number;
   providerKind: ExternalTmsProviderKind | null;
   externalResourceId: string | null;
   externalTermId: string | null;
+  concept?: NormalizedGlossaryConcept;
 }): NormalizedGlossaryMatch {
   return {
     id: input.id,
@@ -161,18 +214,28 @@ export function normalizeSyncedDatabaseGlossaryMatch(input: {
     externalTermId: input.externalTermId,
     termStatus: {
       forbidden: input.forbidden,
-      preferred: !input.forbidden,
+      preferred: input.preferred ?? false,
     },
+    ...(input.concept ? { concept: input.concept } : {}),
   };
 }
 
-export function toContextGlossaryMatch(match: NormalizedGlossaryMatch): ContextGlossaryMatch {
+export function toContextGlossaryMatch(
+  match: NormalizedGlossaryMatch,
+): ContextGlossaryMatch | null {
+  if (!hasGlossaryExpectedTarget(match)) {
+    return null;
+  }
+
+  const targetTerm =
+    match.concept?.translatable === false ? match.sourceTerm.trim() : match.targetTerm.trim();
+
   return {
     id: match.id,
     glossaryId: match.glossaryId,
     glossaryName: match.glossaryName,
     sourceTerm: match.sourceTerm,
-    targetTerm: match.targetTerm,
+    targetTerm,
     targetLocale: match.targetLocale,
     description: match.description,
     forbidden: match.termStatus.forbidden,
@@ -187,12 +250,19 @@ export function toContextGlossaryMatch(match: NormalizedGlossaryMatch): ContextG
 
 export function toAgentRunGlossaryMatchUsage(
   match: NormalizedGlossaryMatch,
-): AgentRunGlossaryMatchUsage {
+): AgentRunGlossaryMatchUsage | null {
+  if (!hasGlossaryExpectedTarget(match)) {
+    return null;
+  }
+
+  const targetTerm =
+    match.concept?.translatable === false ? match.sourceTerm.trim() : match.targetTerm.trim();
+
   return {
     glossaryId: match.glossaryId,
     glossaryName: match.glossaryName,
     sourceTerm: match.sourceTerm,
-    targetTerm: match.targetTerm,
+    targetTerm,
     targetLocale: match.targetLocale,
     forbidden: match.termStatus.forbidden,
     preferred: match.termStatus.preferred,

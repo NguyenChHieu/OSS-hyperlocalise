@@ -1,5 +1,23 @@
 # Crowdin Steward's Journal
 
+## 2026-12-31 - Add GlossaryIDs parity to GlossaryConcordanceSearchRequest
+
+**Learning:** In Crowdin API v2, Glossary Concordance Search (`POST /api/v2/projects/{projectId}/glossaries/concordance`) accepts an optional `glossaryIds` array in the request body to filter concordance search across specific glossaries. The SDK's `GlossaryConcordanceSearchRequest` previously lacked `GlossaryIDs`, preventing callers from restricting glossary concordance search to selected glossaries.
+
+**Action:** Added `GlossaryIDs []int json:"glossaryIds,omitempty"` to `GlossaryConcordanceSearchRequest` in `third_party/crowdin-api-client-go/crowdin/model/glossaries.go`. Added unit test assertions in `third_party/crowdin-api-client-go/crowdin/model/glossaries_test.go` and `third_party/crowdin-api-client-go/crowdin/glossaries_test.go`.
+
+## 2026-12-31 - Add IsHidden query filter parity to SourceStringsListOptions
+
+**Learning:** In Crowdin API v2, the List Source Strings endpoint (`GET /api/v2/projects/{projectId}/strings`) accepts an optional `isHidden` query parameter (0 - not hidden, 1 - hidden) to filter source strings by their hidden status. The SDK's `SourceStringsListOptions` previously lacked `IsHidden`, preventing callers from filtering source strings by hidden status in list requests.
+
+**Action:** Added `IsHidden *int json:"isHidden,omitempty"` to `SourceStringsListOptions` in `third_party/crowdin-api-client-go/crowdin/model/source_strings.go` and updated its `Values()` query parameter serialization logic to encode `isHidden` when `IsHidden` is set to 0 or 1. Added unit and contract tests in `crowdin/model/source_strings_test.go` and `crowdin/source_strings_test.go`.
+
+## 2026-12-31 - Add omitempty struct tags to BundleAddRequest optional boolean pointers
+
+**Learning:** In Crowdin API v2, `isMultilingual` and `includeProjectSourceLanguage` are optional boolean parameters when creating a bundle (`POST /api/v2/projects/{projectId}/bundles`). Unset pointer fields without `omitempty` in Go standard `json.Marshal` serialize as `null` rather than being omitted from the request payload, which can trigger API validation errors.
+
+**Action:** Added `json:"isMultilingual,omitempty"` and `json:"includeProjectSourceLanguage,omitempty"` to `BundleAddRequest` in `third_party/crowdin-api-client-go/crowdin/model/bundles.go`. Added unit test assertions in `third_party/crowdin-api-client-go/crowdin/model/bundles_test.go`.
+
 ## 2026-12-31 - Add Type query filter parity to TasksListOptions
 
 **Learning:** In Crowdin API v2, the List Tasks endpoint (`GET /api/v2/projects/{projectId}/tasks`) accepts filtering tasks by `type` (0 - translate, 1 - proofread, 2 - translate by vendor, 3 - proofread by vendor) in addition to `status`, `assigneeId`, `creatorId`, `workflowStepId`, `labelIds`, and `excludeLabelIds`. The SDK's `TasksListOptions` previously lacked `Type`, preventing callers from filtering tasks by task type.

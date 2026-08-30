@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,11 +21,11 @@ type mockSessionVerifier struct {
 	err    error
 }
 
-func (m mockSessionVerifier) Verify(_ context.Context, _ string) (AuthClaims, error) {
+func (m mockSessionVerifier) Verify(_ context.Context, _ string) (SessionResult, error) {
 	if m.err != nil {
-		return AuthClaims{}, m.err
+		return SessionResult{}, m.err
 	}
-	return m.claims, nil
+	return SessionResult{Claims: m.claims}, nil
 }
 
 func TestHealth(t *testing.T) {
@@ -52,6 +53,30 @@ func TestValidateSegmentUnauthorized(t *testing.T) {
 	var body map[string]string
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Equal(t, "unauthorized", body["error"])
+}
+
+func TestRegisterRoutesServesStrippedPaths(t *testing.T) {
+	h := newHandler()
+	mux := http.NewServeMux()
+	registerRoutes(mux, h, mockSessionVerifier{claims: AuthClaims{UserID: "user_123"}})
+	handler := withOptionalPrefix(publicPathPrefix, mux)
+
+	for _, path := range []string{"/health", publicPathPrefix + "/health"} {
+		healthRec := httptest.NewRecorder()
+		healthReq := httptest.NewRequest(http.MethodGet, path, nil)
+		handler.ServeHTTP(healthRec, healthReq)
+		require.Equal(t, http.StatusOK, healthRec.Code, path)
+		require.JSONEq(t, `{"status":"ok"}`, healthRec.Body.String())
+	}
+
+	payload := `{"sourceText":"Hello","targetText":"Bonjour","sourcePath":"/messages/en.json"}`
+	for _, path := range []string{"/v1/validate/segment", publicPathPrefix + "/v1/validate/segment"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(payload))
+		req.AddCookie(&http.Cookie{Name: workOSSessionCookieName, Value: "test-session"})
+		handler.ServeHTTP(rec, req)
+		require.Equal(t, http.StatusOK, rec.Code, path)
+	}
 }
 
 func TestValidateSegmentSuccess(t *testing.T) {
@@ -232,6 +257,22 @@ func TestValidateSegmentSpellingSkippedWhenProviderUnavailable(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	require.Len(t, resp.Checks, 1)
 	require.Equal(t, "format-parity", resp.Checks[0].ID)
+	require.Equal(t, []string{"spelling"}, resp.SkippedModes)
+}
+
+func TestValidateSegmentSpellingSkippedWhenLocaleUnsupported(t *testing.T) {
+	fake := &fakeSpellChecker{err: fmt.Errorf("%w: %q", spellcheck.ErrUnsupportedLocale, "en-CA")}
+	h := &handler{validate: segmentvalidate.ValidateSegment, spellChecker: fake}
+	mux := newAuthedValidateSegmentMux(h)
+
+	payload := `{"sourceText":"Hello","targetText":"Bonjour","sourcePath":"/messages/en.json","modes":["spelling"],"targetLocale":"en-CA"}`
+	rec := postValidateSegment(mux, payload)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+
+	var resp validateSegmentResponse
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	require.Len(t, resp.Checks, 1)
 	require.Equal(t, []string{"spelling"}, resp.SkippedModes)
 }
 

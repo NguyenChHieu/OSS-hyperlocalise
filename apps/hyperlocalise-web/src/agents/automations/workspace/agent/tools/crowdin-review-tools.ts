@@ -15,11 +15,11 @@ import { z } from "zod";
 import type { ToolSet } from "ai";
 
 import { defineAgentTool } from "@/agents/_runtime/define-agent-tool";
-import { db, schema } from "@/lib/database";
+import { db, schema } from "@/lib/database/client";
 import { isErr } from "@/lib/primitives/result/results";
 import { ensureOrganizationProjectRecord } from "@/lib/projects/organization/organization-project-service";
 import { crowdinTmsProvider } from "@/lib/providers/adapters/crowdin/crowdin-provider";
-import { generateCatAiRecommendation } from "@/lib/translation/cat";
+import { generateContentEditorAiRecommendation } from "@/lib/translation/content-editor-core";
 
 const searchConcordanceInputSchema = z.object({
   expressions: z
@@ -172,7 +172,7 @@ export function createCrowdinReviewTools(input: {
           };
         }
 
-        const result = await generateCatAiRecommendation(
+        const result = await generateContentEditorAiRecommendation(
           {
             projectId: ensured.value,
             organizationId: input.organizationId,

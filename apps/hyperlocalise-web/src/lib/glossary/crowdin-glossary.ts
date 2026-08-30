@@ -15,10 +15,22 @@ import {
   type CrowdinGlossaryConcept,
   type CrowdinGlossaryTermInput,
 } from "@/lib/providers/adapters/crowdin/crowdin-provider";
-import type { CrowdinGlossary as CrowdinGlossaryRecord } from "@/lib/providers/adapters/crowdin/crowdin-api";
+import type {
+  CrowdinGlossary as CrowdinGlossaryRecord,
+  CrowdinGlossaryConcordanceSearchResult,
+} from "@/lib/providers/adapters/crowdin/crowdin-api";
+import { CrowdinApiClient } from "@/lib/providers/adapters/crowdin/crowdin-api";
+import {
+  loadCrowdinConcordanceTranslatableByConceptId,
+  mapCrowdinGlossaryConcordanceSearchResult,
+  resolveCrowdinConcordanceTranslatableFromResult,
+  sortCrowdinConcordanceMatches,
+} from "@/lib/providers/adapters/crowdin/crowdin-glossary-concordance";
 import { and, eq } from "drizzle-orm";
 
-import { db, schema } from "@/lib/database";
+import { db, schema } from "@/lib/database/client";
+import type { NormalizedGlossaryMatch } from "@/lib/providers/contracts/glossary-match";
+import { sanitizeExternalUrl } from "@/lib/security/safe-external-url";
 
 import {
   Glossary,
@@ -27,14 +39,13 @@ import {
   normalizeGlossaryTermStatus,
   normalizeGlossaryTermType,
   selectGlossaryPrimaryTerm,
+  type GlossaryConcordanceContext,
+  type GlossaryConcordanceQuery,
   type GlossaryConceptImportEntry,
   type GlossaryConcept,
   type GlossaryConceptTerm,
   type GlossaryConceptInput,
   type GlossaryProjectRecord,
-  type GlossaryTermCreateInput,
-  type GlossaryTermRecord,
-  type GlossaryTermUpdateInput,
   type NativeGlossary,
   type NativeGlossaryTermInput,
 } from "./glossary";
@@ -44,9 +55,15 @@ import {
   toNativeGlossaryLocale,
 } from "@/lib/providers/adapters/crowdin/crowdin-glossary-language";
 
+import type { Glossary as GlossaryRecord } from "@/lib/database/types";
+
 import { parseId, resolveCrowdinContext, toCrowdinContext } from "./glossary-provider";
 import type { GlossaryProviderContext } from "./glossary-provider";
-import { sanitizeExternalUrl } from "@/lib/security/safe-external-url";
+
+function supportsCrowdinConcordanceSearch(glossary: GlossaryProviderContext["glossary"]): boolean {
+  const termCapabilities = glossary.termCapabilities as Record<string, unknown>;
+  return !(termCapabilities.referenceOnly === true || termCapabilities.search === false);
+}
 
 function crowdinStatus(status: string | undefined) {
   switch (status) {
@@ -267,7 +284,7 @@ function toNativeGlossary(
     localeCoverage,
     termCount: glossary.terms,
     externalGlossaryId: String(glossary.id),
-    externalUrl: glossary.webUrl,
+    externalUrl: null,
   };
 }
 
@@ -324,17 +341,30 @@ export class CrowdinGlossary extends Glossary {
       priority: 0,
       sourceLocale: project.sourceLanguageId,
       targetLocales: project.targetLanguageIds,
+      source: "external_tms",
       externalUrl: sanitizeExternalUrl(project.webUrl),
     }));
   }
 
-  async update(payload: { name?: string; description?: string }) {
+  async update(payload: { name?: string; description?: string; sourceLocale?: string }) {
+    if (payload.sourceLocale !== undefined) {
+      return null;
+    }
+
     const context = await this.context();
-    const patches = Object.entries(payload).map(([key, value]) => ({
-      op: "replace" as const,
-      path: `/${key}`,
-      value,
-    }));
+    const patches = Object.entries({
+      name: payload.name,
+      description: payload.description,
+    })
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => ({
+        op: "replace" as const,
+        path: `/${key}`,
+        value,
+      }));
+    if (patches.length === 0) {
+      return this.input.glossary;
+    }
     const glossary = await crowdinTmsProvider.updateLiveGlossary(
       toCrowdinContext(context),
       parseId(this.input.glossary.externalGlossaryId!, "glossary_id"),
@@ -459,108 +489,6 @@ export class CrowdinGlossary extends Glossary {
     return { concepts, skipped };
   }
 
-  private toLegacyTermRecord(
-    term: GlossaryConceptTerm,
-    conceptId: string,
-    sourceTerm: string,
-  ): GlossaryTermRecord {
-    return {
-      id: String(term.id),
-      glossaryId: this.input.glossary.id,
-      glossaryName: this.input.glossary.name,
-      sourceTerm,
-      targetTerm: term.text,
-      targetLocale: term.locale,
-      description: term.description ?? "",
-      partOfSpeech: term.partOfSpeech ?? "",
-      url: term.url ?? null,
-      lemma: term.lemma ?? null,
-      forbidden: false,
-      caseSensitive: false,
-      provenance: "sync",
-      externalKey: `${conceptId}:${term.id}`,
-      reviewStatus: "draft",
-    };
-  }
-
-  async listTerms() {
-    const concepts = await this.listConcepts();
-    return concepts.flatMap(({ conceptId, terms }) => {
-      const sourceTerm =
-        terms.find((term) => term.locale === this.input.glossary.sourceLocale)?.text ?? "";
-      return terms.map((term) =>
-        this.toLegacyTermRecord(
-          term,
-          String(conceptId),
-          term.locale === this.input.glossary.sourceLocale ? "" : sourceTerm,
-        ),
-      );
-    });
-  }
-
-  async createGlossaryTerm(input: GlossaryTermCreateInput) {
-    const created = await this.createConcept({
-      primaryTerm: input.sourceTerm,
-      sourceLocale: this.input.glossary.sourceLocale,
-      terms: [
-        {
-          locale: this.input.glossary.sourceLocale,
-          text: input.sourceTerm,
-          status: "preferred",
-        },
-        {
-          locale: this.input.glossary.targetLocale ?? "",
-          text: input.targetTerm,
-          status: "draft",
-          description: input.description,
-          partOfSpeech: input.partOfSpeech,
-          url: input.url,
-          lemma: input.lemma ?? undefined,
-        },
-      ].filter((term) => term.locale),
-    });
-    const target = created?.terms.find((term) => term.locale !== this.input.glossary.sourceLocale);
-    return target
-      ? this.toLegacyTermRecord(target, String(created?.conceptId), input.sourceTerm)
-      : null;
-  }
-
-  async createGlossaryTerms(inputs: GlossaryTermCreateInput[]) {
-    const created: GlossaryTermRecord[] = [];
-    for (const input of inputs) {
-      const term = await this.createGlossaryTerm(input);
-      if (term) created.push(term);
-    }
-    return { created, skipped: inputs.length - created.length };
-  }
-
-  async updateGlossaryTerm(termId: string, input: GlossaryTermUpdateInput) {
-    const concepts = await this.listConcepts();
-    const match = concepts.find(({ terms }) => terms.some((term) => String(term.id) === termId));
-    const existing = match?.terms.find((term) => String(term.id) === termId);
-    if (!match || !existing) return null;
-    const sourceTerm =
-      match.terms.find((term) => term.locale === this.input.glossary.sourceLocale)?.text ?? "";
-    const updated = await this.updateTerm(String(match.conceptId), termId, {
-      locale: existing.locale,
-      text: input.targetTerm ?? existing.text,
-      description: input.description ?? existing.description ?? "",
-      partOfSpeech: input.partOfSpeech ?? existing.partOfSpeech ?? "",
-      status: existing.status ?? "draft",
-      note: existing.note ?? "",
-    });
-    return updated && "locale" in updated
-      ? this.toLegacyTermRecord(updated, String(match.conceptId), sourceTerm)
-      : null;
-  }
-
-  async deleteGlossaryTerm(termId: string) {
-    const concepts = await this.listConcepts();
-    const match = concepts.find(({ terms }) => terms.some((term) => String(term.id) === termId));
-    if (!match) return false;
-    return this.deleteTerm(String(match.conceptId), termId);
-  }
-
   async attachProject(projectId: string, priority: number) {
     await db
       .insert(schema.projectGlossaries)
@@ -623,4 +551,107 @@ export class CrowdinGlossary extends Glossary {
       parseId(termId, "term_id"),
     );
   }
+
+  async searchConcordance(
+    query: GlossaryConcordanceQuery,
+    _ctx: GlossaryConcordanceContext,
+  ): Promise<NormalizedGlossaryMatch[]> {
+    if (!supportsCrowdinConcordanceSearch(this.input.glossary)) {
+      return [];
+    }
+
+    if (!this.input.glossary.externalGlossaryId) {
+      return [];
+    }
+
+    return searchAttachedCrowdinGlossaryConcordance({
+      providerContext: this.input,
+      attachedGlossaries: [this.input.glossary],
+      query,
+    });
+  }
+}
+
+export async function searchAttachedCrowdinGlossaryConcordance(input: {
+  providerContext: GlossaryProviderContext;
+  attachedGlossaries: GlossaryRecord[];
+  query: GlossaryConcordanceQuery;
+}): Promise<NormalizedGlossaryMatch[]> {
+  const searchableGlossaries = input.attachedGlossaries.filter(
+    (glossary) => supportsCrowdinConcordanceSearch(glossary) && glossary.externalGlossaryId,
+  );
+  if (searchableGlossaries.length === 0) {
+    return [];
+  }
+
+  const glossariesByCrowdinId = new Map<number, GlossaryRecord>();
+  for (const glossary of searchableGlossaries) {
+    glossariesByCrowdinId.set(parseId(glossary.externalGlossaryId!, "glossary_id"), glossary);
+  }
+
+  const context = await resolveCrowdinContext(input.providerContext);
+  const client = new CrowdinApiClient({
+    token: context.secretMaterial,
+    baseUrl: context.credential.baseUrl ?? undefined,
+    signal: context.signal,
+  });
+  const projectId = Number(context.externalProjectId);
+  if (Number.isNaN(projectId)) {
+    return [];
+  }
+
+  const limit = input.query.limit ?? 20;
+  const sourceLanguageId = toCrowdinGlossaryLanguageId(input.query.sourceLocale);
+  const matches: NormalizedGlossaryMatch[] = [];
+  const resultsByTargetLocale = new Map<string, CrowdinGlossaryConcordanceSearchResult[]>();
+
+  for (const targetLocale of input.query.targetLocales) {
+    const targetLanguageId = toCrowdinGlossaryLanguageId(targetLocale);
+    let results: CrowdinGlossaryConcordanceSearchResult[];
+    try {
+      results = await client.glossaryConcordanceSearch(projectId, {
+        sourceLanguageId,
+        targetLanguageId,
+        expressions: [input.query.sourceText],
+      });
+    } catch {
+      continue;
+    }
+
+    resultsByTargetLocale.set(targetLocale, results);
+  }
+
+  const allResults = [...resultsByTargetLocale.values()].flat();
+  const translatableByConceptId = await loadCrowdinConcordanceTranslatableByConceptId({
+    client,
+    results: allResults,
+  });
+
+  for (const [targetLocale, results] of resultsByTargetLocale) {
+    for (const [index, result] of results.entries()) {
+      const glossary = glossariesByCrowdinId.get(result.glossary.id);
+      if (!glossary) {
+        continue;
+      }
+
+      const match = mapCrowdinGlossaryConcordanceSearchResult({
+        result,
+        index,
+        resourceId: glossary.id,
+        glossaryName: glossary.name,
+        sourceLocale: input.query.sourceLocale,
+        targetLocale,
+        stableTermIdGlossaryKey: glossary.id,
+        translatable: resolveCrowdinConcordanceTranslatableFromResult(
+          result,
+          translatableByConceptId,
+        ),
+      });
+      if (match) {
+        matches.push(match);
+      }
+    }
+  }
+
+  return sortCrowdinConcordanceMatches(matches, limit);
 }

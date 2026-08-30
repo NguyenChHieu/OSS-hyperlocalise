@@ -35,6 +35,121 @@ func TestCrowdinInitWritesTemplate(t *testing.T) {
 	}
 }
 
+func TestCrowdinStatusWritesLanguageProgress(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("CROWDIN_PROJECT_ID", "123")
+	t.Setenv("CROWDIN_PERSONAL_TOKEN", "secret")
+
+	if err := os.WriteFile(filepath.Join(dir, "crowdin.yml"), []byte("project_id: 123\n"), 0o644); err != nil {
+		t.Fatalf("write crowdin config: %v", err)
+	}
+
+	oldFactory := newCrowdinTranslationStatusReader
+	defer func() {
+		newCrowdinTranslationStatusReader = oldFactory
+	}()
+	newCrowdinTranslationStatusReader = func(cfg crowdinstorage.Config) (crowdinTranslationStatusReader, error) {
+		if cfg.ProjectID != "123" {
+			t.Fatalf("project id = %q", cfg.ProjectID)
+		}
+		return &fakeCrowdinTranslationStatusReader{rows: []crowdinstorage.LanguageProgress{{
+			LanguageID:          "es",
+			TranslationProgress: 86,
+			ApprovalProgress:    40,
+		}}}, nil
+	}
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"crowdin", "status", "--language", "es"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute crowdin status: %v", err)
+	}
+	if got, want := out.String(), "language=es translation=86 approval=40\n"; got != want {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+}
+
+func TestCrowdinStatusFailIfIncomplete(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("CROWDIN_PROJECT_ID", "123")
+	t.Setenv("CROWDIN_PERSONAL_TOKEN", "secret")
+
+	if err := os.WriteFile(filepath.Join(dir, "crowdin.yml"), []byte("project_id: 123\n"), 0o644); err != nil {
+		t.Fatalf("write crowdin config: %v", err)
+	}
+
+	oldFactory := newCrowdinTranslationStatusReader
+	defer func() {
+		newCrowdinTranslationStatusReader = oldFactory
+	}()
+	newCrowdinTranslationStatusReader = func(crowdinstorage.Config) (crowdinTranslationStatusReader, error) {
+		return &fakeCrowdinTranslationStatusReader{rows: []crowdinstorage.LanguageProgress{{
+			LanguageID:          "es",
+			TranslationProgress: 86,
+			ApprovalProgress:    100,
+		}}}, nil
+	}
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	cmd.SetArgs([]string{"crowdin", "status", "--fail-if-incomplete"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected incomplete status to fail")
+	}
+	if !strings.Contains(err.Error(), "not fully translated and approved") {
+		t.Fatalf("error = %v", err)
+	}
+	if !strings.Contains(out.String(), "language=es translation=86 approval=100") {
+		t.Fatalf("expected progress output before failure: %q", out.String())
+	}
+}
+
+func TestCrowdinStatusFailIfIncompleteMissingRequestedLanguage(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	t.Setenv("CROWDIN_PROJECT_ID", "123")
+	t.Setenv("CROWDIN_PERSONAL_TOKEN", "secret")
+
+	if err := os.WriteFile(filepath.Join(dir, "crowdin.yml"), []byte("project_id: 123\n"), 0o644); err != nil {
+		t.Fatalf("write crowdin config: %v", err)
+	}
+
+	oldFactory := newCrowdinTranslationStatusReader
+	defer func() {
+		newCrowdinTranslationStatusReader = oldFactory
+	}()
+	newCrowdinTranslationStatusReader = func(crowdinstorage.Config) (crowdinTranslationStatusReader, error) {
+		return &fakeCrowdinTranslationStatusReader{rows: []crowdinstorage.LanguageProgress{{
+			LanguageID:          "es",
+			TranslationProgress: 100,
+			ApprovalProgress:    100,
+		}}}, nil
+	}
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetErr(out)
+	cmd.SetArgs([]string{"crowdin", "status", "--language", "es", "--language", "fr", "--fail-if-incomplete"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected missing requested language to fail")
+	}
+	if !strings.Contains(err.Error(), "not fully translated and approved") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestCrowdinConfigValidate(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -354,6 +469,16 @@ func (f *crowdinFailingWriter) Write(_ []byte) (int, error) {
 type fakeCrowdinGlossaryCSVWriter struct {
 	req crowdinstorage.GlossaryDownloadRequest
 	err error
+}
+
+type fakeCrowdinTranslationStatusReader struct {
+	rows []crowdinstorage.LanguageProgress
+	req  crowdinstorage.TranslationStatusRequest
+}
+
+func (f *fakeCrowdinTranslationStatusReader) GetTranslationStatus(_ context.Context, req crowdinstorage.TranslationStatusRequest) ([]crowdinstorage.LanguageProgress, error) {
+	f.req = req
+	return append([]crowdinstorage.LanguageProgress(nil), f.rows...), nil
 }
 
 func (f *fakeCrowdinGlossaryCSVWriter) WriteGlossaryCSV(_ context.Context, req crowdinstorage.GlossaryDownloadRequest, w io.Writer) (crowdinstorage.GlossaryDownloadResult, error) {

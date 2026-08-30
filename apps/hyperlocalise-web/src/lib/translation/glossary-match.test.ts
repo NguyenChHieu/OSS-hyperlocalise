@@ -13,6 +13,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  hasGlossaryExpectedTarget,
   mergeGlossaryMatches,
   normalizeGlossaryTermStatus,
   normalizeProviderGlossaryMatch,
@@ -40,6 +41,28 @@ describe("normalizeGlossaryTermStatus", () => {
     });
   });
 
+  it("does not infer preferred from non-forbidden statuses", () => {
+    expect(normalizeGlossaryTermStatus({ status: "admitted" })).toEqual({
+      forbidden: false,
+      preferred: false,
+    });
+    expect(normalizeGlossaryTermStatus({ status: "draft" })).toEqual({
+      forbidden: false,
+      preferred: false,
+    });
+    expect(normalizeGlossaryTermStatus({})).toEqual({
+      forbidden: false,
+      preferred: false,
+    });
+  });
+
+  it("infers preferred from an explicit non-forbidden provider flag without a status", () => {
+    expect(normalizeGlossaryTermStatus({ forbidden: false })).toEqual({
+      forbidden: false,
+      preferred: true,
+    });
+  });
+
   it("honors explicit forbidden flags over status text", () => {
     expect(
       normalizeGlossaryTermStatus({
@@ -52,7 +75,7 @@ describe("normalizeGlossaryTermStatus", () => {
         status: "forbidden",
         forbidden: false,
       }),
-    ).toEqual({ forbidden: false, preferred: true });
+    ).toEqual({ forbidden: false, preferred: false });
   });
 });
 
@@ -83,6 +106,36 @@ describe("normalizeProviderGlossaryMatch", () => {
       externalResourceId: "42",
       termStatus: { forbidden: false, preferred: true },
     });
+    expect(match.concept).toBeUndefined();
+  });
+
+  it("passes through concept payloads for CAT guidance", () => {
+    const concept = {
+      id: "concept-1",
+      primaryTerm: "Save",
+      definition: "Persist changes",
+      glossaryUrl: "https://crowdin.com/glossary/42",
+      sourceTerms: [{ id: "s1", locale: "en", text: "Save", preferred: true, forbidden: false }],
+      targetTerms: [
+        { id: "t1", locale: "fr", text: "Enregistrer", preferred: true, forbidden: false },
+      ],
+    };
+
+    const match = normalizeProviderGlossaryMatch({
+      sourceTerm: "Save",
+      targetTerm: "Enregistrer",
+      sourceLocale: "en",
+      targetLocale: "fr",
+      providerKind: "crowdin",
+      resourceId: "glossary-1",
+      externalResourceId: "42",
+      externalTermId: "99",
+      glossaryName: "Product glossary",
+      status: { status: "preferred" },
+      concept,
+    });
+
+    expect(match.concept).toEqual(concept);
   });
 });
 
@@ -107,6 +160,58 @@ describe("normalizeSyncedDatabaseGlossaryMatch", () => {
 
     expect(match.matchSource).toBe("synced_database");
     expect(match.termStatus).toEqual({ forbidden: true, preferred: false });
+  });
+
+  it("preserves explicit preferred flags for admitted targets", () => {
+    const match = normalizeSyncedDatabaseGlossaryMatch({
+      id: "term-2",
+      glossaryId: "glossary-1",
+      glossaryName: "Synced glossary",
+      sourceTerm: "Save",
+      targetTerm: "Enregistrer",
+      sourceLocale: "en",
+      targetLocale: "fr",
+      description: null,
+      forbidden: false,
+      preferred: false,
+      caseSensitive: false,
+      rank: 1,
+      providerKind: null,
+      externalResourceId: null,
+      externalTermId: null,
+    });
+
+    expect(match.termStatus).toEqual({ forbidden: false, preferred: false });
+  });
+
+  it("passes through concept payloads for CAT guidance", () => {
+    const concept = {
+      id: "concept-2",
+      primaryTerm: "Cancel",
+      definition: "Abort the action",
+      sourceTerms: [{ id: "s1", locale: "en", text: "Cancel", preferred: false, forbidden: true }],
+      targetTerms: [{ id: "t1", locale: "fr", text: "Annuler", preferred: false, forbidden: true }],
+    };
+
+    const match = normalizeSyncedDatabaseGlossaryMatch({
+      id: "term-1",
+      glossaryId: "glossary-1",
+      glossaryName: "Synced glossary",
+      sourceTerm: "Cancel",
+      targetTerm: "Annuler",
+      sourceLocale: "en",
+      targetLocale: "fr",
+      description: null,
+      forbidden: true,
+      caseSensitive: false,
+      rank: 1,
+      providerKind: "crowdin",
+      externalResourceId: "glossary-ext-1",
+      externalTermId: "term-ext-1",
+      concept,
+    });
+
+    expect(match.concept).toEqual(concept);
   });
 });
 
@@ -175,9 +280,76 @@ describe("context and agent run projections", () => {
 
     expect(toAgentRunGlossaryMatchUsage(normalized)).toMatchObject({
       matchSource: "synced_database",
-      preferred: true,
+      preferred: false,
       forbidden: false,
       glossaryName: "Synced glossary",
+    });
+  });
+
+  it("omits source-only translatable matches from context and agent usage", () => {
+    const sourceOnly = normalizeSyncedDatabaseGlossaryMatch({
+      id: "term-2",
+      glossaryId: "glossary-1",
+      glossaryName: "Synced glossary",
+      sourceTerm: "Dashboard",
+      targetTerm: "",
+      sourceLocale: "en",
+      targetLocale: "fr",
+      description: null,
+      forbidden: false,
+      caseSensitive: false,
+      rank: 1,
+      providerKind: null,
+      externalResourceId: null,
+      externalTermId: null,
+      concept: {
+        id: "concept-1",
+        primaryTerm: "Dashboard",
+        translatable: true,
+        sourceTerms: [{ id: "s1", locale: "en", text: "Dashboard", status: "draft" }],
+        targetTerms: [],
+      },
+    });
+
+    expect(hasGlossaryExpectedTarget(sourceOnly)).toBe(false);
+    expect(toContextGlossaryMatch(sourceOnly)).toBeNull();
+    expect(toAgentRunGlossaryMatchUsage(sourceOnly)).toBeNull();
+  });
+
+  it("includes untranslatable matches with source as the expected target", () => {
+    const untranslatable = normalizeSyncedDatabaseGlossaryMatch({
+      id: "term-3",
+      glossaryId: "glossary-1",
+      glossaryName: "Synced glossary",
+      sourceTerm: "Hyperlocalise",
+      targetTerm: "Hyperlocalise",
+      sourceLocale: "en",
+      targetLocale: "fr",
+      description: null,
+      forbidden: false,
+      preferred: true,
+      caseSensitive: false,
+      rank: 1,
+      providerKind: null,
+      externalResourceId: null,
+      externalTermId: null,
+      concept: {
+        id: "concept-2",
+        primaryTerm: "Hyperlocalise",
+        translatable: false,
+        sourceTerms: [{ id: "s1", locale: "en", text: "Hyperlocalise", status: "preferred" }],
+        targetTerms: [{ id: "t1", locale: "fr", text: "Hyperlocalise FR", status: "preferred" }],
+      },
+    });
+
+    expect(hasGlossaryExpectedTarget(untranslatable)).toBe(true);
+    expect(toContextGlossaryMatch(untranslatable)).toMatchObject({
+      sourceTerm: "Hyperlocalise",
+      targetTerm: "Hyperlocalise",
+    });
+    expect(toAgentRunGlossaryMatchUsage(untranslatable)).toMatchObject({
+      sourceTerm: "Hyperlocalise",
+      targetTerm: "Hyperlocalise",
     });
   });
 });

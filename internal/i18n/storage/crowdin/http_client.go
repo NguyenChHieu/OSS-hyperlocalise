@@ -957,7 +957,7 @@ func (c *HTTPClient) ListStrings(ctx context.Context, in ListStringsInput) ([]St
 				if !exists {
 					continue
 				}
-				if !entryFilter.matches(source.key, source.context, locale.Locale) {
+				if !entryFilter.allowsLocale(source.key, source.context, locale) {
 					continue
 				}
 				entries = append(entries, StringTranslation{
@@ -1223,6 +1223,10 @@ func (f entryFilter) matches(key, context, locale string) bool {
 		}
 	}
 	return false
+}
+
+func (f entryFilter) allowsLocale(key, context string, locale ResolvedLocale) bool {
+	return f.matches(key, context, locale.LanguageID) || f.matches(key, context, locale.Locale)
 }
 
 func classifySourceStringConflict(err error) *upsertConflict {

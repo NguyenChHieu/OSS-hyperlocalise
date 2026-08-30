@@ -56,6 +56,19 @@ func TestIndexSourceStringMarksAmbiguousMapping(t *testing.T) {
 	}
 }
 
+func TestEntryFilterAllowsLanguageIDWhenFolderLocaleDiffers(t *testing.T) {
+	filter := buildEntryFilter(ListStringsInput{
+		EntryIDs: []storage.EntryID{{Key: "hello", Context: "home", Locale: "fr"}},
+	})
+	locale := ResolvedLocale{LanguageID: "fr", Locale: "fr-FR"}
+	if !filter.allowsLocale("hello", "home", locale) {
+		t.Fatal("expected entry stored as language id fr to match resolved fr/fr-FR")
+	}
+	if filter.allowsLocale("hello", "home", ResolvedLocale{LanguageID: "de", Locale: "de-DE"}) {
+		t.Fatal("did not expect unrelated language to match")
+	}
+}
+
 func TestIsRetryableUpsertError(t *testing.T) {
 	cases := []struct {
 		name string

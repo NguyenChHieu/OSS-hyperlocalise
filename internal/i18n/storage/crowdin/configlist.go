@@ -78,7 +78,7 @@ func ListConfiguredTranslationPaths(cfg storage.FileWorkflowConfig, locales []Re
 				return nil, fmt.Errorf("source path %q: %w", sourcePath, err)
 			}
 			for _, locale := range locales {
-				if _, skip := excluded[locale.LanguageID]; skip {
+				if isExcludedTargetLanguage(excluded, locale) {
 					continue
 				}
 				targetPath, err := renderCrowdinTranslationPath(cfg.BasePath, group.Translation, locale.Locale, sourcePath, group.LanguagesMapping)

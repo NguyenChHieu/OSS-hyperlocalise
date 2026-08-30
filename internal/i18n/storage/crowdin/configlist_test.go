@@ -51,4 +51,20 @@ func TestListConfiguredSourcesAndTranslations(t *testing.T) {
 	if !reflect.DeepEqual(translations, want) {
 		t.Fatalf("translations = %#v, want %#v", translations, want)
 	}
+
+	mapped, err := ListConfiguredTranslationPaths(cfg, []ResolvedLocale{
+		{LanguageID: "fr", Locale: "fr-FR"},
+		{LanguageID: "de", Locale: "de-DE"},
+	})
+	if err != nil {
+		t.Fatalf("list mapped translations: %v", err)
+	}
+	wantMapped := []ConfiguredTranslation{{
+		LanguageID: "fr",
+		Locale:     "fr-FR",
+		Path:       filepath.Join(dir, "locales", "fr-FR", "messages.json"),
+	}}
+	if !reflect.DeepEqual(mapped, wantMapped) {
+		t.Fatalf("mapped translations = %#v, want %#v", mapped, wantMapped)
+	}
 }

@@ -53,13 +53,16 @@ full WorkOS identity model.
    obtains a sealed `wos-session` via `/api/auth/native/*` (AuthKit PKCE) and
    presents it as a `Cookie` header. Do not mint a separate native identity
    channel that bypasses WorkOS session verification.
-   9c. **Figma plugin clients use the same WorkOS sealed session.** The plugin
-   obtains a sealed session via `/api/auth/figma/*` (AuthKit PKCE) and presents
-   it as `X-Hyperlocalise-Figma-Session` because the plugin iframe cannot set
-   cookies. Middleware must unseal that value with the WorkOS cookie password
-   and pass the verified session into `resolveApiAuthContextFromSession`. Do
-   not mint a Figma-specific identity token. Do not call `withAuth()` for this
-   channel — AuthKit only reads the request cookie / `x-workos-session` header.
+   9c. **Figma plugin clients use a personal access token.** The plugin sends
+   the PAT as `x-api-key` only. Protected `/api/integrations/figma/*` routes
+   authenticate through `apiKeyAuthMiddleware` and authorize with
+   `requireApiKeyPermission`. Compound routes require every scope they
+   exercise: session and job-status reads need `files:read` (job status also
+   needs `jobs:read`); creating a job needs `jobs:write` and `files:write`.
+   Effective access is the token scopes ∩ the owner's current membership,
+   role, team access, and capabilities. Do not accept WorkOS sealed sessions,
+   `X-Hyperlocalise-Figma-Session`, or `Authorization: Bearer` as Figma
+   integration auth. Do not mint a Figma-specific identity token.
 10. **Org slug must match an active membership.** Requested
     `organizationSlug` must resolve to a membership returned after the access
     gate; otherwise return `organization_access_denied` or picker/unresolvable
@@ -91,6 +94,33 @@ full WorkOS identity model.
 18. **Unknown WorkOS role slugs default deny.** Unrecognized slugs do not map to
     a membership role, are skipped during reconcile/webhook sync, and resolve to
     no capabilities. See [`LOCALIZATION_ROLES.md`](./LOCALIZATION_ROLES.md).
+
+## Personal access tokens (`api-key.ts`)
+
+PATs reuse `organization_api_keys`. They act as the owner, never as a snapshot
+of the owner's role at creation. Regression coverage lives in
+`api-key.test.ts` and the public `/api/v1` route tests.
+
+19. **Live membership, not stored scopes.** Every authenticated request resolves
+    the owner's current organization membership, role, team access, and
+    capabilities through `resolveApiKeyTeamAccessContext`. Fail closed when
+    that access cannot be established.
+20. **Intersection only.** Effective access is token scopes ∩ the owner's
+    current capabilities. A role downgrade takes effect on the next request.
+    `api_keys:write` is a session management permission; it is not a token
+    scope and never grants broader runtime access.
+21. **Same 401 for unknown, revoked, and ownerless tokens.** Do not leak
+    whether a presented secret hashes to a stored row.
+22. **Archived organizations and unresolvable memberships fail closed.**
+    Archived orgs answer `403 workspace_archived`. Missing users, inactive or
+    non-authoritative memberships, and stale WorkOS lookups answer 403
+    `forbidden`. Fresh reconcile fallback stays allowed inside the TTL.
+23. **Membership removal revokes the owner's tokens.**
+    `revokeOrganizationMembershipAccess` sets `revoked_at` on every unrevoked
+    PAT owned by that user in that organization, in the same transaction as
+    membership deletion.
+24. **`lastUsedAt` is non-blocking telemetry.** Write it only after
+    authentication succeeds. Never fail the request if the write fails.
 
 ## Future extension points
 

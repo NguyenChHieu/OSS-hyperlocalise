@@ -64,11 +64,41 @@ describe("Logger Redaction", () => {
     });
 
     const [event] = drainedEvents;
-    const nested = event?.personalAccessToken as Record<string, unknown>;
     expect(event?.keyHash).toBe("[REDACTED]");
-    expect(nested.key_hash).toBe("[REDACTED]");
+    expect(event?.personalAccessToken).toBe("[REDACTED]");
     expect(event?.keyPrefix).toBe("hl_AbCd");
     expect(event?.apiKeyId).toBe("3f1b7c2a-0000-4000-8000-000000000000");
+  });
+
+  it("should redact a raw personal access token field", () => {
+    const logger = createLogger();
+
+    logger.info({
+      personalAccessToken: "hl_raw_secret_token",
+      settings: { personalAccessToken: "hl_nested_secret_token" },
+    });
+
+    const [event] = drainedEvents;
+    const settings = event?.settings as Record<string, unknown>;
+    expect(event?.personalAccessToken).toBe("[REDACTED]");
+    expect(settings.personalAccessToken).toBe("[REDACTED]");
+  });
+
+  it("should redact owner emails and plaintext token fields", () => {
+    const logger = createLogger();
+
+    logger.info({
+      email: "owner@example.com",
+      owner: { email: "owner@example.com", userId: "user_123" },
+      plainKey: "hl_secret_value",
+    });
+
+    const [event] = drainedEvents;
+    const owner = event?.owner as Record<string, unknown>;
+    expect(event?.email).toBe("[REDACTED]");
+    expect(owner.email).toBe("[REDACTED]");
+    expect(owner.userId).toBe("user_123");
+    expect(event?.plainKey).toBe("[REDACTED]");
   });
 
   it("should redact sensitive headers", () => {

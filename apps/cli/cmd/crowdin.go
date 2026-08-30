@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -60,6 +61,10 @@ type crowdinTranslationMemoryDownloadOptions struct {
 	outputPath          string
 }
 
+type crowdinTranslationStatusReader interface {
+	GetTranslationStatus(context.Context, crowdinstorage.TranslationStatusRequest) ([]crowdinstorage.LanguageProgress, error)
+}
+
 type crowdinGlossaryCSVWriter interface {
 	WriteGlossaryCSV(context.Context, crowdinstorage.GlossaryDownloadRequest, io.Writer) (crowdinstorage.GlossaryDownloadResult, error)
 }
@@ -67,6 +72,10 @@ type crowdinGlossaryCSVWriter interface {
 type crowdinTranslationMemoryWriter interface {
 	WriteTranslationMemoryCSV(context.Context, crowdinstorage.TranslationMemoryDownloadRequest, io.Writer) (crowdinstorage.TranslationMemoryDownloadResult, error)
 	WriteTranslationMemoryTMX(context.Context, crowdinstorage.TranslationMemoryDownloadRequest, io.Writer) (crowdinstorage.TranslationMemoryDownloadResult, error)
+}
+
+var newCrowdinTranslationStatusReader = func(cfg crowdinstorage.Config) (crowdinTranslationStatusReader, error) {
+	return crowdinstorage.NewHTTPClient(cfg)
 }
 
 var newCrowdinGlossaryCSVWriter = func(cfg crowdinstorage.Config) (crowdinGlossaryCSVWriter, error) {
@@ -85,6 +94,7 @@ func newCrowdinCmd() *cobra.Command {
 
 	cmd.AddCommand(newCrowdinInitCmd())
 	cmd.AddCommand(newCrowdinConfigCmd())
+	cmd.AddCommand(newCrowdinStatusCmd())
 	cmd.AddCommand(newCrowdinUploadCmd())
 	cmd.AddCommand(newCrowdinDownloadCmd())
 	cmd.AddCommand(newCrowdinGlossaryCmd())
@@ -148,6 +158,120 @@ func newCrowdinConfigValidateCmd() *cobra.Command {
 	}
 	addCrowdinCommonFlags(cmd, &o, false, false)
 	return cmd
+}
+
+type crowdinStatusOptions struct {
+	configPath       string
+	identityPath     string
+	branch           string
+	languages        []string
+	output           string
+	failIfIncomplete bool
+}
+
+func newCrowdinStatusCmd() *cobra.Command {
+	o := crowdinStatusOptions{output: "text"}
+	cmd := &cobra.Command{
+		Use:          "status",
+		Short:        "show Crowdin translation and approval progress",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cfg, _, err := crowdinstorage.LoadClientConfig(o.configPath, o.identityPath)
+			if err != nil {
+				return err
+			}
+			client, err := newCrowdinTranslationStatusReader(cfg)
+			if err != nil {
+				return err
+			}
+			rows, err := client.GetTranslationStatus(backgroundContext(), crowdinstorage.TranslationStatusRequest{
+				ProjectID: cfg.ProjectID,
+				Branch:    o.branch,
+				Languages: o.languages,
+			})
+			if err != nil {
+				return err
+			}
+			if writeErr := writeCrowdinStatusReport(cmd.OutOrStdout(), rows, o.output); writeErr != nil {
+				return writeErr
+			}
+			if o.failIfIncomplete && crowdinStatusIncomplete(rows, o.languages) {
+				return fmt.Errorf("crowdin status: project is not fully translated and approved")
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&o.configPath, "config", "", "path to crowdin.yml")
+	cmd.Flags().StringVar(&o.identityPath, "identity", "", "path to Crowdin identity file")
+	cmd.Flags().StringVar(&o.branch, "branch", "", "Crowdin branch name")
+	cmd.Flags().StringSliceVarP(&o.languages, "language", "l", nil, "language id(s) to include")
+	cmd.Flags().StringVar(&o.output, "output", o.output, "output format: text or json")
+	cmd.Flags().BoolVar(&o.failIfIncomplete, "fail-if-incomplete", false, "exit non-zero unless every listed language is fully translated and approved")
+	return cmd
+}
+
+func writeCrowdinStatusReport(w io.Writer, rows []crowdinstorage.LanguageProgress, output string) error {
+	switch strings.ToLower(strings.TrimSpace(output)) {
+	case "", "text":
+		for _, row := range rows {
+			if _, err := fmt.Fprintf(
+				w,
+				"language=%s translation=%d approval=%d\n",
+				row.LanguageID,
+				row.TranslationProgress,
+				row.ApprovalProgress,
+			); err != nil {
+				return err
+			}
+		}
+		return nil
+	case "json":
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(rows)
+	default:
+		return fmt.Errorf("unsupported output format %q", output)
+	}
+}
+
+func crowdinStatusIncomplete(rows []crowdinstorage.LanguageProgress, requestedLanguages []string) bool {
+	requested := crowdinStatusLanguageIDs(requestedLanguages)
+	if len(requested) > 0 {
+		byID := make(map[string]crowdinstorage.LanguageProgress, len(rows))
+		for _, row := range rows {
+			languageID := strings.TrimSpace(row.LanguageID)
+			if languageID != "" {
+				byID[languageID] = row
+			}
+		}
+		for _, languageID := range requested {
+			row, ok := byID[languageID]
+			if !ok || row.TranslationProgress < 100 || row.ApprovalProgress < 100 {
+				return true
+			}
+		}
+		return false
+	}
+	if len(rows) == 0 {
+		return true
+	}
+	for _, row := range rows {
+		if row.TranslationProgress < 100 || row.ApprovalProgress < 100 {
+			return true
+		}
+	}
+	return false
+}
+
+func crowdinStatusLanguageIDs(languages []string) []string {
+	ids := make([]string, 0, len(languages))
+	for _, language := range languages {
+		language = strings.TrimSpace(language)
+		if language != "" {
+			ids = append(ids, language)
+		}
+	}
+	return ids
 }
 
 func newCrowdinUploadCmd() *cobra.Command {

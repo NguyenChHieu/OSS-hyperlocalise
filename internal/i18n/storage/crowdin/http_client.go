@@ -454,8 +454,18 @@ func (c *HTTPClient) resolveLocales(ctx context.Context, projectID int, inLocale
 
 	if len(requested) > 0 {
 		out := make([]ResolvedLocale, 0, len(requested))
+		seen := make(map[string]struct{}, len(requested))
 		for _, token := range requested {
-			out = append(out, resolveRequestedLocale(token, project.TargetLanguages, languages))
+			resolved := resolveRequestedLocale(token, project.TargetLanguages, languages)
+			languageID := strings.TrimSpace(resolved.LanguageID)
+			if languageID == "" {
+				languageID = token
+			}
+			if _, exists := seen[languageID]; exists {
+				continue
+			}
+			seen[languageID] = struct{}{}
+			out = append(out, resolved)
 		}
 		c.debugf("action=resolve-locales project_id=%d requested=%s resolved=%s", projectID, strings.Join(requested, ","), strings.Join(resolvedLocaleIDs(out), ","))
 		return out, nil

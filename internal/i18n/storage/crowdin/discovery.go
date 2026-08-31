@@ -76,6 +76,9 @@ func (c *HTTPClient) ListProjectFiles(ctx context.Context, projectID, branch str
 		if directory == nil || directory.ID <= 0 {
 			continue
 		}
+		if directory.BranchID != nil && *directory.BranchID > 0 {
+			continue
+		}
 		nested, err := c.listProjectFilesPaged(ctx, projectInt, &model.FileListOptions{
 			DirectoryID: directory.ID,
 			Recursion:   true,

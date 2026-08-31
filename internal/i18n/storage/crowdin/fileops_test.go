@@ -46,6 +46,36 @@ func TestListProjectSourceStrings(t *testing.T) {
 	}
 }
 
+func TestListProjectSourceStringsAcceptsPluralText(t *testing.T) {
+	client, mux, teardown := newCrowdinHTTPClientForTest(t)
+	defer teardown()
+
+	mux.HandleFunc("/api/v2/projects/123/strings", func(w http.ResponseWriter, r *http.Request) {
+		assertRequest(t, r, http.MethodGet, "/api/v2/projects/123/strings?limit=500")
+		writeJSON(t, w, map[string]any{
+			"data": []any{
+				map[string]any{"data": map[string]any{
+					"id":         9,
+					"identifier": "videos",
+					"text":       map[string]any{"one": "1 video", "other": "{count} videos"},
+					"fileId":     17,
+				}},
+			},
+		})
+	})
+
+	got, err := client.ListProjectSourceStrings(context.Background(), ListSourceStringsInput{ProjectID: "123"})
+	if err != nil {
+		t.Fatalf("list source strings: %v", err)
+	}
+	if len(got) != 1 || got[0].Identifier != "videos" {
+		t.Fatalf("strings = %#v", got)
+	}
+	if !strings.Contains(got[0].Text, `"one":"1 video"`) && !strings.Contains(got[0].Text, `"one": "1 video"`) {
+		t.Fatalf("plural text = %q", got[0].Text)
+	}
+}
+
 func TestListProjectSourceStringsFiltersByFilePath(t *testing.T) {
 	client, mux, teardown := newCrowdinHTTPClientForTest(t)
 	defer teardown()

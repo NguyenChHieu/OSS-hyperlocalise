@@ -868,7 +868,7 @@ func (c *HTTPClient) findDirectory(ctx context.Context, projectID, branchID, par
 		return nil, fmt.Errorf("list directories for %q: %w", name, err)
 	}
 	for _, directory := range directories {
-		if directory != nil && directory.Name == name {
+		if directory != nil && directory.Name == name && matchesRequestedBranch(directory.BranchID, branchID) {
 			return directory, nil
 		}
 	}
@@ -887,11 +887,18 @@ func (c *HTTPClient) findFile(ctx context.Context, projectID, branchID, director
 		return nil, fmt.Errorf("list files for %q: %w", name, err)
 	}
 	for _, file := range files {
-		if file != nil && file.Name == name {
+		if file != nil && file.Name == name && matchesRequestedBranch(file.BranchID, branchID) {
 			return file, nil
 		}
 	}
 	return nil, nil
+}
+
+func matchesRequestedBranch(entryBranchID *int, requestedBranchID int) bool {
+	if requestedBranchID > 0 {
+		return true
+	}
+	return entryBranchID == nil || *entryBranchID <= 0
 }
 
 func (c *HTTPClient) downloadURL(ctx context.Context, rawURL string) ([]byte, error) {

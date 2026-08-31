@@ -270,6 +270,38 @@ func TestCrowdinAutoTranslateRejectsMT(t *testing.T) {
 	}
 }
 
+func TestCrowdinAutoTranslateRejectsBlankLanguage(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeMinimalCrowdinConfig(t, dir)
+
+	cmd := newRootCmd("")
+	cmd.SetArgs([]string{"crowdin", "auto-translate", "--language", " ", "--file", "messages.json"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "at least one language is required") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestCrowdinFileDownloadRejectsBlankLanguage(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeMinimalCrowdinConfig(t, dir)
+
+	old := newCrowdinFileOpsClient
+	t.Cleanup(func() { newCrowdinFileOpsClient = old })
+	newCrowdinFileOpsClient = func(crowdinstorage.Config) (crowdinFileOpsClient, error) {
+		return &fakeCrowdinFileOpsClient{content: []byte(`{"hello":"Hello"}`)}, nil
+	}
+
+	cmd := newRootCmd("")
+	cmd.SetArgs([]string{"crowdin", "file", "download", "messages.json", "--language", " "})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "language is required") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestCrowdinGlossaryAndTMUpload(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)

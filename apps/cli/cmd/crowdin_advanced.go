@@ -158,7 +158,11 @@ func newCrowdinFileDownloadCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			content, err := client.DownloadProjectFile(cmd.Context(), cfg.ProjectID, o.branch, args[0], o.language)
+			language := strings.TrimSpace(o.language)
+			if cmd.Flags().Changed("language") && language == "" {
+				return fmt.Errorf("crowdin file download: language is required")
+			}
+			content, err := client.DownloadProjectFile(cmd.Context(), cfg.ProjectID, o.branch, args[0], language)
 			if err != nil {
 				return err
 			}

@@ -483,6 +483,57 @@ func TestHTTPClientFindDirectoryAndFileUseBranchForRootLookups(t *testing.T) {
 	}
 }
 
+func TestHTTPClientFindFileSkipsBranchOwnedWhenUnscoped(t *testing.T) {
+	client, mux, teardown := newCrowdinHTTPClientForTest(t)
+	defer teardown()
+
+	mux.HandleFunc("/api/v2/projects/123/files", func(w http.ResponseWriter, r *http.Request) {
+		assertRequest(t, r, http.MethodGet, "/api/v2/projects/123/files?filter=messages.json&limit=500")
+		_, _ = io.WriteString(w, `{"data":[{"data":{"id":18,"projectId":123,"branchId":42,"name":"messages.json"}},{"data":{"id":17,"projectId":123,"name":"messages.json"}}]}`)
+	})
+
+	fileID, err := client.FindFile(context.Background(), "123", 0, 0, "messages.json")
+	if err != nil {
+		t.Fatalf("find file: %v", err)
+	}
+	if fileID != 17 {
+		t.Fatalf("file id = %d, want default-branch 17", fileID)
+	}
+}
+
+func TestHTTPClientFindFileDoesNotReuseOnlyBranchOwnedMatch(t *testing.T) {
+	client, mux, teardown := newCrowdinHTTPClientForTest(t)
+	defer teardown()
+
+	mux.HandleFunc("/api/v2/projects/123/files", func(w http.ResponseWriter, r *http.Request) {
+		assertRequest(t, r, http.MethodGet, "/api/v2/projects/123/files?filter=messages.json&limit=500")
+		_, _ = io.WriteString(w, `{"data":[{"data":{"id":18,"projectId":123,"branchId":42,"name":"messages.json"}}]}`)
+	})
+
+	_, err := client.FindFile(context.Background(), "123", 0, 0, "messages.json")
+	if err == nil || !strings.Contains(err.Error(), "not found") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestHTTPClientFindDirectorySkipsBranchOwnedWhenUnscoped(t *testing.T) {
+	client, mux, teardown := newCrowdinHTTPClientForTest(t)
+	defer teardown()
+
+	mux.HandleFunc("/api/v2/projects/123/directories", func(w http.ResponseWriter, r *http.Request) {
+		assertRequest(t, r, http.MethodGet, "/api/v2/projects/123/directories?filter=src&limit=500")
+		_, _ = io.WriteString(w, `{"data":[{"data":{"id":11,"projectId":123,"branchId":42,"name":"src"}},{"data":{"id":8,"projectId":123,"name":"src"}}]}`)
+	})
+
+	dirID, err := client.FindDirectory(context.Background(), "123", 0, "src")
+	if err != nil {
+		t.Fatalf("find directory: %v", err)
+	}
+	if dirID != 8 {
+		t.Fatalf("directory id = %d, want default-branch 8", dirID)
+	}
+}
+
 func TestHTTPClientUpsertSourceFileAddsRootFileToBranch(t *testing.T) {
 	client, mux, teardown := newCrowdinHTTPClientForTest(t)
 	defer teardown()

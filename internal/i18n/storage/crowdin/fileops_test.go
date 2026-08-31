@@ -342,6 +342,20 @@ func TestApplyPreTranslationAndWaitFailed(t *testing.T) {
 	}
 }
 
+func TestApplyPreTranslationRejectsBlankLanguages(t *testing.T) {
+	client, _, teardown := newCrowdinHTTPClientForTest(t)
+	defer teardown()
+
+	_, err := client.ApplyPreTranslationAndWait(context.Background(), PreTranslationInput{
+		ProjectID: "123",
+		Languages: []string{" ", ""},
+		FilePath:  "messages.json",
+	})
+	if err == nil || !strings.Contains(err.Error(), "at least one language is required") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestApplyPreTranslationRequiresScope(t *testing.T) {
 	client, _, teardown := newCrowdinHTTPClientForTest(t)
 	defer teardown()

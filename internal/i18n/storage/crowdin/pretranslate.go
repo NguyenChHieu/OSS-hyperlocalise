@@ -38,11 +38,24 @@ func (c *HTTPClient) ApplyPreTranslationAndWait(ctx context.Context, in PreTrans
 	if err != nil {
 		return PreTranslationResult{}, fmt.Errorf("crowdin auto-translate: %w", err)
 	}
-	if len(in.Languages) == 0 {
+	languages := make([]string, 0, len(in.Languages))
+	seen := make(map[string]struct{}, len(in.Languages))
+	for _, language := range in.Languages {
+		trimmed := strings.TrimSpace(language)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		languages = append(languages, trimmed)
+	}
+	if len(languages) == 0 {
 		return PreTranslationResult{}, fmt.Errorf("crowdin auto-translate: at least one language is required")
 	}
 
-	locales, err := c.ResolveLocales(ctx, in.ProjectID, in.Languages)
+	locales, err := c.ResolveLocales(ctx, in.ProjectID, languages)
 	if err != nil {
 		return PreTranslationResult{}, err
 	}

@@ -117,6 +117,35 @@ func TestListProjectFilesSkipsBranchDirectories(t *testing.T) {
 	}
 }
 
+func TestListProjectFilesSkipsBranchRootFiles(t *testing.T) {
+	client, mux, teardown := newCrowdinHTTPClientForTest(t)
+	defer teardown()
+
+	mux.HandleFunc("/api/v2/projects/123/files", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "limit=500" {
+			t.Fatalf("unexpected files query %q", r.URL.RawQuery)
+		}
+		writeJSON(t, w, map[string]any{
+			"data": []any{
+				map[string]any{"data": map[string]any{"id": 17, "name": "messages.json", "path": "/messages.json"}},
+				map[string]any{"data": map[string]any{"id": 18, "name": "branch.json", "path": "/branch.json", "branchId": 42}},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v2/projects/123/directories", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, map[string]any{"data": []any{}})
+	})
+
+	got, err := client.ListProjectFiles(context.Background(), "123", "")
+	if err != nil {
+		t.Fatalf("list files: %v", err)
+	}
+	want := []ProjectFile{{ID: 17, Name: "messages.json", Path: "/messages.json"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("files = %#v, want %#v", got, want)
+	}
+}
+
 func TestListProjectFilesByBranch(t *testing.T) {
 	client, mux, teardown := newCrowdinHTTPClientForTest(t)
 	defer teardown()

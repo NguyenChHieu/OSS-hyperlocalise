@@ -228,7 +228,7 @@ hyperlocalise crowdin file delete /messages.json --branch feature/login
 
 `file download` without `--language` downloads the **source** file. Pass `--language` to build and download that file's translations. For a numeric file ID, keep using `download sources --file-id`.
 
-Pre-translate with translation memory (v1 is TM only). `pre-translate` is an alias of `auto-translate`. Provide exactly one of `--file`, `--branch`, or `--directory-id`. `--branch` may accompany `--file` to resolve a branch-relative path.
+Pre-translate with translation memory (v1 is TM only). `pre-translate` is an alias of `auto-translate`. Provide exactly one of `--file`, `--branch`, or `--directory-id`. `--branch` may accompany `--file` to resolve a branch-relative path. Root `branch:` in `crowdin.yml` also scopes `--file` and branch-only runs; `--directory-id` ignores that config value unless you also pass `--branch`.
 
 ```bash
 hyperlocalise crowdin auto-translate --language fr --file messages.json

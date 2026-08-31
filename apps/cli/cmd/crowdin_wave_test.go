@@ -273,6 +273,52 @@ files:
 	}
 }
 
+func TestCrowdinAutoTranslateDirectoryIDIgnoresYAMLBranch(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeMinimalCrowdinConfig(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, "crowdin.yml"), []byte(`
+project_id_env: CROWDIN_PROJECT_ID
+api_token_env: CROWDIN_PERSONAL_TOKEN
+branch: feature/login
+files:
+  - source: /src/messages.json
+    translation: /locales/%locale%/%original_file_name%
+`), 0o644); err != nil {
+		t.Fatalf("write crowdin config: %v", err)
+	}
+
+	old := newCrowdinAutoTranslator
+	t.Cleanup(func() { newCrowdinAutoTranslator = old })
+	client := &fakeCrowdinAutoTranslator{}
+	newCrowdinAutoTranslator = func(crowdinstorage.Config) (crowdinAutoTranslator, error) {
+		return client, nil
+	}
+
+	cmd := newRootCmd("")
+	cmd.SetOut(bytes.NewBuffer(nil))
+	cmd.SetArgs([]string{"crowdin", "auto-translate", "--language", "fr", "--directory-id", "9"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("auto-translate directory: %v", err)
+	}
+	if client.in.DirectoryID != 9 {
+		t.Fatalf("directory id = %d, want 9", client.in.DirectoryID)
+	}
+	if client.in.Branch != "" {
+		t.Fatalf("branch = %q, want empty when --directory-id is the scope", client.in.Branch)
+	}
+
+	cmd = newRootCmd("")
+	cmd.SetOut(bytes.NewBuffer(nil))
+	cmd.SetArgs([]string{"crowdin", "auto-translate", "--language", "fr", "--file", "messages.json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("auto-translate file: %v", err)
+	}
+	if client.in.Branch != "feature/login" {
+		t.Fatalf("branch = %q, want feature/login for file resolve", client.in.Branch)
+	}
+}
+
 func TestCrowdinAutoTranslate(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -281,7 +327,7 @@ func TestCrowdinAutoTranslate(t *testing.T) {
 	old := newCrowdinAutoTranslator
 	t.Cleanup(func() { newCrowdinAutoTranslator = old })
 	newCrowdinAutoTranslator = func(crowdinstorage.Config) (crowdinAutoTranslator, error) {
-		return fakeCrowdinAutoTranslator{}, nil
+		return &fakeCrowdinAutoTranslator{}, nil
 	}
 
 	cmd := newRootCmd("")
@@ -483,8 +529,11 @@ func (f *fakeCrowdinFileOpsClient) DeleteProjectFile(_ context.Context, _, branc
 	return nil
 }
 
-type fakeCrowdinAutoTranslator struct{}
+type fakeCrowdinAutoTranslator struct {
+	in crowdinstorage.PreTranslationInput
+}
 
-func (fakeCrowdinAutoTranslator) ApplyPreTranslationAndWait(context.Context, crowdinstorage.PreTranslationInput) (crowdinstorage.PreTranslationResult, error) {
+func (f *fakeCrowdinAutoTranslator) ApplyPreTranslationAndWait(_ context.Context, in crowdinstorage.PreTranslationInput) (crowdinstorage.PreTranslationResult, error) {
+	f.in = in
 	return crowdinstorage.PreTranslationResult{Identifier: "pre-1", Status: "finished", Progress: 100}, nil
 }

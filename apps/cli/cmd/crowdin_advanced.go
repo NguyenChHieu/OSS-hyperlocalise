@@ -244,11 +244,15 @@ func newCrowdinAutoTranslateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			branch := cfg.Branch
+			if o.directoryID > 0 && !cmd.Flags().Changed("branch") {
+				branch = ""
+			}
 			in := crowdinstorage.PreTranslationInput{
 				ProjectID:         cfg.ProjectID,
 				Languages:         o.languages,
 				FilePath:          o.filePath,
-				Branch:            cfg.Branch,
+				Branch:            branch,
 				DirectoryID:       o.directoryID,
 				AutoApproveOption: o.autoApproveOption,
 			}

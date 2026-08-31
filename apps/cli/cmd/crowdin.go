@@ -111,6 +111,20 @@ type crowdinGlossaryImporter interface {
 	ImportGlossaryFile(context.Context, int, string) (crowdinstorage.ImportResult, error)
 }
 
+type crowdinSourceStringLister interface {
+	ListProjectSourceStrings(context.Context, crowdinstorage.ListSourceStringsInput) ([]crowdinstorage.SourceStringRow, error)
+}
+
+type crowdinFileOpsClient interface {
+	UploadProjectFile(context.Context, string, string, string, string) (int, error)
+	DownloadProjectFile(context.Context, string, string, string, string) ([]byte, error)
+	DeleteProjectFile(context.Context, string, string, string) error
+}
+
+type crowdinAutoTranslator interface {
+	ApplyPreTranslationAndWait(context.Context, crowdinstorage.PreTranslationInput) (crowdinstorage.PreTranslationResult, error)
+}
+
 var newCrowdinTranslationStatusReader = func(cfg crowdinstorage.Config) (crowdinTranslationStatusReader, error) {
 	return crowdinstorage.NewHTTPClient(cfg)
 }
@@ -159,6 +173,18 @@ var newCrowdinGlossaryImporter = func(cfg crowdinstorage.Config) (crowdinGlossar
 	return crowdinstorage.NewHTTPClient(cfg)
 }
 
+var newCrowdinSourceStringLister = func(cfg crowdinstorage.Config) (crowdinSourceStringLister, error) {
+	return crowdinstorage.NewHTTPClient(cfg)
+}
+
+var newCrowdinFileOpsClient = func(cfg crowdinstorage.Config) (crowdinFileOpsClient, error) {
+	return crowdinstorage.NewHTTPClient(cfg)
+}
+
+var newCrowdinAutoTranslator = func(cfg crowdinstorage.Config) (crowdinAutoTranslator, error) {
+	return crowdinstorage.NewHTTPClient(cfg)
+}
+
 func newCrowdinCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "crowdin",
@@ -170,11 +196,13 @@ func newCrowdinCmd() *cobra.Command {
 	cmd.AddCommand(newCrowdinStatusCmd())
 	cmd.AddCommand(newCrowdinBranchCmd())
 	cmd.AddCommand(newCrowdinFileCmd())
+	cmd.AddCommand(newCrowdinStringCmd())
 	cmd.AddCommand(newCrowdinLanguageCmd())
 	cmd.AddCommand(newCrowdinUploadCmd())
 	cmd.AddCommand(newCrowdinDownloadCmd())
 	cmd.AddCommand(newCrowdinGlossaryCmd())
 	cmd.AddCommand(newCrowdinTranslationMemoryCmd())
+	cmd.AddCommand(newCrowdinAutoTranslateCmd())
 
 	return cmd
 }

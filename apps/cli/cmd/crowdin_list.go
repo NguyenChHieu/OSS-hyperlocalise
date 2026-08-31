@@ -169,6 +169,9 @@ func newCrowdinFileCmd() *cobra.Command {
 		Short: "Crowdin source file commands",
 	}
 	cmd.AddCommand(newCrowdinFileListCmd())
+	cmd.AddCommand(newCrowdinFileUploadCmd())
+	cmd.AddCommand(newCrowdinFileDownloadCmd())
+	cmd.AddCommand(newCrowdinFileDeleteCmd())
 	return cmd
 }
 

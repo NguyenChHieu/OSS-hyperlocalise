@@ -148,6 +148,128 @@ func TestCrowdinFileAndLanguageList(t *testing.T) {
 	}
 }
 
+func TestCrowdinStringList(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeMinimalCrowdinConfig(t, dir)
+
+	old := newCrowdinSourceStringLister
+	t.Cleanup(func() { newCrowdinSourceStringLister = old })
+	newCrowdinSourceStringLister = func(crowdinstorage.Config) (crowdinSourceStringLister, error) {
+		return fakeCrowdinSourceStringLister{}, nil
+	}
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"crowdin", "string", "list", "--file", "messages.json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("string list: %v", err)
+	}
+	if got, want := out.String(), "id=9 identifier=hello text=Hello context=home\n"; got != want {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+}
+
+func TestCrowdinFileUploadDownloadDelete(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeMinimalCrowdinConfig(t, dir)
+	inputPath := filepath.Join(dir, "local.json")
+	if err := os.WriteFile(inputPath, []byte(`{"hello":"Hello"}`), 0o644); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+
+	old := newCrowdinFileOpsClient
+	t.Cleanup(func() { newCrowdinFileOpsClient = old })
+	client := &fakeCrowdinFileOpsClient{content: []byte(`{"hello":"Hello"}`)}
+	newCrowdinFileOpsClient = func(crowdinstorage.Config) (crowdinFileOpsClient, error) {
+		return client, nil
+	}
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"crowdin", "file", "upload", inputPath, "--dest", "/messages.json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("file upload: %v", err)
+	}
+	if !strings.Contains(out.String(), "file_id=17") {
+		t.Fatalf("upload output = %q", out.String())
+	}
+
+	dest := filepath.Join(dir, "out.json")
+	cmd = newRootCmd("")
+	out = bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"crowdin", "file", "download", "messages.json", "--dest", dest})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("file download: %v", err)
+	}
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read dest: %v", err)
+	}
+	if string(got) != `{"hello":"Hello"}` {
+		t.Fatalf("downloaded = %q", got)
+	}
+
+	cmd = newRootCmd("")
+	out = bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"crowdin", "file", "delete", "messages.json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("file delete: %v", err)
+	}
+	if got, want := out.String(), "deleted path=messages.json\n"; got != want {
+		t.Fatalf("delete output = %q, want %q", got, want)
+	}
+}
+
+func TestCrowdinAutoTranslate(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeMinimalCrowdinConfig(t, dir)
+
+	old := newCrowdinAutoTranslator
+	t.Cleanup(func() { newCrowdinAutoTranslator = old })
+	newCrowdinAutoTranslator = func(crowdinstorage.Config) (crowdinAutoTranslator, error) {
+		return fakeCrowdinAutoTranslator{}, nil
+	}
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"crowdin", "auto-translate", "--language", "fr", "--file", "messages.json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("auto-translate: %v", err)
+	}
+	if !strings.Contains(out.String(), "status=finished") {
+		t.Fatalf("output = %q", out.String())
+	}
+
+	cmd = newRootCmd("")
+	out = bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"crowdin", "pre-translate", "--language", "fr", "--branch", "feature/login"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("pre-translate alias: %v", err)
+	}
+}
+
+func TestCrowdinAutoTranslateRejectsMT(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeMinimalCrowdinConfig(t, dir)
+
+	cmd := newRootCmd("")
+	cmd.SetArgs([]string{"crowdin", "auto-translate", "--language", "fr", "--file", "messages.json", "--method", "mt"})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "tm only") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func TestCrowdinGlossaryAndTMUpload(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -248,4 +370,38 @@ func (fakeCrowdinImporter) ImportTranslationMemoryFile(context.Context, int, str
 
 func (fakeCrowdinImporter) ImportGlossaryFile(context.Context, int, string) (crowdinstorage.ImportResult, error) {
 	return crowdinstorage.ImportResult{Identifier: "g-1", Status: "finished", Progress: 100}, nil
+}
+
+type fakeCrowdinSourceStringLister struct{}
+
+func (fakeCrowdinSourceStringLister) ListProjectSourceStrings(_ context.Context, _ crowdinstorage.ListSourceStringsInput) ([]crowdinstorage.SourceStringRow, error) {
+	return []crowdinstorage.SourceStringRow{{
+		ID:         9,
+		Identifier: "hello",
+		Text:       "Hello",
+		Context:    "home",
+		FileID:     17,
+	}}, nil
+}
+
+type fakeCrowdinFileOpsClient struct {
+	content []byte
+}
+
+func (f *fakeCrowdinFileOpsClient) UploadProjectFile(context.Context, string, string, string, string) (int, error) {
+	return 17, nil
+}
+
+func (f *fakeCrowdinFileOpsClient) DownloadProjectFile(context.Context, string, string, string, string) ([]byte, error) {
+	return f.content, nil
+}
+
+func (f *fakeCrowdinFileOpsClient) DeleteProjectFile(context.Context, string, string, string) error {
+	return nil
+}
+
+type fakeCrowdinAutoTranslator struct{}
+
+func (fakeCrowdinAutoTranslator) ApplyPreTranslationAndWait(context.Context, crowdinstorage.PreTranslationInput) (crowdinstorage.PreTranslationResult, error) {
+	return crowdinstorage.PreTranslationResult{Identifier: "pre-1", Status: "finished", Progress: 100}, nil
 }

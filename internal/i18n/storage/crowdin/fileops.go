@@ -23,19 +23,30 @@ func (c *HTTPClient) ResolveProjectFile(ctx context.Context, projectID, branch, 
 	if err != nil {
 		return ProjectFile{}, err
 	}
-	matches := make([]ProjectFile, 0)
+	pathMatches := make([]ProjectFile, 0)
+	nameMatches := make([]ProjectFile, 0)
 	for _, file := range files {
-		if normalizeCrowdinPath(file.Path) == want || normalizeCrowdinPath(file.Name) == want {
-			matches = append(matches, file)
+		if normalizeCrowdinPath(file.Path) == want {
+			pathMatches = append(pathMatches, file)
+			continue
+		}
+		if normalizeCrowdinPath(file.Name) == want {
+			nameMatches = append(nameMatches, file)
 		}
 	}
-	if len(matches) == 0 {
-		return ProjectFile{}, fmt.Errorf("crowdin file %q not found", crowdinPath)
+	if len(pathMatches) == 1 {
+		return pathMatches[0], nil
 	}
-	if len(matches) > 1 {
+	if len(pathMatches) > 1 {
 		return ProjectFile{}, fmt.Errorf("crowdin file %q is ambiguous", crowdinPath)
 	}
-	return matches[0], nil
+	if len(nameMatches) == 1 {
+		return nameMatches[0], nil
+	}
+	if len(nameMatches) > 1 {
+		return ProjectFile{}, fmt.Errorf("crowdin file %q is ambiguous", crowdinPath)
+	}
+	return ProjectFile{}, fmt.Errorf("crowdin file %q not found", crowdinPath)
 }
 
 // UploadProjectFile adds or updates one source file at a Crowdin destination path.
@@ -81,7 +92,7 @@ func (c *HTTPClient) DownloadProjectFile(ctx context.Context, projectID, branch,
 	if err != nil {
 		return nil, err
 	}
-	if len(locales) == 0 {
+	if len(locales) == 0 || strings.TrimSpace(locales[0].LanguageID) == "" {
 		return nil, fmt.Errorf("crowdin file download: language %q not found", language)
 	}
 	payload, err := c.DownloadTranslationFile(ctx, projectID, file.ID, locales[0].LanguageID, storage.FileExportOptions{})

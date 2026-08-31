@@ -48,7 +48,12 @@ func (c *HTTPClient) ApplyPreTranslationAndWait(ctx context.Context, in PreTrans
 	}
 	languageIDs := make([]string, 0, len(locales))
 	for _, locale := range locales {
-		languageIDs = append(languageIDs, locale.LanguageID)
+		if id := strings.TrimSpace(locale.LanguageID); id != "" {
+			languageIDs = append(languageIDs, id)
+		}
+	}
+	if len(languageIDs) == 0 {
+		return PreTranslationResult{}, fmt.Errorf("crowdin auto-translate: at least one language is required")
 	}
 
 	req := &model.PreTranslationRequest{

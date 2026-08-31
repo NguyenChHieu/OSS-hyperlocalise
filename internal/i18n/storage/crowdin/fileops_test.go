@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -89,6 +90,65 @@ func TestResolveProjectFileMatchesNormalizedPath(t *testing.T) {
 	}
 	if got.ID != 17 {
 		t.Fatalf("file = %#v", got)
+	}
+}
+
+func TestResolveProjectFilePrefersExactPathOverSharedName(t *testing.T) {
+	client, mux, teardown := newCrowdinHTTPClientForTest(t)
+	defer teardown()
+
+	stubProjectFiles(t, mux, []ProjectFile{
+		{ID: 17, Name: "messages.json", Path: "/messages.json"},
+		{ID: 18, Name: "messages.json", Path: "/src/messages.json"},
+	})
+
+	got, err := client.ResolveProjectFile(context.Background(), "123", "", "messages.json")
+	if err != nil {
+		t.Fatalf("resolve file: %v", err)
+	}
+	if got.ID != 17 {
+		t.Fatalf("file = %#v, want root messages.json", got)
+	}
+
+	got, err = client.ResolveProjectFile(context.Background(), "123", "", "/src/messages.json")
+	if err != nil {
+		t.Fatalf("resolve nested file: %v", err)
+	}
+	if got.ID != 18 {
+		t.Fatalf("file = %#v, want nested messages.json", got)
+	}
+}
+
+func TestResolveProjectFileNameFallbackIsUnique(t *testing.T) {
+	client, mux, teardown := newCrowdinHTTPClientForTest(t)
+	defer teardown()
+
+	stubProjectFiles(t, mux, []ProjectFile{
+		{ID: 18, Name: "messages.json", Path: "/src/messages.json"},
+		{ID: 19, Name: "other.json", Path: "/src/other.json"},
+	})
+
+	got, err := client.ResolveProjectFile(context.Background(), "123", "", "messages.json")
+	if err != nil {
+		t.Fatalf("resolve file: %v", err)
+	}
+	if got.ID != 18 {
+		t.Fatalf("file = %#v", got)
+	}
+}
+
+func TestResolveProjectFileAmbiguousName(t *testing.T) {
+	client, mux, teardown := newCrowdinHTTPClientForTest(t)
+	defer teardown()
+
+	stubProjectFiles(t, mux, []ProjectFile{
+		{ID: 17, Name: "messages.json", Path: "/en/messages.json"},
+		{ID: 18, Name: "messages.json", Path: "/fr/messages.json"},
+	})
+
+	_, err := client.ResolveProjectFile(context.Background(), "123", "", "messages.json")
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("error = %v", err)
 	}
 }
 

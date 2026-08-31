@@ -76,13 +76,14 @@ func newCrowdinStringListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			cfg = applyCrowdinBranchFlag(cfg, o.branch)
 			client, err := newCrowdinSourceStringLister(cfg)
 			if err != nil {
 				return err
 			}
 			rows, err := client.ListProjectSourceStrings(cmd.Context(), crowdinstorage.ListSourceStringsInput{
 				ProjectID: cfg.ProjectID,
-				Branch:    o.branch,
+				Branch:    cfg.Branch,
 				FilePath:  o.filePath,
 				Filter:    o.filter,
 			})
@@ -123,11 +124,12 @@ func newCrowdinFileUploadCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			cfg = applyCrowdinBranchFlag(cfg, o.branch)
 			client, err := newCrowdinFileOpsClient(cfg)
 			if err != nil {
 				return err
 			}
-			fileID, err := client.UploadProjectFile(cmd.Context(), cfg.ProjectID, o.branch, o.dest, args[0])
+			fileID, err := client.UploadProjectFile(cmd.Context(), cfg.ProjectID, cfg.Branch, o.dest, args[0])
 			if err != nil {
 				return err
 			}
@@ -154,6 +156,7 @@ func newCrowdinFileDownloadCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			cfg = applyCrowdinBranchFlag(cfg, o.branch)
 			client, err := newCrowdinFileOpsClient(cfg)
 			if err != nil {
 				return err
@@ -162,7 +165,7 @@ func newCrowdinFileDownloadCmd() *cobra.Command {
 			if cmd.Flags().Changed("language") && language == "" {
 				return fmt.Errorf("crowdin file download: language is required")
 			}
-			content, err := client.DownloadProjectFile(cmd.Context(), cfg.ProjectID, o.branch, args[0], language)
+			content, err := client.DownloadProjectFile(cmd.Context(), cfg.ProjectID, cfg.Branch, args[0], language)
 			if err != nil {
 				return err
 			}
@@ -199,11 +202,12 @@ func newCrowdinFileDeleteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			cfg = applyCrowdinBranchFlag(cfg, o.branch)
 			client, err := newCrowdinFileOpsClient(cfg)
 			if err != nil {
 				return err
 			}
-			if err := client.DeleteProjectFile(cmd.Context(), cfg.ProjectID, o.branch, args[0]); err != nil {
+			if err := client.DeleteProjectFile(cmd.Context(), cfg.ProjectID, cfg.Branch, args[0]); err != nil {
 				return err
 			}
 			_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleted path=%s\n", args[0])
@@ -235,6 +239,7 @@ func newCrowdinAutoTranslateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			cfg = applyCrowdinBranchFlag(cfg, o.branch)
 			client, err := newCrowdinAutoTranslator(cfg)
 			if err != nil {
 				return err
@@ -243,7 +248,7 @@ func newCrowdinAutoTranslateCmd() *cobra.Command {
 				ProjectID:         cfg.ProjectID,
 				Languages:         o.languages,
 				FilePath:          o.filePath,
-				Branch:            o.branch,
+				Branch:            cfg.Branch,
 				DirectoryID:       o.directoryID,
 				AutoApproveOption: o.autoApproveOption,
 			}

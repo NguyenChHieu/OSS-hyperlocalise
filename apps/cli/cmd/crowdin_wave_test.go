@@ -226,6 +226,53 @@ func TestCrowdinFileUploadDownloadDelete(t *testing.T) {
 	}
 }
 
+func TestCrowdinFileUploadUsesYAMLBranchUnlessFlagOverrides(t *testing.T) {
+	dir := t.TempDir()
+	t.Chdir(dir)
+	writeMinimalCrowdinConfig(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, "crowdin.yml"), []byte(`
+project_id_env: CROWDIN_PROJECT_ID
+api_token_env: CROWDIN_PERSONAL_TOKEN
+branch: feature/login
+files:
+  - source: /src/messages.json
+    translation: /locales/%locale%/%original_file_name%
+`), 0o644); err != nil {
+		t.Fatalf("write crowdin config: %v", err)
+	}
+	inputPath := filepath.Join(dir, "local.json")
+	if err := os.WriteFile(inputPath, []byte(`{"hello":"Hello"}`), 0o644); err != nil {
+		t.Fatalf("write input: %v", err)
+	}
+
+	old := newCrowdinFileOpsClient
+	t.Cleanup(func() { newCrowdinFileOpsClient = old })
+	client := &fakeCrowdinFileOpsClient{}
+	newCrowdinFileOpsClient = func(crowdinstorage.Config) (crowdinFileOpsClient, error) {
+		return client, nil
+	}
+
+	cmd := newRootCmd("")
+	cmd.SetOut(bytes.NewBuffer(nil))
+	cmd.SetArgs([]string{"crowdin", "file", "upload", inputPath, "--dest", "/messages.json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("file upload: %v", err)
+	}
+	if client.branch != "feature/login" {
+		t.Fatalf("branch = %q, want feature/login", client.branch)
+	}
+
+	cmd = newRootCmd("")
+	cmd.SetOut(bytes.NewBuffer(nil))
+	cmd.SetArgs([]string{"crowdin", "file", "upload", inputPath, "--dest", "/messages.json", "--branch", "hotfix"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("file upload override: %v", err)
+	}
+	if client.branch != "hotfix" {
+		t.Fatalf("branch = %q, want hotfix", client.branch)
+	}
+}
+
 func TestCrowdinAutoTranslate(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
@@ -418,17 +465,21 @@ func (fakeCrowdinSourceStringLister) ListProjectSourceStrings(_ context.Context,
 
 type fakeCrowdinFileOpsClient struct {
 	content []byte
+	branch  string
 }
 
-func (f *fakeCrowdinFileOpsClient) UploadProjectFile(context.Context, string, string, string, string) (int, error) {
+func (f *fakeCrowdinFileOpsClient) UploadProjectFile(_ context.Context, _, branch, _, _ string) (int, error) {
+	f.branch = branch
 	return 17, nil
 }
 
-func (f *fakeCrowdinFileOpsClient) DownloadProjectFile(context.Context, string, string, string, string) ([]byte, error) {
+func (f *fakeCrowdinFileOpsClient) DownloadProjectFile(_ context.Context, _, branch, _, _ string) ([]byte, error) {
+	f.branch = branch
 	return f.content, nil
 }
 
-func (f *fakeCrowdinFileOpsClient) DeleteProjectFile(context.Context, string, string, string) error {
+func (f *fakeCrowdinFileOpsClient) DeleteProjectFile(_ context.Context, _, branch, _ string) error {
+	f.branch = branch
 	return nil
 }
 

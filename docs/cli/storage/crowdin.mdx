@@ -132,7 +132,7 @@ When Crowdin includes source-language fallback values in that export, Hyperlocal
 
 Use `download sources` when you only need source files. It avoids translation export work and is the preferred command for source-only automation.
 
-Use root `branch:` in `crowdin.yml` or pass `--branch <name>` to upload and download files from a Crowdin branch. The flag overrides the config value for that command.
+Use root `branch:` in `crowdin.yml` or pass `--branch <name>` to scope file, string, status, and auto-translate commands to a Crowdin branch. The flag overrides the config value for that command. Path-based `file upload` / `file download` / `file delete` follow the same rule.
 
 Validation fails closed on unsupported Crowdin fields or commands.
 

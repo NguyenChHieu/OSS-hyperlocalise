@@ -739,7 +739,9 @@ func (c *HTTPClient) UpsertSourceFile(ctx context.Context, projectID string, bra
 	if err != nil {
 		return 0, fmt.Errorf("update source file %q: %w", name, err)
 	}
-	if excludedTargetLanguagesDiffer(file.ExcludeTargetLanguages, group.ExcludedTargetLanguages) {
+	// nil means "leave existing exclusions alone" (content-only upload).
+	// A non-nil slice, including empty, is an explicit file-mode update.
+	if group.ExcludedTargetLanguages != nil && excludedTargetLanguagesDiffer(file.ExcludeTargetLanguages, group.ExcludedTargetLanguages) {
 		file, _, err = c.client.SourceFiles.EditFile(ctx, projectInt, file.ID, []*model.UpdateRequest{{
 			Op:    model.OpReplace,
 			Path:  "/excludedTargetLanguages",

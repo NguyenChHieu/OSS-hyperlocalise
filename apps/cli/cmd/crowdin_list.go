@@ -186,11 +186,12 @@ func newCrowdinFileListCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			cfg = applyCrowdinBranchFlag(cfg, o.branch)
 			client, err := newCrowdinFileLister(cfg)
 			if err != nil {
 				return err
 			}
-			rows, err := client.ListProjectFiles(cmd.Context(), cfg.ProjectID, o.branch)
+			rows, err := client.ListProjectFiles(cmd.Context(), cfg.ProjectID, cfg.Branch)
 			if err != nil {
 				return err
 			}

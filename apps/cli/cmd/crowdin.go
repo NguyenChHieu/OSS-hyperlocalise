@@ -286,13 +286,14 @@ func newCrowdinStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			cfg = applyCrowdinBranchFlag(cfg, o.branch)
 			client, err := newCrowdinTranslationStatusReader(cfg)
 			if err != nil {
 				return err
 			}
 			rows, err := client.GetTranslationStatus(backgroundContext(), crowdinstorage.TranslationStatusRequest{
 				ProjectID: cfg.ProjectID,
-				Branch:    o.branch,
+				Branch:    cfg.Branch,
 				Languages: o.languages,
 			})
 			if err != nil {
@@ -823,6 +824,13 @@ func crowdinstorageRequestDownload(cfg storage.FileWorkflowConfig, languages []s
 
 func overrideCrowdinBranch(cfg storage.FileWorkflowConfig, branch string) storage.FileWorkflowConfig {
 	if trimmed := strings.TrimSpace(branch); trimmed != "" {
+		cfg.Branch = trimmed
+	}
+	return cfg
+}
+
+func applyCrowdinBranchFlag(cfg crowdinstorage.Config, flagBranch string) crowdinstorage.Config {
+	if trimmed := strings.TrimSpace(flagBranch); trimmed != "" {
 		cfg.Branch = trimmed
 	}
 	return cfg

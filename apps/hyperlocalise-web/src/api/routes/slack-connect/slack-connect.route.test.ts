@@ -46,11 +46,12 @@ vi.mock("@/lib/agents/slack/connect-invite", async (importOriginal) => {
 });
 
 import { createApp } from "@/api/app";
+import type { AppType } from "@/api/typed-app";
 import { createAuthTestFixture } from "@/api/test-auth.fixture";
 import { db } from "@/lib/database/client";
 import { err, ok } from "@/lib/primitives/result/results";
 
-const client = testClient(createApp());
+const client = testClient<AppType>(createApp());
 const authFixture = createAuthTestFixture();
 
 const invitedView = {

@@ -1441,6 +1441,7 @@ export class IssueSheetService {
     issueId: string;
     actorUserId: string;
     body: IssueSheetUpdateIssueBody;
+    priority?: "P0" | "P1" | "P2";
     returnOutcome?: boolean;
   }): Promise<IssueSheetIssue | IssueSheetUpdateIssueOutcome | null> {
     const nextStatus = input.body.status;
@@ -1475,12 +1476,29 @@ export class IssueSheetService {
       });
     }
 
+    if (input.priority !== undefined) {
+      await this.ensureStarterColumns({
+        organizationId: input.organizationId,
+        projectId: input.projectId,
+        actorUserId: input.actorUserId,
+      });
+    }
+
     const found = await this.database.transaction(async (tx) => {
       const [current] = await tx
         .select({
           id: schema.issueSheetIssues.id,
+          title: schema.issueSheetIssues.title,
+          description: schema.issueSheetIssues.description,
           status: schema.issueSheetIssues.status,
           issueType: schema.issueSheetIssues.issueType,
+          targetLocale: schema.issueSheetIssues.targetLocale,
+          sourcePath: schema.issueSheetIssues.sourcePath,
+          segmentId: schema.issueSheetIssues.segmentId,
+          translationKeyId: schema.issueSheetIssues.translationKeyId,
+          linkKind: schema.issueSheetIssues.linkKind,
+          linkLabel: schema.issueSheetIssues.linkLabel,
+          linkUrl: schema.issueSheetIssues.linkUrl,
           assigneeUserId: schema.issueSheetIssues.assigneeUserId,
         })
         .from(schema.issueSheetIssues)
@@ -1514,32 +1532,56 @@ export class IssueSheetService {
       const assigneeActuallyChanged =
         assigneeChanging && current.assigneeUserId !== nextAssigneeUserId;
 
-      await tx
-        .update(schema.issueSheetIssues)
-        .set({
-          title: input.body.title,
-          description: input.body.description,
-          issueType: input.body.issueType,
-          status: input.body.status,
-          targetLocale: input.body.targetLocale,
-          sourcePath: input.body.sourcePath,
-          segmentId: input.body.segmentId,
-          ...(translationKeyChanging
-            ? { translationKeyId: input.body.translationKeyId ?? null }
-            : {}),
-          linkKind: input.body.linkKind,
-          linkLabel: input.body.linkLabel,
-          linkUrl: input.body.linkUrl,
-          ...(assigneeChanging ? { assigneeUserId: nextAssigneeUserId } : {}),
-          ...(resolvedAt !== undefined ? { resolvedAt } : {}),
-        })
-        .where(
-          and(
-            eq(schema.issueSheetIssues.organizationId, input.organizationId),
-            eq(schema.issueSheetIssues.projectId, input.projectId),
-            issueIdOrIdentifierMatch(input.issueId),
-          ),
-        );
+      const coreActuallyChanged =
+        (Object.hasOwn(input.body, "title") && input.body.title !== current.title) ||
+        (Object.hasOwn(input.body, "description") &&
+          input.body.description !== current.description) ||
+        statusChanging ||
+        issueTypeChanging ||
+        (Object.hasOwn(input.body, "targetLocale") &&
+          (input.body.targetLocale ?? null) !== current.targetLocale) ||
+        (Object.hasOwn(input.body, "sourcePath") &&
+          (input.body.sourcePath ?? null) !== current.sourcePath) ||
+        (Object.hasOwn(input.body, "segmentId") &&
+          (input.body.segmentId ?? null) !== current.segmentId) ||
+        (translationKeyChanging &&
+          (input.body.translationKeyId ?? null) !== current.translationKeyId) ||
+        (Object.hasOwn(input.body, "linkKind") &&
+          (input.body.linkKind ?? null) !== current.linkKind) ||
+        (Object.hasOwn(input.body, "linkLabel") &&
+          (input.body.linkLabel ?? null) !== current.linkLabel) ||
+        (Object.hasOwn(input.body, "linkUrl") &&
+          (input.body.linkUrl ?? null) !== current.linkUrl) ||
+        assigneeActuallyChanged;
+
+      if (coreActuallyChanged) {
+        await tx
+          .update(schema.issueSheetIssues)
+          .set({
+            title: input.body.title,
+            description: input.body.description,
+            issueType: input.body.issueType,
+            status: input.body.status,
+            targetLocale: input.body.targetLocale,
+            sourcePath: input.body.sourcePath,
+            segmentId: input.body.segmentId,
+            ...(translationKeyChanging
+              ? { translationKeyId: input.body.translationKeyId ?? null }
+              : {}),
+            linkKind: input.body.linkKind,
+            linkLabel: input.body.linkLabel,
+            linkUrl: input.body.linkUrl,
+            ...(assigneeChanging ? { assigneeUserId: nextAssigneeUserId } : {}),
+            ...(statusChanging && resolvedAt !== undefined ? { resolvedAt } : {}),
+          })
+          .where(
+            and(
+              eq(schema.issueSheetIssues.organizationId, input.organizationId),
+              eq(schema.issueSheetIssues.projectId, input.projectId),
+              issueIdOrIdentifierMatch(input.issueId),
+            ),
+          );
+      }
 
       if (statusChanging) {
         await this.insertStatusChangedActivity({
@@ -1577,8 +1619,82 @@ export class IssueSheetService {
         });
       }
 
+      let priorityActuallyChanged = false;
+      if (input.priority !== undefined) {
+        const [column] = await tx
+          .select({
+            id: schema.issueSheetColumns.id,
+            key: schema.issueSheetColumns.key,
+            type: schema.issueSheetColumns.type,
+            config: schema.issueSheetColumns.config,
+          })
+          .from(schema.issueSheetColumns)
+          .where(
+            and(
+              eq(schema.issueSheetColumns.organizationId, input.organizationId),
+              eq(schema.issueSheetColumns.projectId, input.projectId),
+              eq(schema.issueSheetColumns.key, "priority"),
+            ),
+          )
+          .limit(1);
+
+        if (!column) {
+          throw new Error("issue_sheet_column_not_found");
+        }
+
+        const [existingValue] = await tx
+          .select({ value: schema.issueSheetRowValues.value })
+          .from(schema.issueSheetRowValues)
+          .where(
+            and(
+              eq(schema.issueSheetRowValues.issueId, current.id),
+              eq(schema.issueSheetRowValues.columnId, column.id),
+            ),
+          )
+          .limit(1);
+
+        const previousPriority =
+          existingValue?.value != null && typeof existingValue.value === "string"
+            ? existingValue.value
+            : null;
+
+        if (previousPriority !== input.priority) {
+          const value = this.normalizeValue(column, input.priority);
+          await tx
+            .insert(schema.issueSheetRowValues)
+            .values({
+              organizationId: input.organizationId,
+              projectId: input.projectId,
+              issueId: current.id,
+              columnId: column.id,
+              value,
+              computedAt: null,
+            })
+            .onConflictDoUpdate({
+              target: [schema.issueSheetRowValues.issueId, schema.issueSheetRowValues.columnId],
+              set: {
+                value,
+                updatedAt: new Date(),
+              },
+            });
+
+          await this.insertPriorityChangedActivity({
+            database: tx,
+            organizationId: input.organizationId,
+            projectId: input.projectId,
+            issueId: current.id,
+            actorUserId: input.actorUserId,
+            previousPriority,
+            nextPriority: input.priority,
+          });
+          priorityActuallyChanged = true;
+        }
+      }
+
       return {
         issueId: current.id,
+        coreActuallyChanged,
+        priorityActuallyChanged,
         statusChanging,
         issueTypeChanging,
         previousStatus: current.status,
@@ -1634,10 +1750,9 @@ export class IssueSheetService {
     }
 
     if (input.returnOutcome) {
-      const changed =
-        found.assigneeActuallyChanged || found.statusChanging || found.issueTypeChanging;
       return {
-        outcome: changed ? "updated" : "unchanged",
+        outcome:
+          found.coreActuallyChanged || found.priorityActuallyChanged ? "updated" : "unchanged",
         issue,
       };
     }

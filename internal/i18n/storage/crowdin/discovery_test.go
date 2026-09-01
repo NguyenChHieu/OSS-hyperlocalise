@@ -80,6 +80,72 @@ func TestListProjectFilesIncludesNestedDirectories(t *testing.T) {
 	}
 }
 
+func TestListProjectFilesSkipsBranchDirectories(t *testing.T) {
+	client, mux, teardown := newCrowdinHTTPClientForTest(t)
+	defer teardown()
+
+	mux.HandleFunc("/api/v2/projects/123/files", func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.RawQuery {
+		case "limit=500":
+			writeJSON(t, w, map[string]any{"data": []any{}})
+		case "directoryId=9&limit=500&recursion=true":
+			writeJSON(t, w, map[string]any{
+				"data": []any{
+					map[string]any{"data": map[string]any{"id": 18, "name": "nested.json", "path": "/src/nested.json"}},
+				},
+			})
+		default:
+			t.Fatalf("unexpected files query %q", r.URL.RawQuery)
+		}
+	})
+	mux.HandleFunc("/api/v2/projects/123/directories", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, map[string]any{
+			"data": []any{
+				map[string]any{"data": map[string]any{"id": 9, "name": "src", "path": "/src"}},
+				map[string]any{"data": map[string]any{"id": 11, "name": "feature", "path": "/feature", "branchId": 42}},
+			},
+		})
+	})
+
+	got, err := client.ListProjectFiles(context.Background(), "123", "")
+	if err != nil {
+		t.Fatalf("list files: %v", err)
+	}
+	want := []ProjectFile{{ID: 18, Name: "nested.json", Path: "/src/nested.json"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("files = %#v, want %#v", got, want)
+	}
+}
+
+func TestListProjectFilesSkipsBranchRootFiles(t *testing.T) {
+	client, mux, teardown := newCrowdinHTTPClientForTest(t)
+	defer teardown()
+
+	mux.HandleFunc("/api/v2/projects/123/files", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "limit=500" {
+			t.Fatalf("unexpected files query %q", r.URL.RawQuery)
+		}
+		writeJSON(t, w, map[string]any{
+			"data": []any{
+				map[string]any{"data": map[string]any{"id": 17, "name": "messages.json", "path": "/messages.json"}},
+				map[string]any{"data": map[string]any{"id": 18, "name": "branch.json", "path": "/branch.json", "branchId": 42}},
+			},
+		})
+	})
+	mux.HandleFunc("/api/v2/projects/123/directories", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(t, w, map[string]any{"data": []any{}})
+	})
+
+	got, err := client.ListProjectFiles(context.Background(), "123", "")
+	if err != nil {
+		t.Fatalf("list files: %v", err)
+	}
+	want := []ProjectFile{{ID: 17, Name: "messages.json", Path: "/messages.json"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("files = %#v, want %#v", got, want)
+	}
+}
+
 func TestListProjectFilesByBranch(t *testing.T) {
 	client, mux, teardown := newCrowdinHTTPClientForTest(t)
 	defer teardown()

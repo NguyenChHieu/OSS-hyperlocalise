@@ -16,9 +16,9 @@ import { defineMessages } from "react-intl";
 
 export const contentEditorEditorIssuesSectionMessages = defineMessages({
   title: {
-    defaultMessage: "Issues",
-    id: "D2Iw7bGHIc",
-    description: "Heading for the CAT segment Issues section",
+    defaultMessage: "Board",
+    id: "igJunofoju",
+    description: "Heading for the CAT segment Board section",
   },
   createIssue: {
     defaultMessage: "New issue",
@@ -27,32 +27,32 @@ export const contentEditorEditorIssuesSectionMessages = defineMessages({
   },
   emptyTitle: {
     defaultMessage: "No issues for this string",
-    id: "Esr6tXDJJe",
-    description: "Empty-state title when the CAT segment has no linked Issues",
+    id: "JXB2wuhw1Z",
+    description: "Empty-state title when the CAT segment has no linked issues",
   },
   emptyDescription: {
     defaultMessage: "Create an issue to track work on this string.",
-    id: "8qNqRTyyLK",
-    description: "Empty-state description when the CAT segment has no linked Issues",
+    id: "vqmXbSZwqU",
+    description: "Empty-state description when the CAT segment has no linked issues",
   },
   loadError: {
     defaultMessage: "Could not load issues.",
-    id: "thNgDb6rW2",
-    description: "Error message when CAT segment Issues fail to load",
+    id: "h5+KJI2d7A",
+    description: "Error message when CAT segment board issues fail to load",
   },
   unavailable: {
-    defaultMessage: "Issues are unavailable for this string.",
-    id: "T7+otbWCxu",
-    description: "Shown when the CAT segment cannot link to Issues (missing translation key)",
+    defaultMessage: "Board is unavailable for this string.",
+    id: "6XlImduZ6L",
+    description: "Shown when the CAT segment cannot link to the Board (missing translation key)",
   },
   requestFailed: {
     defaultMessage: "Request failed",
-    id: "JprxqupePC",
-    description: "Generic fallback when a CAT Issues API request fails",
+    id: "Hjj+QG5LDK",
+    description: "Generic fallback when a CAT Board API request fails",
   },
   close: {
-    defaultMessage: "Close issues",
-    id: "sHe4qCdT7b",
-    description: "Accessible label for closing the CAT Issues panel",
+    defaultMessage: "Close board",
+    id: "E8k6bvQHrX",
+    description: "Accessible label for closing the CAT Board panel",
   },
 });

@@ -61,13 +61,13 @@ export const projectFileCatWorkspaceMessages = defineMessages({
     description: "Link label on an issue sheet row pointing back to the Content Editor",
   },
   failedToAddToIssueSheet: {
-    defaultMessage: "Failed to add to Issue Sheet",
-    id: "iwQ9dbHG3A",
+    defaultMessage: "Failed to add to Board",
+    id: "dBZKwTIoEH",
     description: "Fallback error when creating an issue sheet row from CAT fails",
   },
   addedToIssueSheet: {
-    defaultMessage: "Added to Issue Sheet",
-    id: "AF35eujXwK",
+    defaultMessage: "Added to Board",
+    id: "6haGvAy+HC",
     description: "Toast confirmation after adding a CAT segment to the issue sheet",
   },
   viewIssueSheetRow: {

@@ -12,13 +12,14 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
+import { useState } from "react";
 import type { ReactNode } from "react";
 import dynamic from "next/dynamic";
 import {
   ArrowLeft01Icon,
   ArrowRight01Icon,
   Loading03Icon,
-  RefreshIcon,
+  SparklesIcon,
   Upload01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -38,6 +39,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/primitives/cn";
 
 import { contentEditorFileViewMessages } from "./content-editor-file-view.messages";
+import { ContentEditorFileGenerateDialog } from "./content-editor-file-generate-dialog";
 import {
   CAT_IMAGE_FILE_UPLOAD_ACCEPT,
   ContentEditorImageFileViewerPane,
@@ -108,10 +110,11 @@ export function ContentEditorFileViewPanel({
   onNext?: () => void;
   onApprove?: () => void;
   onUpload?: (file: File) => void;
-  onRegenerate?: () => void;
+  onRegenerate?: (input: { instructions?: string }) => void | Promise<void>;
   className?: string;
 }) {
   const intl = useIntl();
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const resolvedPrimaryActionLabel =
     primaryActionLabel ?? intl.formatMessage(contentEditorFileViewMessages.approve);
   const hasTarget = Boolean(segment.targetAssetUrl || segment.targetText.trim());
@@ -136,6 +139,20 @@ export function ContentEditorFileViewPanel({
       ? (segment.targetAssetUrl ??
         (/^https?:\/\//i.test(segment.targetText) ? segment.targetText : null))
       : null;
+  const generateMode = hasTarget ? "regenerate" : "generate";
+
+  async function handleGenerateSubmit(instructions: string) {
+    if (!onRegenerate) {
+      return;
+    }
+
+    try {
+      await onRegenerate({ instructions: instructions || undefined });
+      setGenerateDialogOpen(false);
+    } catch {
+      // Keep the dialog open so the user can retry after a failed generation.
+    }
+  }
 
   return (
     <div className={cn("flex h-full min-h-0 flex-col bg-background", className)}>
@@ -191,6 +208,38 @@ export function ContentEditorFileViewPanel({
           <FileViewPane
             title={
               <FormattedMessage
+                {...contentEditorFileViewMessages.sourceHeading}
+                values={{ locale: segment.sourceLocale }}
+              />
+            }
+          >
+            {viewerId === "image" ? (
+              <ContentEditorImageFileViewerPane role="source" src={sourceSrc} />
+            ) : viewerId === "video" ? (
+              <ContentEditorVideoFileViewerPane role="source" src={sourceSrc} />
+            ) : officeKind ? (
+              <ContentEditorOfficeFileViewerPane
+                kind={officeKind}
+                role="source"
+                src={sourceSrc}
+                filename={displayName}
+                canEdit={false}
+              />
+            ) : isDocumentViewer ? (
+              <ContentEditorDocumentFileViewerPane
+                role="source"
+                src={sourceSrc}
+                filename={displayName}
+                canEdit={false}
+              />
+            ) : (
+              <UnsupportedPreview />
+            )}
+          </FileViewPane>
+
+          <FileViewPane
+            title={
+              <FormattedMessage
                 {...contentEditorFileViewMessages.targetHeading}
                 values={{ locale: segment.targetLocale }}
               />
@@ -203,7 +252,7 @@ export function ContentEditorFileViewPanel({
                     variant="outline"
                     size="xs"
                     disabled={!canEdit || isImageBusy}
-                    onClick={onRegenerate}
+                    onClick={() => setGenerateDialogOpen(true)}
                   >
                     {isImageBusy ? (
                       <HugeiconsIcon
@@ -212,9 +261,13 @@ export function ContentEditorFileViewPanel({
                         aria-hidden
                       />
                     ) : (
-                      <HugeiconsIcon icon={RefreshIcon} className="size-3" aria-hidden />
+                      <HugeiconsIcon icon={SparklesIcon} className="size-3" aria-hidden />
                     )}
-                    <FormattedMessage {...contentEditorFileViewMessages.regenerate} />
+                    <FormattedMessage
+                      {...(hasTarget
+                        ? contentEditorFileViewMessages.regenerate
+                        : contentEditorFileViewMessages.generate)}
+                    />
                   </Button>
                 ) : null}
                 {onUpload && uploadAccept ? (
@@ -282,40 +335,18 @@ export function ContentEditorFileViewPanel({
               <UnsupportedPreview />
             )}
           </FileViewPane>
-
-          <FileViewPane
-            title={
-              <FormattedMessage
-                {...contentEditorFileViewMessages.sourceHeading}
-                values={{ locale: segment.sourceLocale }}
-              />
-            }
-          >
-            {viewerId === "image" ? (
-              <ContentEditorImageFileViewerPane role="source" src={sourceSrc} />
-            ) : viewerId === "video" ? (
-              <ContentEditorVideoFileViewerPane role="source" src={sourceSrc} />
-            ) : officeKind ? (
-              <ContentEditorOfficeFileViewerPane
-                kind={officeKind}
-                role="source"
-                src={sourceSrc}
-                filename={displayName}
-                canEdit={false}
-              />
-            ) : isDocumentViewer ? (
-              <ContentEditorDocumentFileViewerPane
-                role="source"
-                src={sourceSrc}
-                filename={displayName}
-                canEdit={false}
-              />
-            ) : (
-              <UnsupportedPreview />
-            )}
-          </FileViewPane>
         </div>
       </div>
+      {onRegenerate ? (
+        <ContentEditorFileGenerateDialog
+          open={generateDialogOpen}
+          onOpenChange={setGenerateDialogOpen}
+          mode={generateMode}
+          viewerId={viewerId}
+          isSubmitting={isImageBusy}
+          onSubmit={handleGenerateSubmit}
+        />
+      ) : null}
     </div>
   );
 }

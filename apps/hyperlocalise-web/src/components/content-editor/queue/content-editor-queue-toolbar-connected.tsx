@@ -72,6 +72,16 @@ export const ContentEditorQueueToolbarConnected = observer(
       setHost(document.getElementById(CAT_QUEUE_TOOLBAR_HOST_ID));
     }, []);
 
+    useEffect(() => {
+      if (!store.ui.isFileView) {
+        return;
+      }
+
+      if (store.selectionMode) {
+        store.setSelectionMode(false);
+      }
+    }, [store, store.ui.isFileView, store.selectionMode]);
+
     const handleSearchChange = useCallback(
       (value: string) => {
         store.setQueueSearch(value);
@@ -100,6 +110,10 @@ export const ContentEditorQueueToolbarConnected = observer(
       },
       [onQueueSortChange, store],
     );
+
+    if (store.ui.isFileView) {
+      return null;
+    }
 
     const toolbar = (
       <ContentEditorQueueToolbar

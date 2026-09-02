@@ -192,6 +192,7 @@
                   "cli/commands/overview",
                   "cli/commands/init",
                   "cli/commands/crowdin",
+                  "cli/commands/phrase",
                   "cli/commands/run",
                   "cli/commands/extract",
                   "cli/commands/pack",

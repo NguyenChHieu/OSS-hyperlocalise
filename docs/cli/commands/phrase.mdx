@@ -1,0 +1,244 @@
+---
+title: "phrase"
+description: "Phrase Strings file workflow commands powered by .phrase.yml."
+---
+
+## Usage
+
+```bash
+hyperlocalise phrase config validate [--config <path>]
+hyperlocalise phrase upload sources [--config <path>] [--project-id <id>] [--source-locale <locale>] [--file <path>] [--format <format>] [--branch <name>] [--tag <tag>] [--token-env <name>] [--api-base-url <url>] [--update-translations] [--skip-upload-tags] [--dry-run]
+hyperlocalise phrase download sources --project-id <id> --source-locale <locale> --format <format> [--output <path>] [--branch <name>] [--tag <tag>] [--token-env <name>] [--api-base-url <url>] [--force] [--dry-run]
+hyperlocalise phrase download translations [--config <path>] [--project-id <id>] [--target-locale <locale>] [--format <format>] [--output <path>] [--branch <name>] [--tag <tag>] [--token-env <name>] [--api-base-url <url>] [--force] [--dry-run]
+hyperlocalise phrase glossary download --account-id <id> --glossary-id <id> [--language <locale>] [--output <path>] [--token-env <name>] [--api-base-url <url>] [--force] [--dry-run]
+hyperlocalise phrase tm download --tm-id <id> --source-language <code> --target-language <code> [--format csv|tmx] [--output <path>] [--token-env <name>] [--api-base-url <url>] [--force] [--dry-run]
+```
+
+`tm` also accepts the alias `translation-memory`.
+
+## What this command family does
+
+These commands operate on Phrase's `.phrase.yml` (or explicit flags) directly.
+
+They are separate from Hyperlocalise native `i18n.yml` and `sync push` / `sync pull` workflows. Use native sync when you want Hyperlocalise-managed entry sync through the [Phrase adapter](/cli/storage/phrase). Use this file-mode surface when you want a closer replacement for Phrase Strings CLI `push` / `pull` file workflows.
+
+Use them for:
+
+- source-file upload from `phrase.push.sources[]`
+- translation download into `phrase.pull.targets[]`
+- source download with explicit flags (no config-file mode)
+- glossary and translation-memory download
+- config validation against `.phrase.yml`
+
+Config lookup order:
+
+1. `--config`
+2. `PHRASEAPP_CONFIG`
+3. `.phrase.yml` in the current directory
+4. `$HOME/.phrase.yml`
+
+In config mode, Hyperlocalise resolves the token in this order:
+
+1. `phrase.access_token` as a literal value, or as `$VAR` / `${VAR}` from that named environment variable
+2. `PHRASE_ACCESS_TOKEN`, then `PHRASE_API_TOKEN`, only when `phrase.access_token` is omitted or empty
+
+If `phrase.access_token` is an environment reference (`$VAR` / `${VAR}`), Hyperlocalise uses that variable only. An unset or empty reference does **not** fall through to `PHRASE_ACCESS_TOKEN` or `PHRASE_API_TOKEN`. Set the referenced variable, or omit `access_token` so the default env vars apply.
+
+Manual flag commands (and config mode when you pass `--token-env`) read `--token-env` (default `PHRASE_API_TOKEN`). If you set a custom `--token-env` and it is empty, Hyperlocalise then tries `PHRASE_API_TOKEN`. `--api-base-url` overrides `phrase.host`.
+
+`upload sources` and `download translations` use config mode when you pass `--config`, or when a config file resolves and you do not set `--project-id`, `--format`, or (for upload) `--file` / (for download) `--output`. `download sources`, `glossary download`, and `tm download` are flag-only.
+
+## Supported config fields
+
+These drive Hyperlocalise Phrase file mode under the `phrase:` key:
+
+- `access_token`
+- `project_id`
+- `file_format`
+- `host`
+- `locale_mapping`
+- `push.sources[].file`
+- `push.sources[].project_id`
+- `push.sources[].params.locale_id`
+- `push.sources[].params.file_format`
+- `push.sources[].params.branch`
+- `push.sources[].params.tags`
+- `push.sources[].params.update_translations`
+- `push.sources[].params.update_translation_keys`
+- `push.sources[].params.update_descriptions`
+- `push.sources[].params.skip_upload_tags`
+- `push.sources[].params.skip_unverification`
+- `push.sources[].params.file_encoding`
+- `push.sources[].params.locale_mapping`
+- `push.sources[].params.format_options`
+- `push.sources[].params.autotranslate`
+- `push.sources[].params.mark_reviewed`
+- `pull.targets[].file`
+- `pull.targets[].project_id`
+- `pull.targets[].params.locale_id`
+- `pull.targets[].params.file_format`
+- `pull.targets[].params.branch`
+- `pull.targets[].params.tags`
+- `pull.targets[].params.include_empty_translations`
+- `pull.targets[].params.exclude_empty_zero_forms`
+- `pull.targets[].params.include_translated_keys`
+- `pull.targets[].params.keep_notranslate_tags`
+- `pull.targets[].params.encoding`
+- `pull.targets[].params.include_unverified_translations`
+- `pull.targets[].params.use_last_reviewed_version`
+- `pull.targets[].params.fallback_locale_id`
+- `pull.targets[].params.format_options`
+- `pull.targets[].params.source_locale_id`
+- `pull.targets[].params.translation_key_prefix`
+- `pull.targets[].params.filter_by_prefix`
+- `pull.targets[].params.use_locale_fallback`
+- `pull.targets[].params.skip_unverified_translations`
+
+Path placeholders in `file` values: `<locale_name>`, `<locale_code>`, `<tag>`, `<tags>`.
+
+## Phrase CLI compatibility
+
+Official Phrase Strings CLI names map as follows:
+
+| Official Strings CLI | Hyperlocalise today | Notes |
+| --- | --- | --- |
+| `phrase init` | missing | Scaffolding is not implemented |
+| `phrase push` / `push --wait` | `upload sources` | No `push` alias and no `--wait` upload polling |
+| `phrase pull` | `download translations` | Also `download sources` with flags; no `pull` alias |
+| `phrase locales list` | missing | Locale listing is used internally for placeholder expansion |
+| `phrase uploads cleanup` | missing | Upload jobs are not listed or cleaned up |
+| Full API CLI (`keys`, `jobs`, …) | out of scope | Not part of this file-mode surface |
+| Glossary and TM download | `glossary download`, `tm download` | Hyperlocalise extras, not Strings `push`/`pull` |
+
+Unlike Crowdin file mode, unknown top-level YAML keys under `.phrase.yml` are silently dropped. Only fields listed above are applied.
+
+These `push.sources[].params` and `pull.targets[].params` values apply in **config mode** only. Manual flag mode exposes a smaller set (`--update-translations`, `--skip-upload-tags`, `--branch`, `--tag`).
+
+`--dry-run` with locale placeholders in config may require `--source-locale` or `--target-locale` because dry-run cannot call Phrase to enumerate locales.
+
+## Unsupported features
+
+This file-mode implementation does not support:
+
+- `phrase init`
+- `phrase push` / `phrase pull` command names
+- `phrase locales list`
+- `phrase uploads cleanup` and `push --wait`
+- glossary or TM upload (download exists)
+- Phrase Strings API commands such as keys, translations, and jobs
+- interactive Phrase project bootstrap
+
+## Examples
+
+Validate config:
+
+```bash
+hyperlocalise phrase config validate
+```
+
+Validate a specific file:
+
+```bash
+hyperlocalise phrase config validate --config .phrase.yml
+```
+
+Upload sources from `.phrase.yml`:
+
+```bash
+hyperlocalise phrase upload sources --config .phrase.yml
+```
+
+Preview a source upload without calling Phrase:
+
+```bash
+hyperlocalise phrase upload sources --config .phrase.yml --dry-run
+```
+
+Upload one source file with flags:
+
+```bash
+hyperlocalise phrase upload sources \
+  --project-id project-uuid \
+  --source-locale en-US \
+  --file ./locales/en.json \
+  --format json \
+  --tag app \
+  --update-translations
+```
+
+Download a source locale to a file:
+
+```bash
+hyperlocalise phrase download sources \
+  --project-id project-uuid \
+  --source-locale en-US \
+  --format json \
+  --output ./locales/en.json \
+  --force
+```
+
+`download sources` does not read `.phrase.yml`. Credentials come from `--token-env` (default `PHRASE_API_TOKEN`) or `PHRASE_API_TOKEN`.
+
+Download translations from `.phrase.yml`:
+
+```bash
+hyperlocalise phrase download translations --config .phrase.yml
+```
+
+Download one locale with flags. Use `%locale%` in `--output` when you pass more than one `--target-locale`:
+
+```bash
+hyperlocalise phrase download translations \
+  --project-id project-uuid \
+  --target-locale fr-FR \
+  --format json \
+  --output ./locales/%locale%.json \
+  --force
+```
+
+Or configure the same workflow in `.phrase.yml`:
+
+```yaml
+phrase:
+  access_token: $PHRASE_ACCESS_TOKEN
+  project_id: project-uuid
+  file_format: json
+  host: https://api.phrase.com/v2
+  locale_mapping:
+    fr-FR: fr
+  push:
+    sources:
+      - file: ./locales/en.json
+        params:
+          locale_id: en-US
+          tags: app,source
+          update_translations: true
+  pull:
+    targets:
+      - file: ./locales/<locale_name>.json
+        params:
+          locale_id: fr-FR
+          include_unverified_translations: false
+```
+
+Download a glossary:
+
+```bash
+hyperlocalise phrase glossary download \
+  --account-id account-uuid \
+  --glossary-id glossary-uuid \
+  --output ./glossary.csv \
+  --force
+```
+
+Download translation memory as TMX:
+
+```bash
+hyperlocalise phrase tm download \
+  --tm-id tm-uuid \
+  --source-language en \
+  --target-language fr \
+  --format tmx \
+  --output ./memory.tmx \
+  --force
+```

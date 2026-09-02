@@ -25,6 +25,7 @@ import type {
 
 import { createAgentEmailRoutes } from "./routes/agent-email/agent-email.route";
 import { createAgentSlackRoutes } from "./routes/agent-slack/agent-slack.route";
+import { createSlackConnectRoutes } from "./routes/slack-connect/slack-connect.route";
 import { createApiKeyRoutes } from "./routes/api-key/api-key.route";
 import { authRoutes } from "./routes/auth/auth.route";
 import { createNativeAuthRoutes } from "./routes/auth/native-auth.route";
@@ -111,9 +112,11 @@ export function createOrgInboxRoutes(options: OrgScopedRouteOptions) {
     );
 }
 
-export function createOrgKnowledgeRoutes() {
+export function createOrgKnowledgeRoutes(
+  options: Pick<OrgScopedRouteOptions, "fileStorageAdapter"> = {},
+) {
   return new Hono()
-    .route("/glossaries", createGlossaryRoutes())
+    .route("/glossaries", createGlossaryRoutes({ fileStorageAdapter: options.fileStorageAdapter }))
     .route("/knowledge-memory", createKnowledgeMemoryRoutes())
     .route("/translation-memories", createMemoryRoutes());
 }
@@ -168,6 +171,7 @@ export function createOrgAgentsRoutes() {
   return new Hono()
     .route("/agent-email", createAgentEmailRoutes())
     .route("/agent-slack", createAgentSlackRoutes())
+    .route("/slack-connect", createSlackConnectRoutes())
     .route("/github-installation", createGithubInstallationRoutes());
 }
 
@@ -183,7 +187,7 @@ export function createOrgWorkspaceRoutes() {
 export function createOrgScopedAppRoutes(options: OrgScopedRouteOptions) {
   return new Hono()
     .route("/", createOrgInboxRoutes(options))
-    .route("/", createOrgKnowledgeRoutes())
+    .route("/", createOrgKnowledgeRoutes(options))
     .route("/", createOrgProjectsRoutes(options))
     .route("/", createOrgTmsRoutes(options))
     .route("/", createOrgIntegrationsRoutes())

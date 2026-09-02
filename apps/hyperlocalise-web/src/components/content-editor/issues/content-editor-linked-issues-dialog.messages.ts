@@ -21,8 +21,8 @@ export const contentEditorLinkedIssuesDialogMessages = defineMessages({
     description: "Dialog title for issues linked to a CAT translation string",
   },
   description: {
-    defaultMessage: "Create or link Issues for this string. Navigate to an issue to collaborate.",
-    id: "qyJpxYtcpE",
+    defaultMessage: "Create or link issues for this string. Navigate to an issue to collaborate.",
+    id: "n/ryC/yPKS",
     description: "Dialog description for managing issues linked to a CAT string",
   },
   createIssue: {

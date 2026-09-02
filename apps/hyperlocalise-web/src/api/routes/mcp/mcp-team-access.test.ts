@@ -14,11 +14,12 @@ import "dotenv/config";
 
 import { createHash } from "node:crypto";
 
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { createMcpTestApp } from "@/api/routes/mcp/mcp.fixture";
 import { createAuthorizationCode } from "@/api/auth/mcp";
 import { createApp } from "@/api/app";
+import type { AppType } from "@/api/typed-app";
 import { db, schema } from "@/lib/database/client";
 import { testClient } from "hono/testing";
 
@@ -46,7 +47,7 @@ vi.mock("@/api/auth/workos-session", async (importOriginal) => {
 
 const apiApp = createApp();
 const mcpApp = createMcpTestApp();
-const client = testClient(apiApp);
+const client = testClient<AppType>(apiApp);
 const projectFixture = createProjectTestFixture(client);
 const teamFixture = createTeamTestFixture(client);
 
@@ -318,10 +319,241 @@ describe("MCP team-scoped access", () => {
     ]);
     expect(issuesBody.issues.map((issue) => issue.id)).not.toContain(betaIssue.id);
 
+    const accessibleIssueResponse = await callMcpTool(accessToken, "get_issue", {
+      projectId: alphaProjectBody.project.id,
+      issueId: alphaIssue.id,
+    });
+
+    expect(accessibleIssueResponse.status).toBe(200);
+
+    const accessibleIssueResponseBody = await accessibleIssueResponse.json();
+
+    expect(parseToolResultText(accessibleIssueResponseBody)).toMatchObject({
+      issue: {
+        id: alphaIssue.id,
+        title: "Accessible team issue",
+      },
+    });
+
+    const inaccessibleLookups = [
+      {
+        label: "missing issue",
+        projectId: alphaProjectBody.project.id,
+        issueId: "00000000-0000-4000-8000-000000000999",
+      },
+      {
+        label: "wrong project",
+        projectId: alphaProjectBody.project.id,
+        issueId: betaIssue.id,
+      },
+      {
+        label: "wrong team",
+        projectId: betaProjectBody.project.id,
+        issueId: betaIssue.id,
+      },
+      {
+        label: "wrong organization",
+        projectId: externalProject.id,
+        issueId: externalIssue.id,
+      },
+    ];
+
+    for (const lookup of inaccessibleLookups) {
+      const response = await callMcpTool(accessToken, "get_issue", {
+        projectId: lookup.projectId,
+        issueId: lookup.issueId,
+      });
+
+      expect(response.status, lookup.label).toBe(200);
+
+      const responseBody = await response.json();
+
+      expect(
+        (responseBody as { result?: { isError?: boolean } }).result?.isError,
+        lookup.label,
+      ).toBe(true);
+
+      expect(parseToolResultText(responseBody), lookup.label).toMatchObject({
+        error: "issue_not_found",
+      });
+    }
+
     expect(getDeniedResponse.status).toBe(200);
     const getDeniedBody = parseToolResultText(await getDeniedResponse.json()) as {
       project: { id: string } | null;
     };
     expect(getDeniedBody.project).toBeNull();
+
+    const createDeniedResponse = await callMcpTool(accessToken, "create_issue", {
+      projectId: alphaProjectBody.project.id,
+      title: "Member must not create this issue",
+      idempotencyKey: "member-denied",
+    });
+
+    expect(createDeniedResponse.status).toBe(200);
+
+    const createDeniedBody = parseToolResultText(await createDeniedResponse.json()) as {
+      error: string;
+    };
+
+    expect(createDeniedBody).toMatchObject({
+      error: "forbidden",
+    });
+
+    const updateDeniedResponse = await callMcpTool(accessToken, "update_issue", {
+      projectId: alphaProjectBody.project.id,
+      issueId: alphaIssue.id,
+      title: "Member must not update this issue",
+    });
+
+    expect(updateDeniedResponse.status).toBe(200);
+
+    const updateDeniedBody = await updateDeniedResponse.json();
+
+    expect((updateDeniedBody as { result?: { isError?: boolean } }).result?.isError).toBe(true);
+
+    expect(parseToolResultText(updateDeniedBody)).toMatchObject({
+      error: "forbidden",
+    });
+
+    const deniedIssues = await db
+      .select({ id: schema.issueSheetIssues.id })
+      .from(schema.issueSheetIssues)
+      .where(
+        and(
+          eq(schema.issueSheetIssues.projectId, alphaProjectBody.project.id),
+          eq(schema.issueSheetIssues.externalRef, "mcp:member-denied"),
+        ),
+      );
+
+    expect(deniedIssues).toHaveLength(0);
+
+    await db
+      .update(schema.organizationMemberships)
+      .set({ role: "translator" })
+      .where(
+        and(
+          eq(
+            schema.organizationMemberships.organizationId,
+            memberAuth.organization.localOrganizationId,
+          ),
+          eq(schema.organizationMemberships.userId, memberAuth.user.localUserId),
+        ),
+      );
+
+    const updateAllowedResponse = await callMcpTool(accessToken, "update_issue", {
+      projectId: alphaProjectBody.project.id,
+      issueId: alphaIssue.id,
+      title: "Updated by Team Alpha translator",
+    });
+
+    expect(updateAllowedResponse.status).toBe(200);
+
+    expect(parseToolResultText(await updateAllowedResponse.json())).toMatchObject({
+      outcome: "updated",
+      issue: {
+        id: alphaIssue.id,
+        title: "Updated by Team Alpha translator",
+      },
+    });
+
+    const inaccessibleUpdates = [
+      {
+        label: "wrong team",
+        projectId: betaProjectBody.project.id,
+        issueId: betaIssue.id,
+      },
+      {
+        label: "wrong organization",
+        projectId: externalProject.id,
+        issueId: externalIssue.id,
+      },
+    ];
+
+    for (const update of inaccessibleUpdates) {
+      const response = await callMcpTool(accessToken, "update_issue", {
+        projectId: update.projectId,
+        issueId: update.issueId,
+        title: "Must not be updated",
+      });
+
+      expect(response.status, update.label).toBe(200);
+
+      const responseBody = await response.json();
+
+      expect(
+        (responseBody as { result?: { isError?: boolean } }).result?.isError,
+        update.label,
+      ).toBe(true);
+
+      expect(parseToolResultText(responseBody), update.label).toMatchObject({
+        error: "issue_not_found",
+      });
+    }
+
+    const createAllowedResponse = await callMcpTool(accessToken, "create_issue", {
+      projectId: alphaProjectBody.project.id,
+      title: "Translator can create in Team Alpha",
+      idempotencyKey: "translator-alpha",
+    });
+
+    expect(createAllowedResponse.status).toBe(200);
+
+    const createAllowedBody = parseToolResultText(await createAllowedResponse.json()) as {
+      id: string;
+      projectId: string;
+    };
+
+    expect(createAllowedBody).toMatchObject({
+      projectId: alphaProjectBody.project.id,
+    });
+
+    const crossTeamResponse = await callMcpTool(accessToken, "create_issue", {
+      projectId: betaProjectBody.project.id,
+      title: "Must not create in Team Beta",
+      idempotencyKey: "translator-beta",
+    });
+
+    expect(crossTeamResponse.status).toBe(200);
+
+    expect(parseToolResultText(await crossTeamResponse.json())).toMatchObject({
+      error: "project_not_found",
+    });
+
+    const crossOrganizationResponse = await callMcpTool(accessToken, "create_issue", {
+      projectId: externalProject.id,
+      title: "Must not create in another organization",
+      idempotencyKey: "translator-external",
+    });
+
+    expect(crossOrganizationResponse.status).toBe(200);
+
+    expect(parseToolResultText(await crossOrganizationResponse.json())).toMatchObject({
+      error: "project_not_found",
+    });
+
+    const createdMcpIssues = await db
+      .select({
+        projectId: schema.issueSheetIssues.projectId,
+        externalRef: schema.issueSheetIssues.externalRef,
+      })
+      .from(schema.issueSheetIssues)
+      .where(
+        and(
+          eq(schema.issueSheetIssues.organizationId, memberAuth.organization.localOrganizationId),
+          inArray(schema.issueSheetIssues.externalRef, [
+            "mcp:translator-alpha",
+            "mcp:translator-beta",
+            "mcp:translator-external",
+          ]),
+        ),
+      );
+
+    expect(createdMcpIssues).toEqual([
+      {
+        projectId: alphaProjectBody.project.id,
+        externalRef: "mcp:translator-alpha",
+      },
+    ]);
   });
 });

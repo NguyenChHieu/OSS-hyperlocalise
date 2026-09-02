@@ -1005,9 +1005,9 @@ export const contentEditorEditorPanelMessages = defineMessages({
     description: "Button to look up repository context for the current string",
   },
   addToIssueSheet: {
-    defaultMessage: "Issues",
-    id: "IA5Kmwt4uK",
-    description: "Button to open linked Issues for the current CAT segment",
+    defaultMessage: "Board",
+    id: "KCIvL0TJB4",
+    description: "Button to open the Board for the current CAT segment",
   },
   refreshContextTitle: {
     defaultMessage: "Re-run repository context lookup for this string",

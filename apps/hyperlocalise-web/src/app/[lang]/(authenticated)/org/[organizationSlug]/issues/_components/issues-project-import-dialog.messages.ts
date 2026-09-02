@@ -21,13 +21,13 @@ export const issuesProjectImportDialogMessages = defineMessages({
     description: "Title of the workspace issues CSV import project picker dialog",
   },
   description: {
-    defaultMessage: "Choose which project should receive the imported Issue Sheet rows.",
-    id: "mL4jmlzo/F",
+    defaultMessage: "Choose which project should receive the imported board rows.",
+    id: "D1Wfd509ws",
     description: "Description of the workspace issues CSV import project picker dialog",
   },
   emptyProjects: {
-    defaultMessage: "Create a project first, then import issues into its Issue Sheet.",
-    id: "ipVFcJ8AtN",
+    defaultMessage: "Create a project first, then import issues into its board.",
+    id: "l+RVkhyT2N",
     description: "Empty state when there are no projects to import issues into",
   },
   cancel: {

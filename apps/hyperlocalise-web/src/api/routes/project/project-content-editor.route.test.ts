@@ -20,6 +20,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 import { and, eq } from "drizzle-orm";
 
 import { app } from "@/api/app";
+import type { AppType } from "@/api/typed-app";
 import { PRODUCT_USAGE_ANALYTICS_EVENTS } from "@/lib/analytics/events";
 import { serverAnalytics } from "@/lib/analytics/server";
 import { db, schema } from "@/lib/database/client";
@@ -140,7 +141,7 @@ vi.mock("@/api/auth/workos-session", async (importOriginal) => {
   };
 });
 
-const client = testClient(app);
+const client = testClient<AppType>(app);
 const projectFixture = createProjectTestFixture(client);
 const teamFixture = createTeamTestFixture(client);
 
@@ -3101,5 +3102,91 @@ describe("project file CAT routes", () => {
     expect(translatorBody.contentEditorQueue.contributorTeams).toEqual([
       expect.objectContaining({ id: alphaTeam.id, name: "CAT Alpha" }),
     ]);
+  });
+
+  it("wires attached team glossaries onto the native CAT queue", async () => {
+    const admin = projectFixture.createWorkosIdentityWithRole("admin");
+    const organizationSlug = admin.organization.slug ?? "missing-slug";
+    const adminHeaders = await projectFixture.authHeadersFor(admin);
+
+    const teamResponse = await teamFixture.createTeamViaApi(admin, { name: "Glossary Team" });
+    expect(teamResponse.status).toBe(201);
+    const team = ((await teamResponse.json()) as TeamResponse).team;
+
+    const projectResponse = await client.api.orgs[":organizationSlug"].projects.$post(
+      {
+        param: { organizationSlug },
+        json: {
+          name: "CAT Glossary Project",
+          teamId: team.id,
+          sourceLocale: "en-US",
+          targetLocales: ["fr-FR"],
+        },
+      },
+      { headers: adminHeaders },
+    );
+    expect(projectResponse.status).toBe(201);
+    const project = ((await projectResponse.json()) as { project: { id: string } }).project;
+    const organizationId = globalThis.__testApiAuthContext!.organization.localOrganizationId;
+
+    const glossaryResponse = await client.api.orgs[":organizationSlug"].glossaries.$post(
+      {
+        param: { organizationSlug },
+        json: {
+          name: "Product team terms",
+          sourceLocale: "en-US",
+          controlLevel: "team",
+          projectIds: [project.id],
+        },
+      },
+      { headers: adminHeaders },
+    );
+    expect(glossaryResponse.status).toBe(201);
+    const glossary = ((await glossaryResponse.json()) as { glossary: { id: string } }).glossary;
+
+    // Org-controlled glossary must not appear in teamGlossaries.
+    const orgGlossaryResponse = await client.api.orgs[":organizationSlug"].glossaries.$post(
+      {
+        param: { organizationSlug },
+        json: {
+          name: "Org terms",
+          sourceLocale: "en-US",
+          controlLevel: "org",
+          projectIds: [project.id],
+        },
+      },
+      { headers: adminHeaders },
+    );
+    expect(orgGlossaryResponse.status).toBe(201);
+
+    const sourcePath = "locales/en.json";
+    const sourceFile = await ensureRepositorySourceFile({
+      organizationId,
+      projectId: project.id,
+      sourcePath,
+    });
+    await upsertProjectTranslationKeysFromEntries({
+      organizationId,
+      projectId: project.id,
+      repositorySourceFileId: sourceFile.id,
+      entries: [{ key: "greeting", text: "Hello", context: null }],
+    });
+
+    const queueResponse = await client.api.orgs[":organizationSlug"].projects[
+      ":projectId"
+    ].files.detail.cat.queue.$get(
+      {
+        param: { organizationSlug, projectId: project.id },
+        query: { sourcePath, targetLocale: "fr-FR" },
+      },
+      { headers: adminHeaders },
+    );
+    expect(queueResponse.status).toBe(200);
+    const body = (await queueResponse.json()) as ProjectFileContentEditorQueueResponse;
+    expect(body.contentEditorQueue.teamGlossaries).toEqual([
+      { id: glossary.id, name: "Product team terms", teamId: team.id },
+    ]);
+    expect(body.contentEditorQueue.projectTeamId).toBe(team.id);
+    expect(body.contentEditorQueue.canContributeTeamGlossary).toBe(true);
   });
 });

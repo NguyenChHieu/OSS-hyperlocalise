@@ -29,6 +29,7 @@ import type { TranslationJobEventData } from "@/lib/workflow/types";
 import {
   claimTranslationJobStep,
   completeFileTranslationJobStep,
+  ensureAiFeaturesAllowedStep,
   failTranslationJobStep,
   getProjectOrganizationStep,
   getStoredFileContentStep,
@@ -596,6 +597,18 @@ export async function fileTranslationJobWorkflow(event: TranslationJobEventData)
       message: `project ${claim.job.projectId} not found`,
     });
     throw new Error("project not found");
+  }
+
+  const aiFeatures = await ensureAiFeaturesAllowedStep({ organizationId });
+  if (!aiFeatures.ok) {
+    await failTranslationJobStep({
+      jobId: claim.job.id,
+      projectId: claim.job.projectId,
+      workflowRunId: claim.job.workflowRunId,
+      code: aiFeatures.error.code,
+      message: aiFeatures.error.message,
+    });
+    return { status: "failed" as const, reason: aiFeatures.error.code };
   }
 
   if (isOfficeTranslationFileFormat(parsedInput.fileFormat as SupportedTranslationFileFormat)) {

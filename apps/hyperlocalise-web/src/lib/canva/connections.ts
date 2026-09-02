@@ -12,7 +12,7 @@
  */
 import { and, desc, eq, isNull } from "drizzle-orm";
 
-import { db, schema } from "@/lib/database/client";
+import { db, schema, type DatabaseClient } from "@/lib/database/client";
 
 import {
   generateCanvaConnectionToken,
@@ -93,6 +93,67 @@ async function assertProjectBelongsToOrganization(input: {
   }
 }
 
+export async function getCanvaConnectionSession(input: {
+  organizationId: string;
+  connectionId: string;
+  projectId: string;
+}) {
+  const connection = await getCanvaConnection({
+    organizationId: input.organizationId,
+    connectionId: input.connectionId,
+  });
+
+  const [organization] = await db
+    .select({
+      id: schema.organizations.id,
+      name: schema.organizations.name,
+      slug: schema.organizations.slug,
+    })
+    .from(schema.organizations)
+    .where(eq(schema.organizations.id, input.organizationId))
+    .limit(1);
+
+  const [project] = await db
+    .select({
+      id: schema.projects.id,
+      name: schema.projects.name,
+      sourceLocale: schema.projects.sourceLocale,
+      targetLocales: schema.projects.targetLocales,
+    })
+    .from(schema.projects)
+    .where(
+      and(
+        eq(schema.projects.id, input.projectId),
+        eq(schema.projects.organizationId, input.organizationId),
+      ),
+    )
+    .limit(1);
+
+  if (!connection || !organization || !project) {
+    throw new Error("canva_session_not_found");
+  }
+
+  return {
+    organization: {
+      id: organization.id,
+      name: organization.name,
+      slug: organization.slug ?? null,
+    },
+    project: {
+      id: project.id,
+      name: project.name,
+      sourceLocale: project.sourceLocale ?? "en",
+      targetLocales: project.targetLocales ?? [],
+    },
+    connection: {
+      id: connection.id,
+      displayName: connection.displayName,
+      sourceLocale: connection.sourceLocale,
+      targetLocales: connection.targetLocales,
+    },
+  };
+}
+
 export async function listCanvaConnections(input: {
   organizationId: string;
 }): Promise<CanvaConnectionSummary[]> {
@@ -108,8 +169,10 @@ export async function listCanvaConnections(input: {
 export async function getCanvaConnection(input: {
   organizationId: string;
   connectionId: string;
+  database?: DatabaseClient;
 }): Promise<CanvaConnectionSummary | null> {
-  const [connection] = await db
+  const database = input.database ?? db;
+  const [connection] = await database
     .select()
     .from(schema.canvaConnections)
     .where(
@@ -246,17 +309,20 @@ export async function regenerateCanvaConnectionToken(input: {
   organizationId: string;
   userId: string;
   connectionId: string;
+  database?: DatabaseClient;
 }): Promise<CanvaConnectionSecretResult | null> {
+  const database = input.database ?? db;
   const existing = await getCanvaConnection({
     organizationId: input.organizationId,
     connectionId: input.connectionId,
+    database,
   });
   if (!existing) {
     return null;
   }
 
   const connectionToken = generateCanvaConnectionToken();
-  const [connection] = await db
+  const [connection] = await database
     .update(schema.canvaConnections)
     .set({
       connectionTokenHash: hashCanvaConnectionToken(connectionToken),

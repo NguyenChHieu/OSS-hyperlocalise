@@ -48,12 +48,19 @@ import type {
   inboxItems,
   interactionRepositorySessions,
   interactionMessages,
+  slackConnectInvites,
   connectors,
   tmsLinks,
+  glossaryImportRuns,
+  glossaryImportReportEntries,
 } from "@/lib/database/schema";
 
 export type Glossary = typeof glossaries.$inferSelect;
 export type NewGlossary = typeof glossaries.$inferInsert;
+export type GlossaryImportRun = typeof glossaryImportRuns.$inferSelect;
+export type NewGlossaryImportRun = typeof glossaryImportRuns.$inferInsert;
+export type GlossaryImportReportEntry = typeof glossaryImportReportEntries.$inferSelect;
+export type NewGlossaryImportReportEntry = typeof glossaryImportReportEntries.$inferInsert;
 
 export type Memory = typeof memories.$inferSelect;
 export type NewMemory = typeof memories.$inferInsert;
@@ -121,6 +128,8 @@ export type InteractionRepositorySession = typeof interactionRepositorySessions.
 export type NewInteractionRepositorySession = typeof interactionRepositorySessions.$inferInsert;
 export type InteractionMessage = typeof interactionMessages.$inferSelect;
 export type NewInteractionMessage = typeof interactionMessages.$inferInsert;
+export type SlackConnectInvite = typeof slackConnectInvites.$inferSelect;
+export type NewSlackConnectInvite = typeof slackConnectInvites.$inferInsert;
 export type Connector = typeof connectors.$inferSelect;
 export type NewConnector = typeof connectors.$inferInsert;
 export type TmsLink = typeof tmsLinks.$inferSelect;

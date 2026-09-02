@@ -19,6 +19,7 @@ import { bodyLimit } from "hono/body-limit";
 import { validator } from "hono/validator";
 
 import { workosAuthMiddleware, type ApiAuthContext, type AuthVariables } from "@/api/auth/workos";
+import { rejectIfAiFeaturesUnavailable } from "@/api/billing/ai-features-response";
 import {
   badRequestResponse,
   conflictResponse,
@@ -46,6 +47,7 @@ import { PRODUCT_USAGE_ANALYTICS_EVENTS } from "@/lib/analytics/events";
 import { serverAnalytics } from "@/lib/analytics/server";
 import { isReleaseContentEditorAllFilesEnabled } from "@/lib/flags/release-flags";
 import { createLogger } from "@/lib/log";
+import { ensureDefaultNativeProjectMemory } from "@/lib/memory/ensure-default-native-project-memory";
 import {
   insertWithAllocatedProjectIdentifier,
   isProjectIdentifierTaken,
@@ -368,8 +370,8 @@ const projectStore: ProjectStore = {
       organizationId: auth.organization.localOrganizationId,
       name: payload.name,
       database,
-      insert: (identifier, attemptDb) =>
-        attemptDb
+      insert: async (identifier, attemptDb) => {
+        const created = await attemptDb
           .insert(schema.projects)
           .values({
             id: `project_${randomUUID()}`,
@@ -384,7 +386,19 @@ const projectStore: ProjectStore = {
             sourceLocale: payload.sourceLocale,
             targetLocales: payload.targetLocales,
           })
-          .returning(),
+          .returning();
+        const createdProject = created[0];
+        if (createdProject) {
+          await ensureDefaultNativeProjectMemory({
+            organizationId: auth.organization.localOrganizationId,
+            projectId: createdProject.id,
+            projectName: createdProject.name,
+            createdByUserId: auth.user.localUserId,
+            database: attemptDb,
+          });
+        }
+        return created;
+      },
     });
 
     // Creators without teams:write only see projects on teams they belong to.
@@ -1751,6 +1765,14 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
           return projectForbiddenResponse(c);
         }
 
+        const aiFeaturesDenied = await rejectIfAiFeaturesUnavailable(
+          c,
+          c.var.auth.organization.localOrganizationId,
+        );
+        if (aiFeaturesDenied) {
+          return aiFeaturesDenied;
+        }
+
         const params = c.req.valid("param");
         const body = c.req.valid("json");
         const target = await resolveProjectResourceTarget(c.var.auth, params.projectId);
@@ -1797,6 +1819,12 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         });
 
         if (isErr(result)) {
+          if (result.error.code === "ai_features_check_failed") {
+            return serviceUnavailableResponse(c, result.error.code, result.error.message);
+          }
+          if (result.error.code === "ai_features_required") {
+            return sharedForbiddenResponse(c, result.error.code, result.error.message);
+          }
           return badRequestResponse(c, result.error.code, result.error.message);
         }
 
@@ -2043,6 +2071,14 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
       async (c) => {
         if (!isAiActionAllowed(c.var.auth.membership.role)) {
           return projectForbiddenResponse(c);
+        }
+
+        const aiFeaturesDenied = await rejectIfAiFeaturesUnavailable(
+          c,
+          c.var.auth.organization.localOrganizationId,
+        );
+        if (aiFeaturesDenied) {
+          return aiFeaturesDenied;
         }
 
         const params = c.req.valid("param");
@@ -3000,6 +3036,16 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
 
         if (!isAiActionAllowed(c.var.auth.membership.role)) {
           return projectForbiddenResponse(c);
+        }
+
+        if (!body.cachedOnly) {
+          const aiFeaturesDenied = await rejectIfAiFeaturesUnavailable(
+            c,
+            c.var.auth.organization.localOrganizationId,
+          );
+          if (aiFeaturesDenied) {
+            return aiFeaturesDenied;
+          }
         }
 
         const target = await resolveProjectResourceTarget(c.var.auth, params.projectId);

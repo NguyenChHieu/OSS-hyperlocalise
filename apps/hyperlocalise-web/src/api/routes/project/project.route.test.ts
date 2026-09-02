@@ -19,6 +19,7 @@ import { testClient } from "hono/testing";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vite-plus/test";
 
 import { app } from "@/api/app";
+import type { AppType } from "@/api/typed-app";
 import { db, schema } from "@/lib/database/client";
 import { upsertOrganizationExternalTmsProviderCredential } from "@/lib/providers/credentials/organization-external-tms-provider-credentials";
 import { encodeProviderProjectId } from "@/lib/providers/jobs/tms-provider-resource-id";
@@ -73,7 +74,7 @@ vi.mock("@/lib/providers/jobs/tms-provider-live", async (importOriginal) => {
   };
 });
 
-const client = testClient(app);
+const client = testClient<AppType>(app);
 const projectFixture = createProjectTestFixture(client);
 
 beforeAll(async () => {
@@ -850,6 +851,51 @@ describe("project identifier uniqueness", () => {
       name: "Provider Name",
       description: "Provider description",
       translationContext: "Provider context",
+    });
+  });
+});
+
+describe("native project default translation memory", () => {
+  it("creates and attaches a default translation memory", async () => {
+    const admin = projectFixture.createWorkosIdentityWithRole("admin");
+    const headers = await projectFixture.authHeadersFor(admin);
+    const organizationSlug = admin.organization.slug ?? "missing-slug";
+    const team = await ensureDefaultWorkspaceTeam(
+      globalThis.__testApiAuthContext!.organization.localOrganizationId,
+    );
+
+    const projectResponse = await client.api.orgs[":organizationSlug"].projects.$post(
+      {
+        param: { organizationSlug },
+        json: {
+          name: "Default TM Project",
+          teamId: team.id,
+          sourceLocale: "en-US",
+          targetLocales: ["es-ES"],
+        },
+      },
+      { headers },
+    );
+
+    expect(projectResponse.status).toBe(201);
+    const project = ((await projectResponse.json()) as ProjectResponse).project;
+
+    const attachments = await db
+      .select({
+        memoryId: schema.projectMemories.memoryId,
+        priority: schema.projectMemories.priority,
+      })
+      .from(schema.projectMemories)
+      .where(eq(schema.projectMemories.projectId, project.id));
+    expect(attachments).toEqual([expect.objectContaining({ priority: 0 })]);
+
+    const [memory] = await db
+      .select({ name: schema.memories.name, source: schema.memories.source })
+      .from(schema.memories)
+      .where(eq(schema.memories.id, attachments[0]!.memoryId));
+    expect(memory).toMatchObject({
+      name: "Default TM Project",
+      source: "native",
     });
   });
 });

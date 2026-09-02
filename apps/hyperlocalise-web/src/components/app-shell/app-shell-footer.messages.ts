@@ -37,19 +37,19 @@ export const appShellFooterMessages = defineMessages({
     description: "Label for the glossary guidance button in the app shell footer",
   },
   issueGuidanceAriaLabel: {
-    defaultMessage: "Open issues",
-    id: "gyT9rFJB1u",
-    description: "Accessible label for the Issues button in the app shell footer",
+    defaultMessage: "Open board",
+    id: "HrspdhKQl+",
+    description: "Accessible label for the Board button in the app shell footer",
   },
   issueGuidanceAvailableAriaLabel: {
-    defaultMessage: "Open issues, {count} open",
-    id: "s7TZoJvKum",
-    description: "Accessible label for the Issues button when open issues are available",
+    defaultMessage: "Open board, {count} open",
+    id: "J2Tvcwc2sx",
+    description: "Accessible label for the Board button when open issues are available",
   },
   issueGuidanceLabel: {
-    defaultMessage: "Issues",
-    id: "hjub6GRZr4",
-    description: "Label for the Issues button in the app shell footer",
+    defaultMessage: "Board",
+    id: "dKznjRBgya",
+    description: "Label for the Board button in the app shell footer",
   },
   supportLabel: {
     defaultMessage: "Support",

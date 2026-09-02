@@ -38,6 +38,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { TypographyP } from "@/components/ui/typography";
 import { cn } from "@/lib/primitives/cn";
 
+import { OverviewConnectAgentCard } from "../../_components/overview/overview-connect-agent-card";
 import { OverviewHeroCard } from "../../_components/overview/overview-hero-card";
 import { OverviewSectionHeader } from "../../_components/overview/overview-section-header";
 import { formatRelativeTimestamp } from "../../_components/workspace-files-shared";
@@ -813,6 +814,7 @@ export function DashboardPageView({
   isAutomationsLoading = false,
   isAutomationsError = false,
   onNewRequest,
+  slackConnectBanner,
   renderLink = defaultRenderLink,
 }: {
   organizationSlug: string;
@@ -844,6 +846,7 @@ export function DashboardPageView({
   isAutomationsLoading?: boolean;
   isAutomationsError?: boolean;
   onNewRequest: () => void;
+  slackConnectBanner?: ReactNode;
   renderLink?: DashboardLinkRenderer;
 }) {
   const intl = useIntl();
@@ -860,6 +863,8 @@ export function DashboardPageView({
         title={intl.formatMessage(dashboardPageViewMessages.pageTitle)}
         description={intl.formatMessage(dashboardPageViewMessages.pageDescription)}
       />
+
+      {slackConnectBanner}
 
       <section className="grid gap-4 lg:grid-cols-2">
         {isHeroLoading ? (
@@ -907,6 +912,8 @@ export function DashboardPageView({
           </>
         )}
       </section>
+
+      <OverviewConnectAgentCard />
 
       <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
         <DashboardJobsPanel

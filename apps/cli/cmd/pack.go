@@ -116,6 +116,10 @@ func collectPackLocaleFilesFromConfig(options packOptions) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load config: %w", err)
 	}
+	configRoot, err := config.ConfigDirectory(options.configPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve config directory: %w", err)
+	}
 
 	locales, err := resolveStatusLocales(cfg, nil, options.group)
 	if err != nil {
@@ -136,17 +140,17 @@ func collectPackLocaleFilesFromConfig(options packOptions) ([]string, error) {
 		bucket := cfg.Buckets[bucketName]
 		for _, file := range bucket.Files {
 			sourcePattern := pathresolver.ResolveSourcePath(file.From, cfg.Locales.Source)
-			sourcePaths, err := resolveSourcePathsForStatus(sourcePattern)
+			sourcePaths, err := resolveSourcePathsForStatus(configRoot, sourcePattern)
 			if err != nil {
 				return nil, fmt.Errorf("resolve source paths for %q: %w", sourcePattern, err)
 			}
 			for _, sourcePath := range sourcePaths {
-				if shouldIgnoreSourcePathForStatus(sourcePath, cfg.Locales.Targets) {
+				if shouldIgnoreSourcePathForStatus(sourcePath, configRoot, cfg.Locales.Targets) {
 					continue
 				}
 				for _, locale := range locales {
 					targetPattern := pathresolver.ResolveTargetPath(file.To, cfg.Locales.Source, locale)
-					targetPath, err := resolveTargetPathForStatus(sourcePattern, targetPattern, sourcePath)
+					targetPath, err := resolveTargetPathForStatus(configRoot, sourcePattern, targetPattern, sourcePath)
 					if err != nil {
 						return nil, fmt.Errorf("resolve target path for source %q: %w", sourcePath, err)
 					}

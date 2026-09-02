@@ -37,7 +37,14 @@ Config lookup order:
 3. `.phrase.yml` in the current directory
 4. `$HOME/.phrase.yml`
 
-Access tokens come from `phrase.access_token` (literal or `$VAR` / `${VAR}`), then `PHRASE_ACCESS_TOKEN`, then `PHRASE_API_TOKEN`. Manual flag commands default `--token-env` to `PHRASE_API_TOKEN`. `--api-base-url` overrides `phrase.host`.
+In config mode, Hyperlocalise resolves the token in this order:
+
+1. `phrase.access_token` as a literal value, or as `$VAR` / `${VAR}` from that named environment variable
+2. `PHRASE_ACCESS_TOKEN`, then `PHRASE_API_TOKEN`, only when `phrase.access_token` is omitted or empty
+
+If `phrase.access_token` is an environment reference (`$VAR` / `${VAR}`), Hyperlocalise uses that variable only. An unset or empty reference does **not** fall through to `PHRASE_ACCESS_TOKEN` or `PHRASE_API_TOKEN`. Set the referenced variable, or omit `access_token` so the default env vars apply.
+
+Manual flag commands (and config mode when you pass `--token-env`) read `--token-env` (default `PHRASE_API_TOKEN`). If you set a custom `--token-env` and it is empty, Hyperlocalise then tries `PHRASE_API_TOKEN`. `--api-base-url` overrides `phrase.host`.
 
 `upload sources` and `download translations` use config mode when you pass `--config`, or when a config file resolves and you do not set `--project-id`, `--format`, or (for upload) `--file` / (for download) `--output`. `download sources`, `glossary download`, and `tm download` are flag-only.
 

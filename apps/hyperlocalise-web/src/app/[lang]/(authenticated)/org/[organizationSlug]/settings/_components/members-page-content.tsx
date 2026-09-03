@@ -12,6 +12,7 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
+import Link from "next/link";
 import { useState } from "react";
 import { Add01Icon, Delete01Icon, UserGroupIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
@@ -21,6 +22,8 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Column } from "@/components/ui/layout/column";
+import { Columns } from "@/components/ui/layout/columns";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Dialog,
@@ -313,17 +316,31 @@ export function MembersPageContent({ organizationSlug }: { organizationSlug: str
         title={intl.formatMessage(membersPageContentMessages.pageTitle)}
         description={intl.formatMessage(membersPageContentMessages.pageDescription)}
         actions={
-          canInvite ? (
-            <Button
-              type="button"
-              onClick={() => setIsInviteOpen(true)}
-              className="w-full sm:w-fit"
-              disabled={inviteMember.isPending}
-            >
-              <HugeiconsIcon icon={Add01Icon} strokeWidth={1.8} />
-              <FormattedMessage {...membersPageContentMessages.inviteMember} />
-            </Button>
-          ) : null
+          <Columns spacing="1u" alignY="center" collapseBelow="small">
+            <Column width="containedContent">
+              <Button
+                nativeButton={false}
+                variant="ghost"
+                render={<Link href={`/org/${organizationSlug}/members/permissions`} />}
+                className="w-full sm:w-fit"
+              >
+                <FormattedMessage {...membersPageContentMessages.rolePermissions} />
+              </Button>
+            </Column>
+            {canInvite ? (
+              <Column width="containedContent">
+                <Button
+                  type="button"
+                  onClick={() => setIsInviteOpen(true)}
+                  className="w-full sm:w-fit"
+                  disabled={inviteMember.isPending}
+                >
+                  <HugeiconsIcon icon={Add01Icon} strokeWidth={1.8} />
+                  <FormattedMessage {...membersPageContentMessages.inviteMember} />
+                </Button>
+              </Column>
+            ) : null}
+          </Columns>
         }
       />
 

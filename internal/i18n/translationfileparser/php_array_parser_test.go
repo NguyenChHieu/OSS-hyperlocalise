@@ -162,6 +162,7 @@ func TestPHPArrayParserDecodesDoubleQuotedOctalEscapes(t *testing.T) {
 	content := []byte(`<?php return [
     'letter' => "\101",
     'newline' => "\12",
+    'max_byte' => "\377",
 ];`)
 
 	got, err := (PHPArrayParser{}).Parse(content)
@@ -173,6 +174,9 @@ func TestPHPArrayParserDecodesDoubleQuotedOctalEscapes(t *testing.T) {
 	}
 	if got["newline"] != "\n" {
 		t.Fatalf("newline = %q, want newline", got["newline"])
+	}
+	if got["max_byte"] != "\xff" {
+		t.Fatalf("max_byte = %q, want 0xff", got["max_byte"])
 	}
 }
 

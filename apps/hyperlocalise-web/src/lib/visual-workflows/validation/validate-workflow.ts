@@ -11,6 +11,13 @@
  * Version 2.0 or later.
  */
 import { isTriggerType } from "../catalog/node-catalog";
+import {
+  getVisualWorkflowTriggerNode,
+  validateVisualWorkflowTriggerConfig,
+} from "../dispatch/trigger-matching";
+import { buildVisualWorkflowGraphIndex } from "../runtime/graph-index";
+import { findForEachLoopRegion } from "../runtime/loop-region";
+import { visualWorkflowDefinitionSchema } from "../schema/definition-schema";
 import type {
   VisualWorkflowDefinition,
   VisualWorkflowRfEdge,
@@ -75,6 +82,38 @@ export function validateVisualWorkflowGraph(
   return issues;
 }
 
+function collectSchemaConfigIssues(
+  definition: VisualWorkflowDefinition,
+): VisualWorkflowValidationIssue[] {
+  const parsed = visualWorkflowDefinitionSchema.safeParse(definition);
+  if (parsed.success) {
+    return [];
+  }
+
+  const issues: VisualWorkflowValidationIssue[] = [];
+  const seenNodeIds = new Set<string>();
+
+  for (const issue of parsed.error.issues) {
+    const nodeIndex =
+      issue.path[0] === "nodes" && typeof issue.path[1] === "number" ? issue.path[1] : null;
+    const node = nodeIndex !== null ? definition.nodes[nodeIndex] : undefined;
+    const nodeId = node?.id;
+    if (nodeId && seenNodeIds.has(nodeId)) {
+      continue;
+    }
+    if (nodeId) {
+      seenNodeIds.add(nodeId);
+    }
+
+    issues.push({
+      code: node && isTriggerType(node.type) ? "invalid_trigger_config" : "invalid_node_config",
+      nodeId,
+    });
+  }
+
+  return issues;
+}
+
 export function validateVisualWorkflowDefinition(
   definition: VisualWorkflowDefinition,
 ): VisualWorkflowValidationIssue[] {
@@ -97,7 +136,41 @@ export function validateVisualWorkflowDefinition(
     targetHandle: edge.targetHandle,
   }));
 
-  return validateVisualWorkflowGraph(nodes, edges);
+  const issues = validateVisualWorkflowGraph(nodes, edges);
+  const graph = buildVisualWorkflowGraphIndex(definition);
+  if (graph) {
+    for (const node of definition.nodes) {
+      if (node.type !== "logic.for_each") {
+        continue;
+      }
+
+      const { bodyNodeIds } = findForEachLoopRegion({
+        graph,
+        forEachNodeId: node.id,
+      });
+      for (const bodyNodeId of bodyNodeIds) {
+        const bodyNode = graph.nodesById.get(bodyNodeId);
+        if (bodyNode?.type === "logic.for_each") {
+          issues.push({ code: "nested_for_each", nodeId: bodyNodeId });
+        }
+      }
+    }
+  }
+
+  issues.push(...collectSchemaConfigIssues(definition));
+
+  const trigger = getVisualWorkflowTriggerNode(definition);
+  if (trigger) {
+    const triggerValidation = validateVisualWorkflowTriggerConfig(trigger.config);
+    const hasTriggerConfigIssue = issues.some(
+      (issue) => issue.nodeId === trigger.id && issue.code === "invalid_trigger_config",
+    );
+    if (!triggerValidation.ok && !hasTriggerConfigIssue) {
+      issues.push({ code: "invalid_trigger_config", nodeId: trigger.id });
+    }
+  }
+
+  return issues;
 }
 
 /** @deprecated Use validateVisualWorkflowGraph */

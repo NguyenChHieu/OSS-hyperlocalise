@@ -13,6 +13,7 @@
  * Version 2.0 or later.
  */
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMutation } from "@tanstack/react-query";
 import { FormattedMessage } from "react-intl";
 import { toast } from "sonner";
@@ -37,24 +38,61 @@ export function VisualWorkflowEditorPageContent({
   workflow: VisualWorkflowRecord;
   visualWorkflowsApi?: VisualWorkflowsApi;
 }) {
+  const router = useRouter();
   const editorState = fromVisualWorkflowDefinition({
     ...workflow.definition,
     name: workflow.name,
   });
 
-  const saveMutation = useMutation({
-    mutationFn: (definition: VisualWorkflowDefinition) =>
+  const persistMutation = useMutation({
+    mutationFn: (input: {
+      definition: VisualWorkflowDefinition;
+      status?: VisualWorkflowRecord["status"];
+    }) =>
       injectedApi.updateVisualWorkflow(organizationSlug, workflow.id, {
-        name: definition.name,
-        definition,
+        name: input.definition.name,
+        definition: input.definition,
+        ...(input.status ? { status: input.status } : {}),
       }),
-    onSuccess: () => {
-      toast.success(<FormattedMessage {...visualWorkflowEditorMessages.saved} />);
-    },
-    onError: () => {
-      toast.error(<FormattedMessage {...visualWorkflowEditorMessages.saveFailed} />);
-    },
   });
+
+  const saveMutation = {
+    ...persistMutation,
+    mutate: (definition: VisualWorkflowDefinition) => {
+      persistMutation.mutate(
+        { definition },
+        {
+          onSuccess: () => {
+            toast.success(<FormattedMessage {...visualWorkflowEditorMessages.saved} />);
+          },
+          onError: () => {
+            toast.error(<FormattedMessage {...visualWorkflowEditorMessages.saveFailed} />);
+          },
+        },
+      );
+    },
+    mutateAsync: persistMutation.mutateAsync,
+    isPending: persistMutation.isPending,
+  };
+
+  const handleStatusChange = async (active: boolean, definition: VisualWorkflowDefinition) => {
+    try {
+      await persistMutation.mutateAsync({
+        definition,
+        status: active ? "active" : "paused",
+      });
+      router.refresh();
+      toast.success(
+        active ? (
+          <FormattedMessage {...visualWorkflowEditorMessages.activated} />
+        ) : (
+          <FormattedMessage {...visualWorkflowEditorMessages.paused} />
+        ),
+      );
+    } catch {
+      toast.error(<FormattedMessage {...visualWorkflowEditorMessages.activateFailed} />);
+    }
+  };
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] min-h-0 flex-col">
@@ -81,7 +119,10 @@ export function VisualWorkflowEditorPageContent({
         organizationSlug={organizationSlug}
         visualWorkflowId={workflow.id}
         visualWorkflowsApi={injectedApi}
-        onPersistBeforeTest={(definition) => saveMutation.mutateAsync(definition)}
+        onPersistBeforeTest={(definition) => saveMutation.mutateAsync({ definition })}
+        workflowStatus={workflow.status}
+        onStatusChange={handleStatusChange}
+        statusUpdating={saveMutation.isPending}
       />
     </div>
   );

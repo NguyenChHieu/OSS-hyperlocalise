@@ -23,6 +23,7 @@ import {
   selectNextEdges,
   type VisualWorkflowGraphIndex,
 } from "./graph-index";
+import { findForEachLoopRegion, incomingEdgesForNode, sortLoopBodyNodes } from "./loop-region";
 
 export type VisualWorkflowInterpreterNodeUpdate = {
   nodeId: string;
@@ -115,6 +116,192 @@ function releaseSkippedOutgoingEdge(input: {
   });
 }
 
+type RunNodeResult =
+  | { ok: true; branchResult?: boolean; nodeType: string; executedNodeIds?: string[] }
+  | { ok: false; error: Record<string, unknown> };
+
+function clearLoopBodyState(input: {
+  context: VisualWorkflowExecutionContext;
+  nodeResults: Record<string, Record<string, unknown>>;
+  bodyNodeIds: readonly string[];
+}) {
+  for (const bodyNodeId of input.bodyNodeIds) {
+    delete input.context.nodes[bodyNodeId];
+    delete input.nodeResults[bodyNodeId];
+  }
+}
+
+async function runScopedSubgraph(input: {
+  graph: VisualWorkflowGraphIndex;
+  nodeIds: readonly string[];
+  runNode: (nodeId: string) => Promise<RunNodeResult>;
+  runScopedNode: (nodeId: string) => Promise<RunNodeResult>;
+}): Promise<
+  | { ok: true; lastCompletedNodeId?: string }
+  | { ok: false; failedNodeId: string; error: Record<string, unknown> }
+> {
+  const scope = new Set(input.nodeIds);
+  const pendingIncoming = new Map<string, number>();
+  const completed = new Set<string>();
+  const skipped = new Set<string>();
+  const queue: string[] = [];
+  let lastCompletedNodeId: string | undefined;
+
+  for (const nodeId of input.nodeIds) {
+    const incomingCount = incomingEdgesForNode(input.graph, nodeId).filter((edge) =>
+      scope.has(edge.source),
+    ).length;
+    pendingIncoming.set(nodeId, incomingCount);
+    if (incomingCount === 0) {
+      queue.push(nodeId);
+    }
+  }
+
+  while (queue.length > 0) {
+    const nodeId = queue.shift();
+    if (!nodeId || completed.has(nodeId) || skipped.has(nodeId)) {
+      continue;
+    }
+    completed.add(nodeId);
+
+    const execution = await input.runScopedNode(nodeId);
+    if (!execution.ok) {
+      return { ok: false, failedNodeId: nodeId, error: execution.error };
+    }
+    lastCompletedNodeId = nodeId;
+
+    const node = input.graph.nodesById.get(nodeId);
+    if (!node) {
+      continue;
+    }
+
+    const outgoing = input.graph.outgoingByNodeId.get(nodeId) ?? [];
+    const nextEdges = selectNextEdges({
+      nodeType: node.type,
+      branchResult: execution.branchResult ?? null,
+      outgoing,
+    });
+    const selectedEdgeIds = new Set(nextEdges.map((edge) => edge.id));
+
+    for (const edge of nextEdges) {
+      if (!scope.has(edge.target)) {
+        continue;
+      }
+      releasePredecessorEdge({
+        pendingIncoming,
+        queue,
+        targetNodeId: edge.target,
+      });
+    }
+
+    if (node.type === "logic.if") {
+      for (const edge of outgoing) {
+        if (selectedEdgeIds.has(edge.id) || !scope.has(edge.target)) {
+          continue;
+        }
+
+        releaseSkippedOutgoingEdge({
+          edge,
+          graph: input.graph,
+          completed,
+          skipped,
+          pendingIncoming,
+          queue,
+        });
+      }
+    }
+  }
+
+  return { ok: true, lastCompletedNodeId };
+}
+
+type ForEachExecutionContext = {
+  graph: VisualWorkflowGraphIndex;
+  context: VisualWorkflowExecutionContext;
+  nodeResults: Record<string, Record<string, unknown>>;
+  runNode: (nodeId: string) => Promise<RunNodeResult>;
+  executeForEachNode: (forEachNodeId: string) => Promise<RunNodeResult>;
+};
+
+async function executeForEachLoop(
+  input: ForEachExecutionContext & {
+    forEachNodeId: string;
+  },
+): Promise<RunNodeResult> {
+  const execution = await input.runNode(input.forEachNodeId);
+  if (!execution.ok) {
+    return execution;
+  }
+
+  const items = (input.nodeResults[input.forEachNodeId]?.items as unknown[]) ?? [];
+  const { bodyNodeIds } = findForEachLoopRegion({
+    graph: input.graph,
+    forEachNodeId: input.forEachNodeId,
+  });
+  const orderedBody = sortLoopBodyNodes(input.graph, input.forEachNodeId, bodyNodeIds);
+  const iterationOutputs: Record<string, unknown>[] = [];
+  const executedNodeIds = new Set<string>();
+
+  for (let index = 0; index < items.length; index += 1) {
+    setNodeOutput(input.context, input.forEachNodeId, {
+      ...input.nodeResults[input.forEachNodeId],
+      item: items[index],
+      index,
+    });
+
+    clearLoopBodyState({
+      context: input.context,
+      nodeResults: input.nodeResults,
+      bodyNodeIds: orderedBody,
+    });
+
+    const bodyResult = await runScopedSubgraph({
+      graph: input.graph,
+      nodeIds: orderedBody,
+      runNode: input.runNode,
+      runScopedNode: async (nodeId) => {
+        const node = input.graph.nodesById.get(nodeId);
+        if (node?.type === "logic.for_each") {
+          const nested = await input.executeForEachNode(nodeId);
+          if (nested.ok && nested.executedNodeIds) {
+            for (const executedNodeId of nested.executedNodeIds) {
+              executedNodeIds.add(executedNodeId);
+            }
+          }
+          return nested;
+        }
+
+        const result = await input.runNode(nodeId);
+        if (result.ok) {
+          executedNodeIds.add(nodeId);
+        }
+        return result;
+      },
+    });
+    if (!bodyResult.ok) {
+      return { ok: false, error: bodyResult.error };
+    }
+
+    const lastBodyNodeId = bodyResult.lastCompletedNodeId;
+    iterationOutputs.push(
+      lastBodyNodeId ? (input.nodeResults[lastBodyNodeId] ?? {}) : { item: items[index], index },
+    );
+  }
+
+  setNodeOutput(input.context, input.forEachNodeId, {
+    ...input.nodeResults[input.forEachNodeId],
+    iterationOutputs,
+  });
+  input.nodeResults[input.forEachNodeId] =
+    input.context.nodes[input.forEachNodeId] ?? input.nodeResults[input.forEachNodeId] ?? {};
+
+  return {
+    ok: true,
+    nodeType: "logic.for_each",
+    executedNodeIds: [...new Set([input.forEachNodeId, ...executedNodeIds])],
+  };
+}
+
 export async function runVisualWorkflowInterpreter(input: {
   definition: VisualWorkflowDefinition;
   organizationId: string;
@@ -139,16 +326,10 @@ export async function runVisualWorkflowInterpreter(input: {
   const pendingIncoming = new Map(graph.incomingCountByNodeId);
   const queue = [graph.triggerNodeId];
 
-  while (queue.length > 0) {
-    const nodeId = queue.shift();
-    if (!nodeId || completed.has(nodeId) || skipped.has(nodeId)) {
-      continue;
-    }
-    completed.add(nodeId);
-
+  const runNode = async (nodeId: string): Promise<RunNodeResult> => {
     const node = graph.nodesById.get(nodeId);
     if (!node) {
-      continue;
+      return { ok: false, error: { message: "Node not found." } };
     }
 
     await input.onNodeUpdate?.({
@@ -173,13 +354,7 @@ export async function runVisualWorkflowInterpreter(input: {
         status: "failed",
         error: execution.error,
       });
-      return {
-        ok: false,
-        context,
-        nodeResults,
-        failedNodeId: nodeId,
-        error: execution.error,
-      };
+      return { ok: false, error: execution.error };
     }
 
     setNodeOutput(context, nodeId, execution.output);
@@ -191,6 +366,77 @@ export async function runVisualWorkflowInterpreter(input: {
       status: "succeeded",
       outputSnapshot: execution.output,
     });
+
+    return { ok: true, branchResult: execution.branchResult, nodeType: node.type };
+  };
+
+  const forEachContext: ForEachExecutionContext = {
+    graph,
+    context,
+    nodeResults,
+    runNode,
+    executeForEachNode: async () => ({ ok: false, error: { message: "Loop executor not ready." } }),
+  };
+  forEachContext.executeForEachNode = async (forEachNodeId) =>
+    executeForEachLoop({ ...forEachContext, forEachNodeId });
+
+  while (queue.length > 0) {
+    const nodeId = queue.shift();
+    if (!nodeId || completed.has(nodeId) || skipped.has(nodeId)) {
+      continue;
+    }
+    completed.add(nodeId);
+
+    const node = graph.nodesById.get(nodeId);
+    if (!node) {
+      continue;
+    }
+
+    if (node.type === "logic.for_each") {
+      const execution = await executeForEachLoop({ ...forEachContext, forEachNodeId: nodeId });
+      if (!execution.ok) {
+        return {
+          ok: false,
+          context,
+          nodeResults,
+          failedNodeId: nodeId,
+          error: execution.error,
+        };
+      }
+
+      const { exitTargetIds } = findForEachLoopRegion({
+        graph,
+        forEachNodeId: nodeId,
+      });
+
+      for (const executedNodeId of execution.executedNodeIds ?? []) {
+        completed.add(executedNodeId);
+      }
+
+      for (const exitTargetId of exitTargetIds) {
+        if (completed.has(exitTargetId)) {
+          continue;
+        }
+        releasePredecessorEdge({
+          pendingIncoming,
+          queue,
+          targetNodeId: exitTargetId,
+        });
+      }
+
+      continue;
+    }
+
+    const execution = await runNode(nodeId);
+    if (!execution.ok) {
+      return {
+        ok: false,
+        context,
+        nodeResults,
+        failedNodeId: nodeId,
+        error: execution.error,
+      };
+    }
 
     const outgoing = graph.outgoingByNodeId.get(nodeId) ?? [];
     const nextEdges = selectNextEdges({

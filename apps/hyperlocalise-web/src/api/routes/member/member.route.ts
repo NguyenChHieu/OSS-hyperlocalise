@@ -35,6 +35,11 @@ import {
   workspaceResourceLimitErrorDetails,
   workspaceResourceLimitMessage,
 } from "@/lib/billing/workspace-resource-limits";
+import {
+  enqueueActivityLogEvent,
+  enqueueActivityLogEvents,
+} from "@/lib/activity-log/activity-log-writer";
+import type { ActivityLogEventInput } from "@/lib/activity-log/activity-log-contract";
 import { db, schema, type DatabaseClient } from "@/lib/database/client";
 import type { OrganizationMembershipRole } from "@/lib/database/types";
 import { createLogger, serializeErrorForLog } from "@/lib/log";
@@ -631,6 +636,33 @@ export function createMemberRoutes() {
         );
       }
 
+      if (isResend) {
+        await enqueueActivityLogEvent({
+          actorCredentialId: null,
+          actorKind: "user",
+          actorUserId: c.var.auth.user.localUserId,
+          eventType: "member_invite_resent",
+          organizationId,
+          payload: { invitationId: pendingInvite.membershipId },
+          targetId: pendingInvite.membershipId,
+          targetKind: "invitation",
+        });
+      } else {
+        await enqueueActivityLogEvent({
+          actorCredentialId: null,
+          actorKind: "user",
+          actorUserId: c.var.auth.user.localUserId,
+          eventType: "member_invited",
+          organizationId,
+          payload: {
+            invitationId: pendingInvite.membershipId,
+            membershipId: pendingInvite.membershipId,
+          },
+          targetId: pendingInvite.membershipId,
+          targetKind: "invitation",
+        });
+      }
+
       return c.json(
         {
           member: {
@@ -795,6 +827,24 @@ export function createMemberRoutes() {
         workosOrganizationId,
       });
 
+      if (roleChanged) {
+        await enqueueActivityLogEvent({
+          actorCredentialId: null,
+          actorKind: "user",
+          actorUserId: c.var.auth.user.localUserId,
+          eventType: "member_role_changed",
+          organizationId,
+          payload: {
+            memberUserId: member.localUserId,
+            membershipId: member.membershipId,
+            nextRole: updated.role,
+            previousRole,
+          },
+          targetId: member.membershipId,
+          targetKind: "membership",
+        });
+      }
+
       return c.json(
         {
           member: toMemberSummary(
@@ -905,6 +955,7 @@ export function createMemberRoutes() {
         }
       }
 
+      const activityLogEvents: ActivityLogEventInput[] = [];
       const deletionResult = await db.transaction(async (tx) => {
         if (member.role === "admin") {
           const adminCount = await lockOrganizationAdminsAndCount(tx, organizationId);
@@ -918,6 +969,7 @@ export function createMemberRoutes() {
           workosOrganizationId,
           workosUserId: member.workosUserId,
           actor: { type: "user", id: c.var.auth.user.localUserId },
+          activityLogEvents,
           log: c.get("log"),
         });
 
@@ -928,9 +980,25 @@ export function createMemberRoutes() {
         return lastAdminProtectedResponse(c);
       }
 
+      await enqueueActivityLogEvents(activityLogEvents);
+
       if (shouldCleanupPlaceholderUserOnMemberRemoval(member.workosUserId)) {
         await cleanupInvitedPlaceholderUser(member.localUserId);
       }
+
+      await enqueueActivityLogEvent({
+        actorCredentialId: null,
+        actorKind: "user",
+        actorUserId: c.var.auth.user.localUserId,
+        eventType: "member_removed",
+        organizationId,
+        payload: {
+          memberUserId: member.localUserId,
+          membershipId: member.membershipId,
+        },
+        targetId: member.membershipId,
+        targetKind: "membership",
+      });
 
       return c.body(null, 204);
     });

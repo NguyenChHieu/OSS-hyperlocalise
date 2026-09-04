@@ -44,4 +44,5 @@ export * from "./schema/billing";
 export * from "./schema/localisation-audits";
 export * from "./schema/linked-domains";
 export * from "./schema/experiments";
+export * from "./schema/activity-log";
 export * from "./schema/ota";

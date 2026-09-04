@@ -16,6 +16,8 @@ import * as schema from "@/lib/database/schema";
 import type { OrganizationMembershipRole } from "@/lib/database/types";
 
 import { db, type DatabaseClient } from "@/lib/database/client";
+import { enqueueActivityLogEvents } from "@/lib/activity-log/activity-log-writer";
+import type { ActivityLogEventInput } from "@/lib/activity-log/activity-log-contract";
 import {
   ACCESS_TOKEN_REVOKE_REASONS,
   emitPatRevoked,
@@ -496,6 +498,7 @@ async function revokeOrganizationApiKeysForUser(
   target: RevocationTarget,
   actor: MembershipRevocationActor,
   log?: AccessTokenAuditLogger,
+  activityLogEvents?: ActivityLogEventInput[],
 ): Promise<Pick<RevokeOrganizationMembershipAccessResult, "apiKeysRevoked">> {
   const revokedKeys = await database
     .update(schema.organizationApiKeys)
@@ -525,6 +528,20 @@ async function revokeOrganizationApiKeysForUser(
       tokenId: token.id,
       keyPrefix: token.keyPrefix,
       reason: ACCESS_TOKEN_REVOKE_REASONS.membershipRemoved,
+    });
+    activityLogEvents?.push({
+      actorCredentialId: null,
+      actorKind: actor.type === "user" ? "user" : "system",
+      actorUserId: actor.type === "user" ? actor.id : null,
+      eventType: "personal_access_token_revoked",
+      organizationId: token.organizationId,
+      payload: {
+        keyPrefix: token.keyPrefix,
+        reason: "membership_removed",
+        tokenId: token.id,
+      },
+      targetId: token.id,
+      targetKind: "personal_access_token",
     });
   }
 
@@ -573,21 +590,45 @@ async function revokeMembershipAccessForTarget(
   target: RevocationTarget,
   actor: MembershipRevocationActor,
   log?: AccessTokenAuditLogger,
+  activityLogEvents?: ActivityLogEventInput[],
 ): Promise<RevokeOrganizationMembershipAccessResult> {
-  const organizationMembershipsDeleted = await database
+  const deletedMemberships = await database
     .delete(schema.organizationMemberships)
     .where(
       and(
         eq(schema.organizationMemberships.organizationId, target.organizationId),
         eq(schema.organizationMemberships.userId, target.userId),
       ),
-    );
+    )
+    .returning({ id: schema.organizationMemberships.id });
+
+  if (actor.type === "system" && deletedMemberships[0]) {
+    activityLogEvents?.push({
+      actorCredentialId: null,
+      actorKind: "system",
+      actorUserId: null,
+      eventType: "member_removed",
+      organizationId: target.organizationId,
+      payload: {
+        memberUserId: target.userId,
+        membershipId: deletedMemberships[0].id,
+      },
+      targetId: deletedMemberships[0].id,
+      targetKind: "membership",
+    });
+  }
 
   const dependentDeletes = await deleteTeamMembershipsAndMcpSessions(database, target);
-  const apiKeyRevocation = await revokeOrganizationApiKeysForUser(database, target, actor, log);
+  const apiKeyRevocation = await revokeOrganizationApiKeysForUser(
+    database,
+    target,
+    actor,
+    log,
+    activityLogEvents,
+  );
 
   return {
-    organizationMembershipsDeleted: Number(organizationMembershipsDeleted.rowCount ?? 0),
+    organizationMembershipsDeleted: deletedMemberships.length,
     ...dependentDeletes,
     ...apiKeyRevocation,
   };
@@ -605,6 +646,7 @@ export async function revokeOrganizationMembershipAccess(
     workosUserId?: string;
     actor?: MembershipRevocationActor;
     log?: AccessTokenAuditLogger;
+    activityLogEvents?: ActivityLogEventInput[];
   },
 ): Promise<RevokeOrganizationMembershipAccessResult> {
   const target = await resolveRevocationTarget(database, input);
@@ -620,10 +662,27 @@ export async function revokeOrganizationMembershipAccess(
   }
 
   if (isRootDatabaseClient(database)) {
-    return database.transaction((tx) =>
-      revokeMembershipAccessForTarget(tx, target, actor, input.log),
+    const activityLogEvents = input.activityLogEvents ?? [];
+    const result = await database.transaction((tx) =>
+      revokeMembershipAccessForTarget(tx, target, actor, input.log, activityLogEvents),
     );
+
+    if (!input.activityLogEvents) {
+      await enqueueActivityLogEvents(activityLogEvents);
+    }
+
+    return result;
   }
 
-  return revokeMembershipAccessForTarget(database, target, actor, input.log);
+  if (!input.activityLogEvents) {
+    throw new Error("activity_log_events_collector_required_for_transaction");
+  }
+
+  return revokeMembershipAccessForTarget(
+    database,
+    target,
+    actor,
+    input.log,
+    input.activityLogEvents,
+  );
 }

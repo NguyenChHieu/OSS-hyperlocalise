@@ -21,6 +21,7 @@ import { hasCapability } from "@/api/auth/policy";
 import { env } from "@/lib/env";
 import { isErr, ok, type Result } from "@/lib/primitives/result/results";
 import { db, schema, type DatabaseClient } from "@/lib/database/client";
+import { enqueueActivityLogEvent } from "@/lib/activity-log/activity-log-writer";
 import {
   withWorkspaceResourceLimit,
   workspaceResourceFeatureIds,
@@ -114,13 +115,18 @@ const PHRASE_USER_OAUTH_STATE_TTL_MS = 60 * 60 * 1000;
 const LOKALISE_USER_OAUTH_STATE_TTL_MS = 60 * 60 * 1000;
 const logger = createLogger("tms-user-oauth");
 
+type IntegrationUpsertResult<T> = {
+  created: boolean;
+  value: T;
+};
+
 async function withNewIntegrationLimit<T>(
   input: {
     organizationId: string;
     providerKind: typeof schema.organizationExternalTmsProviderCredentials.$inferSelect.providerKind;
   },
   run: (database: DatabaseClient) => Promise<T>,
-): Promise<Result<T, WorkspaceResourceLimitError>> {
+): Promise<Result<IntegrationUpsertResult<T>, WorkspaceResourceLimitError>> {
   const [existing] = await db
     .select({ id: schema.organizationExternalTmsProviderCredentials.id })
     .from(schema.organizationExternalTmsProviderCredentials)
@@ -132,15 +138,42 @@ async function withNewIntegrationLimit<T>(
     )
     .limit(1);
 
-  if (existing) return ok(await db.transaction(run));
+  if (existing) {
+    return ok({ created: false, value: await db.transaction(run) });
+  }
 
-  return withWorkspaceResourceLimit(
+  const result = await withWorkspaceResourceLimit(
     {
       organizationId: input.organizationId,
       featureId: workspaceResourceFeatureIds.integrations,
     },
     run,
   );
+  if (!result.ok) return result;
+  return ok({ created: true, value: result.value });
+}
+
+async function enqueueIntegrationConnectedIfCreated(input: {
+  created: boolean;
+  actorUserId: string;
+  organizationId: string;
+  connectionId: string;
+  integrationKind: string;
+}) {
+  if (!input.created) return;
+  await enqueueActivityLogEvent({
+    actorCredentialId: null,
+    actorKind: "user",
+    actorUserId: input.actorUserId,
+    eventType: "integration_connected",
+    organizationId: input.organizationId,
+    payload: {
+      connectionId: input.connectionId,
+      integrationKind: input.integrationKind,
+    },
+    targetId: input.connectionId,
+    targetKind: "integration",
+  });
 }
 
 function integrationLimitErrorResponse(limitError: WorkspaceResourceLimitError): {
@@ -1387,7 +1420,15 @@ export function createExternalTmsProviderCredentialRoutes() {
           return c.json(limitResponse.body, limitResponse.status);
         }
 
-        const providerCredential = credentialResult.value;
+        const { created, value: providerCredential } = credentialResult.value;
+
+        await enqueueIntegrationConnectedIfCreated({
+          actorUserId: c.var.auth.user.localUserId,
+          connectionId: providerCredential.id,
+          created,
+          integrationKind: "crowdin",
+          organizationId,
+        });
 
         return c.json(
           {
@@ -1439,9 +1480,19 @@ export function createExternalTmsProviderCredentialRoutes() {
           return c.json(limitResponse.body, limitResponse.status);
         }
 
+        const { created, value: providerCredential } = credentialResult.value;
+
+        await enqueueIntegrationConnectedIfCreated({
+          actorUserId: c.var.auth.user.localUserId,
+          connectionId: providerCredential.id,
+          created,
+          integrationKind: "crowdin",
+          organizationId,
+        });
+
         return c.json(
           {
-            externalTmsProviderCredential: credentialResult.value,
+            externalTmsProviderCredential: providerCredential,
             shouldConnectCrowdinUser: true,
           },
           200,
@@ -1488,7 +1539,15 @@ export function createExternalTmsProviderCredentialRoutes() {
           return c.json(limitResponse.body, limitResponse.status);
         }
 
-        const providerCredential = credentialResult.value;
+        const { created, value: providerCredential } = credentialResult.value;
+
+        await enqueueIntegrationConnectedIfCreated({
+          actorUserId: c.var.auth.user.localUserId,
+          connectionId: providerCredential.id,
+          created,
+          integrationKind: "phrase",
+          organizationId,
+        });
 
         return c.json(
           {
@@ -1542,7 +1601,15 @@ export function createExternalTmsProviderCredentialRoutes() {
           return c.json(limitResponse.body, limitResponse.status);
         }
 
-        const providerCredential = credentialResult.value;
+        const { created, value: providerCredential } = credentialResult.value;
+
+        await enqueueIntegrationConnectedIfCreated({
+          actorUserId: c.var.auth.user.localUserId,
+          connectionId: providerCredential.id,
+          created,
+          integrationKind: "lokalise",
+          organizationId,
+        });
 
         return c.json(
           {
@@ -2273,7 +2340,15 @@ export function createExternalTmsProviderCredentialRoutes() {
           return c.json(limitResponse.body, limitResponse.status);
         }
 
-        const providerCredential = credentialResult.value;
+        const { created, value: providerCredential } = credentialResult.value;
+
+        await enqueueIntegrationConnectedIfCreated({
+          actorUserId: c.var.auth.user.localUserId,
+          connectionId: providerCredential.id,
+          created,
+          integrationKind: payload.providerKind,
+          organizationId,
+        });
 
         return c.json({ externalTmsProviderCredential: providerCredential }, 200);
       } catch (error) {
@@ -2387,13 +2462,26 @@ export function createExternalTmsProviderCredentialRoutes() {
           return c.json({ error: "invalid_external_tms_provider_kind" }, 400);
         }
 
-        const deleted = await deleteOrganizationExternalTmsProviderCredential({
+        const deletedCredentialId = await deleteOrganizationExternalTmsProviderCredential({
           organizationId: c.var.auth.organization.localOrganizationId,
           role: c.var.auth.membership.role,
           providerKind: providerKind.data,
         });
 
-        if (!deleted) return c.json({ error: "provider_credential_not_found" }, 404);
+        if (!deletedCredentialId) return c.json({ error: "provider_credential_not_found" }, 404);
+        await enqueueActivityLogEvent({
+          actorCredentialId: null,
+          actorKind: "user",
+          actorUserId: c.var.auth.user.localUserId,
+          eventType: "integration_disconnected",
+          organizationId: c.var.auth.organization.localOrganizationId,
+          payload: {
+            connectionId: deletedCredentialId,
+            integrationKind: providerKind.data,
+          },
+          targetId: deletedCredentialId,
+          targetKind: "integration",
+        });
         return c.body(null, 204);
       } catch (error) {
         if (error instanceof Error && error.message === "forbidden") {

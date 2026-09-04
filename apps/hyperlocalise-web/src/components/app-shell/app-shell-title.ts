@@ -10,12 +10,15 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
+import type { ReactNode } from "react";
 import type { IntlShape } from "react-intl";
 
 export type AppShellBreadcrumb = {
   label: string;
   href?: string;
   title?: string;
+  isLoading?: boolean;
+  render?: () => ReactNode;
 };
 
 type RouteTitleKey =
@@ -333,7 +336,14 @@ function formatProjectSectionTitle(intl: IntlShape, key: ProjectSectionKey): str
 export function getAppShellBreadcrumbs(
   pathname: string | null,
   intl: IntlShape,
-  options?: { projectName?: string },
+  options?: {
+    projectName?: string;
+    projectNameLoading?: boolean;
+    teamName?: string;
+    teamNameLoading?: boolean;
+    domainName?: string;
+    domainNameLoading?: boolean;
+  },
 ): AppShellBreadcrumb[] {
   const orgRoute = parseOrgRoute(pathname);
   if (!orgRoute) {
@@ -378,9 +388,17 @@ export function getAppShellBreadcrumbs(
       return [{ label: formatRouteTitle(intl, "teams") }];
     }
 
+    const teamId = decodePathSegment(subsection);
+    const resolvedTeamName = options?.teamName?.trim();
+    const teamNameLoading = options?.teamNameLoading && !resolvedTeamName;
+    const teamLabel = resolvedTeamName || (teamNameLoading ? "" : teamId);
+
     return [
       { label: formatRouteTitle(intl, "teams"), href: buildOrgPath(organizationSlug, "teams") },
-      { label: decodePathSegment(subsection) },
+      {
+        label: teamLabel,
+        ...(teamNameLoading ? { isLoading: true } : {}),
+      },
     ];
   }
 
@@ -389,12 +407,20 @@ export function getAppShellBreadcrumbs(
       return [{ label: formatRouteTitle(intl, "domains") }];
     }
 
+    const linkedDomainId = decodePathSegment(subsection);
+    const resolvedDomainName = options?.domainName?.trim();
+    const domainNameLoading = options?.domainNameLoading && !resolvedDomainName;
+    const domainLabel = resolvedDomainName || (domainNameLoading ? "" : linkedDomainId);
+
     return [
       {
         label: formatRouteTitle(intl, "domains"),
         href: buildOrgPath(organizationSlug, "domains"),
       },
-      { label: decodePathSegment(subsection) },
+      {
+        label: domainLabel,
+        ...(domainNameLoading ? { isLoading: true } : {}),
+      },
     ];
   }
 
@@ -414,8 +440,14 @@ export function getAppShellBreadcrumbs(
 
   if (section === "projects" && subsection) {
     const projectId = decodePathSegment(subsection);
-    const projectLabel = options?.projectName?.trim() || projectId;
+    const resolvedProjectName = options?.projectName?.trim();
+    const projectNameLoading = options?.projectNameLoading && !resolvedProjectName;
+    const projectLabel = resolvedProjectName || (projectNameLoading ? "" : projectId);
     const projectHref = buildOrgPath(organizationSlug, "projects", subsection);
+    const projectCrumb: AppShellBreadcrumb = {
+      label: projectLabel,
+      ...(projectNameLoading ? { isLoading: true } : {}),
+    };
     const issueIdSegment = routeSegments[3];
 
     if (projectSection && isProjectSectionKey(projectSection)) {
@@ -425,7 +457,7 @@ export function getAppShellBreadcrumbs(
           label: formatRouteTitle(intl, "projects"),
           href: buildOrgPath(organizationSlug, "projects"),
         },
-        { label: projectLabel, href: projectHref },
+        { ...projectCrumb, href: projectHref },
         {
           label: formatProjectSectionTitle(intl, projectSection),
           href: issueIdSegment ? sectionHref : undefined,
@@ -438,7 +470,7 @@ export function getAppShellBreadcrumbs(
         label: formatRouteTitle(intl, "projects"),
         href: buildOrgPath(organizationSlug, "projects"),
       },
-      { label: projectLabel },
+      projectCrumb,
     ];
   }
 

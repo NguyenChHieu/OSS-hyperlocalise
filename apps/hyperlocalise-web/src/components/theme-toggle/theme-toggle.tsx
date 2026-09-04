@@ -44,8 +44,7 @@ function ThemeToggleIcon({ theme }: { theme: ThemeOption }) {
   return <HugeiconsIcon icon={Sun01Icon} strokeWidth={2} className="size-4" />;
 }
 
-export function ThemeToggle() {
-  const intl = useIntl();
+function useThemeToggleState() {
   const { resolvedTheme, setTheme, theme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
 
@@ -61,6 +60,47 @@ export function ThemeToggle() {
       ? ((resolvedTheme as "light" | "dark" | undefined) ?? "light")
       : activeTheme
     : "system";
+
+  return { activeTheme, mounted, setTheme, triggerTheme };
+}
+
+function ThemeMenuRadioGroup() {
+  const intl = useIntl();
+  const { activeTheme, setTheme } = useThemeToggleState();
+
+  return (
+    <DropdownMenuRadioGroup
+      aria-label={intl.formatMessage(themeToggleMessages.colorThemeAria)}
+      value={activeTheme}
+      onValueChange={(value) => setTheme(value as ThemeOption)}
+    >
+      <DropdownMenuRadioItem value="light">
+        <HugeiconsIcon icon={Sun01Icon} strokeWidth={2} className="size-4" />
+        <FormattedMessage {...themeToggleMessages.light} />
+      </DropdownMenuRadioItem>
+      <DropdownMenuRadioItem value="dark">
+        <HugeiconsIcon icon={Moon02Icon} strokeWidth={2} className="size-4" />
+        <FormattedMessage {...themeToggleMessages.dark} />
+      </DropdownMenuRadioItem>
+      <DropdownMenuRadioItem value="system">
+        <HugeiconsIcon icon={ComputerIcon} strokeWidth={2} className="size-4" />
+        <FormattedMessage {...themeToggleMessages.system} />
+      </DropdownMenuRadioItem>
+    </DropdownMenuRadioGroup>
+  );
+}
+
+type ThemeToggleProps = {
+  variant?: "dropdown" | "menu";
+};
+
+export function ThemeToggle({ variant = "dropdown" }: ThemeToggleProps) {
+  const intl = useIntl();
+  const { activeTheme, setTheme, triggerTheme } = useThemeToggleState();
+
+  if (variant === "menu") {
+    return <ThemeMenuRadioGroup />;
+  }
 
   return (
     <DropdownMenu>

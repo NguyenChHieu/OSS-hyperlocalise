@@ -20,14 +20,4 @@ export const dashboardPageContentMessages = defineMessages({
     id: "0GW7ilY3Dj",
     description: "Toast when a user is redirected because a workspace feature is unavailable",
   },
-  liveTmsJobsWarning: {
-    defaultMessage: "Live TMS jobs could not be loaded.",
-    id: "UOrQi3aNyW",
-    description: "Warning when live TMS assigned jobs fail but native jobs loaded",
-  },
-  nativeJobsWarning: {
-    defaultMessage: "Workspace jobs could not be loaded.",
-    id: "YAgd2vmpnm",
-    description: "Warning when workspace assigned jobs fail but live TMS jobs loaded",
-  },
 });

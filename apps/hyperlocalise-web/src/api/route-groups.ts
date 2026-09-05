@@ -57,6 +57,7 @@ import { createSlackOAuthRoutes } from "./routes/slack-oauth/slack-oauth.route";
 import { createFileRoutes } from "./routes/file/file.route";
 import { createWorkspaceFilesRoutes } from "./routes/workspace-files/workspace-files.route";
 import { createWorkspaceAutomationRoutes } from "./routes/workspace-automation/workspace-automation.route";
+import { createVisualWorkflowRoutes } from "./routes/visual-workflow/visual-workflow.route";
 import { createExternalTmsProviderCredentialRoutes } from "./routes/external-tms-provider-credential/external-tms-provider-credential.route";
 import { createTmsProviderRoutes } from "./routes/tms-provider/tms-provider.route";
 import { createTmsAgentAutomationRoutes } from "./routes/tms-agent-automation/tms-agent-automation.route";
@@ -65,6 +66,9 @@ import { createMemberRoutes } from "./routes/member/member.route";
 import { createTeamRoutes } from "./routes/team/team.route";
 import { createWorkspaceRoutes } from "./routes/workspace/workspace.route";
 import { createBillingRoutes } from "./routes/billing/billing.route";
+import { createHyperlabRoutes } from "./routes/hyperlab/hyperlab.route";
+import { createActivityLogRoutes } from "./routes/activity-log/activity-log.route";
+import { createOverviewRoutes } from "./routes/overview/overview.route";
 
 export type OrgScopedRouteOptions = {
   jobQueue: JobQueue<TranslationJobEventData>;
@@ -139,7 +143,8 @@ export function createOrgProjectsRoutes(options: OrgScopedRouteOptions) {
     .route(
       "/automations",
       createWorkspaceAutomationRoutes({ fileStorageAdapter: options.fileStorageAdapter }),
-    );
+    )
+    .route("/visual-workflows", createVisualWorkflowRoutes());
 }
 
 export function createOrgTmsRoutes(options: OrgScopedRouteOptions) {
@@ -181,7 +186,10 @@ export function createOrgWorkspaceRoutes() {
     .route("/members", createMemberRoutes())
     .route("/workspace", createWorkspaceRoutes())
     .route("/billing", createBillingRoutes())
-    .route("/api-keys", createApiKeyRoutes());
+    .route("/api-keys", createApiKeyRoutes())
+    .route("/activity-logs", createActivityLogRoutes())
+    .route("/hyperlab", createHyperlabRoutes())
+    .route("/overview", createOverviewRoutes());
 }
 
 export function createOrgScopedAppRoutes(options: OrgScopedRouteOptions) {

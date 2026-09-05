@@ -736,6 +736,48 @@
       "when": 1788249546916,
       "tag": "0104_eminent_mister_sinister",
       "breakpoints": true
+    },
+    {
+      "idx": 105,
+      "version": "7",
+      "when": 1788428473728,
+      "tag": "0105_wonderful_silverclaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 106,
+      "version": "7",
+      "when": 1788430897495,
+      "tag": "0106_odd_gargoyle",
+      "breakpoints": true
+    },
+    {
+      "idx": 107,
+      "version": "7",
+      "when": 1788441881767,
+      "tag": "0107_polite_dazzler",
+      "breakpoints": true
+    },
+    {
+      "idx": 108,
+      "version": "7",
+      "when": 1788479397011,
+      "tag": "0108_concerned_wasp",
+      "breakpoints": true
+    },
+    {
+      "idx": 109,
+      "version": "7",
+      "when": 1788507240159,
+      "tag": "0109_giant_iron_lad",
+      "breakpoints": true
+    },
+    {
+      "idx": 110,
+      "version": "7",
+      "when": 1788541919597,
+      "tag": "0110_clear_stardust",
+      "breakpoints": true
     }
   ]
 }

@@ -58,7 +58,9 @@ describe("ContentEditorDocumentFileViewerPane", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Translated document")).toHaveValue("# Hello from source\n");
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Hello from source" }),
+      ).toBeInTheDocument();
     });
 
     rerender(
@@ -102,9 +104,59 @@ describe("ContentEditorDocumentFileViewerPane", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Translated document")).toHaveValue("");
+      expect(screen.getByRole("button", { name: "Bold" })).toBeInTheDocument();
     });
-    expect(screen.queryByDisplayValue("# Source body")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("heading", { level: 1, name: "Source body" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("saves markdown document edits on save", async () => {
+    const user = userEvent.setup();
+    const markdownBody = `---
+title: Guide
+---
+
+# Guide
+
+Translate this paragraph.
+`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(markdownBody, { status: 200 })),
+    );
+    const onSave = vi.fn<(file: File) => Promise<void>>(async () => undefined);
+
+    render(
+      <ContentEditorTestProviders>
+        <ContentEditorDocumentFileViewerPane
+          role="target"
+          src="https://example.com/guide.md"
+          filename="guide.md"
+          onSave={onSave}
+        />
+      </ContentEditorTestProviders>,
+    );
+
+    const titleField = await screen.findByLabelText("title");
+    const saveButton = screen.getByRole("button", { name: /save edits/i });
+    expect(saveButton).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Bold" })).toBeInTheDocument();
+    await screen.findByRole("heading", { level: 1, name: "Guide" });
+    await user.clear(titleField);
+    await user.type(titleField, "Updated Guide");
+    expect(saveButton).toBeEnabled();
+    await user.click(saveButton);
+
+    await waitFor(() => {
+      expect(onSave).toHaveBeenCalledTimes(1);
+    });
+    const savedFile = onSave.mock.calls[0]?.[0];
+    expect(savedFile).toBeInstanceOf(File);
+    const savedText = await savedFile!.text();
+    expect(savedText).toContain("title: Updated Guide");
+    expect(savedText).toContain("# Guide");
+    expect(savedText).toContain("Translate this paragraph.");
   });
 
   it("preserves MDX JSX and raw HTML when saving after an edit", async () => {
@@ -128,10 +180,13 @@ describe("ContentEditorDocumentFileViewerPane", () => {
     );
 
     const editor = await screen.findByLabelText("Translated document");
+    const saveButton = screen.getByRole("button", { name: /save edits/i });
     expect(editor).toHaveValue(mdxBody);
+    expect(saveButton).toBeDisabled();
 
     await user.type(editor, " Updated.");
-    await user.click(screen.getByRole("button", { name: /save edits/i }));
+    expect(saveButton).toBeEnabled();
+    await user.click(saveButton);
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledTimes(1);
@@ -144,6 +199,40 @@ describe("ContentEditorDocumentFileViewerPane", () => {
     expect(savedText).not.toContain("&lt;Callout");
     expect(savedText).not.toContain("&lt;kbd");
     expect(savedText).toContain("Updated.");
+  });
+
+  it("collapses and expands document frontmatter fields", async () => {
+    const user = userEvent.setup();
+    const markdownBody = `---
+title: Guide
+description: Intro
+---
+
+# Guide
+`;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(markdownBody, { status: 200 })),
+    );
+
+    render(
+      <ContentEditorTestProviders>
+        <ContentEditorDocumentFileViewerPane
+          role="target"
+          src="https://example.com/guide.md"
+          filename="guide.md"
+        />
+      </ContentEditorTestProviders>,
+    );
+
+    const titleField = await screen.findByLabelText("title");
+    expect(titleField).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /Document properties/i }));
+    expect(titleField).not.toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /Document properties/i }));
+    expect(screen.getByLabelText("title")).toBeVisible();
   });
 
   it("renders read-only panes as a formatted preview instead of raw markup", async () => {

@@ -14,12 +14,13 @@
 
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vite-plus/test";
+import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import { ContentEditorTestProviders } from "@/components/content-editor/shared/content-editor-test-utils";
 import type { ContentEditorSegment } from "@/components/content-editor/shared/types";
 
 import { ContentEditorFileViewPanel } from "./content-editor-file-view-panel";
+import { writeCatFileViewSourcePaneVisible } from "./content-editor-file-view-source-pane";
 
 function imageSegment(overrides: Partial<ContentEditorSegment> = {}): ContentEditorSegment {
   return {
@@ -40,7 +41,11 @@ function imageSegment(overrides: Partial<ContentEditorSegment> = {}): ContentEdi
 }
 
 describe("ContentEditorFileViewPanel", () => {
-  it("renders translated pane before source pane", () => {
+  beforeEach(() => {
+    writeCatFileViewSourcePaneVisible(true);
+  });
+
+  it("renders source pane before translated pane", () => {
     render(
       <ContentEditorTestProviders>
         <ContentEditorFileViewPanel segment={imageSegment()} viewerId="image" filename="hero.png" />
@@ -58,10 +63,10 @@ describe("ContentEditorFileViewPanel", () => {
       "https://example.com/source.png",
     );
 
-    const translatedHeading = screen.getByRole("heading", { name: /Translated \(de\)/i });
     const sourceHeading = screen.getByRole("heading", { name: /Source \(en\)/i });
+    const translatedHeading = screen.getByRole("heading", { name: /Translated \(de\)/i });
     expect(
-      translatedHeading.compareDocumentPosition(sourceHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
+      sourceHeading.compareDocumentPosition(translatedHeading) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
 
@@ -137,5 +142,27 @@ describe("ContentEditorFileViewPanel", () => {
 
     expect(onPrevious).toHaveBeenCalledTimes(1);
     expect(onNext).toHaveBeenCalledTimes(1);
+  });
+
+  it("toggles the source pane visibility", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ContentEditorTestProviders>
+        <ContentEditorFileViewPanel segment={imageSegment()} viewerId="image" filename="hero.png" />
+      </ContentEditorTestProviders>,
+    );
+
+    expect(screen.getByRole("heading", { name: /Source \(en\)/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /Hide source/i }));
+    expect(screen.queryByRole("heading", { name: /Source \(en\)/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Show source/i })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+
+    await user.click(screen.getByRole("button", { name: /Show source/i }));
+    expect(screen.getByRole("heading", { name: /Source \(en\)/i })).toBeInTheDocument();
   });
 });

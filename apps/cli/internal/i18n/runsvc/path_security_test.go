@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hyperlocalise/hyperlocalise/internal/pathguard"
 	config "github.com/hyperlocalise/hyperlocalise/pkg/i18nconfig"
 )
 
@@ -98,4 +99,107 @@ llm:
 		t.Fatalf("write config: %v", err)
 	}
 	return configPath
+}
+
+func TestResolveProjectSourcePathsUsesConfigRoot(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceRel := filepath.Join("locales", "en", "messages.json")
+	sourceAbs := filepath.Join(projectDir, sourceRel)
+	if err := os.MkdirAll(filepath.Dir(sourceAbs), 0o755); err != nil {
+		t.Fatalf("mkdir source: %v", err)
+	}
+	if err := os.WriteFile(sourceAbs, []byte(`{"hello":"Hello"}`), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	otherCWD := t.TempDir()
+	t.Chdir(otherCWD)
+
+	svc := newTestService()
+	svc.enforceProjectPaths = true
+	root, err := pathguard.CanonicalForContainment(projectDir)
+	if err != nil {
+		t.Fatalf("canonical project dir: %v", err)
+	}
+	svc.projectRoot = root
+
+	got, err := svc.resolveProjectSourcePaths(filepath.ToSlash("locales/en/messages.json"))
+	if err != nil {
+		t.Fatalf("resolveProjectSourcePaths() error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("resolveProjectSourcePaths() = %v, want one path", got)
+	}
+	want, err := pathguard.CanonicalForContainment(sourceAbs)
+	if err != nil {
+		t.Fatalf("canonical source path: %v", err)
+	}
+	if filepath.Clean(got[0]) != filepath.Clean(want) {
+		t.Fatalf("resolveProjectSourcePaths() = %q, want %q", got[0], want)
+	}
+}
+
+func TestRelativizeProjectPath(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceAbs := filepath.Join(projectDir, "locales", "en", "messages.json")
+	if got, ok := relativizeProjectPath(projectDir, sourceAbs); !ok || got != "locales/en/messages.json" {
+		t.Fatalf("relativizeProjectPath() = (%q, %v), want (locales/en/messages.json, true)", got, ok)
+	}
+}
+
+func TestSourcePathMatchesFilterResolvesRelativeFlagAgainstProjectRoot(t *testing.T) {
+	projectDir := t.TempDir()
+	sourceAbs := filepath.Join(projectDir, "docs", "en", "messages.json")
+	if !sourcePathMatchesFilter(projectDir, "docs/en/messages.json", sourceAbs) {
+		t.Fatalf("expected relative --file filter to match absolute source path")
+	}
+}
+
+func TestTaskIdentityCandidatesIncludeRelativeTargetPath(t *testing.T) {
+	projectDir := t.TempDir()
+	targetAbs := filepath.Join(projectDir, "dist", "fr", "strings.json")
+	task := Task{TargetPath: targetAbs, EntryKey: "hello"}
+
+	identities := taskIdentityCandidates(task, projectDir)
+	want := taskIdentity("dist/fr/strings.json", "hello")
+	for _, identity := range identities {
+		if identity == want {
+			return
+		}
+	}
+	t.Fatalf("taskIdentityCandidates() = %v, want to include %q", identities, want)
+}
+
+func TestResolveProjectSourcePathsRejectsGlobSymlinkEscape(t *testing.T) {
+	projectDir := t.TempDir()
+	outsideDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(outsideDir, "messages.json"), []byte(`{"hello":"Hello"}`), 0o644); err != nil {
+		t.Fatalf("write outside source: %v", err)
+	}
+	pkgsDir := filepath.Join(projectDir, "pkgs")
+	if err := os.MkdirAll(filepath.Join(pkgsDir, "app"), 0o755); err != nil {
+		t.Fatalf("mkdir app: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(pkgsDir, "app", "messages.json"), []byte(`{"hello":"Hello"}`), 0o644); err != nil {
+		t.Fatalf("write inside source: %v", err)
+	}
+	if err := os.Symlink(outsideDir, filepath.Join(pkgsDir, "escape")); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+
+	svc := newTestService()
+	svc.enforceProjectPaths = true
+	root, err := pathguard.CanonicalForContainment(projectDir)
+	if err != nil {
+		t.Fatalf("canonical project dir: %v", err)
+	}
+	svc.projectRoot = root
+
+	_, err = svc.resolveProjectSourcePaths(filepath.ToSlash("pkgs/*/messages.json"))
+	if err == nil {
+		t.Fatalf("expected glob symlink escape to be rejected")
+	}
+	if !strings.Contains(err.Error(), "escapes root") {
+		t.Fatalf("error = %v, want root escape rejection", err)
+	}
 }

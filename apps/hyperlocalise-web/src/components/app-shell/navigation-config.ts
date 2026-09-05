@@ -18,6 +18,7 @@ import { RELEASE_CAT_ALL_FILES_FLAG } from "@/lib/flags/release-flag-keys";
 import {
   WORKSPACE_AUTOMATIONS_FLAG,
   WORKSPACE_DOMAINS_FLAG,
+  WORKSPACE_HYPERLAB_FLAG,
   WORKSPACE_KNOWLEDGE_FLAG,
 } from "@/lib/flags/workos-flag-entities";
 import { supportsContentEditorAllFilesProvider } from "@/lib/projects/content-editor-all-files";
@@ -32,6 +33,7 @@ import {
   Database01Icon,
   File01Icon,
   FlashIcon,
+  FlaskConicalIcon,
   Globe02Icon,
   InboxIcon,
   LanguageCircleIcon,
@@ -57,6 +59,7 @@ export type NavigationItem = {
     | typeof WORKSPACE_AUTOMATIONS_FLAG
     | typeof WORKSPACE_KNOWLEDGE_FLAG
     | typeof WORKSPACE_DOMAINS_FLAG
+    | typeof WORKSPACE_HYPERLAB_FLAG
     | typeof RELEASE_CAT_ALL_FILES_FLAG;
   /** When true, the feature flag is off and the nav item links to a teaser page. */
   preview?: boolean;
@@ -74,6 +77,14 @@ export function buildOrganizationPath(organizationSlug: string, section: string)
 export function buildProjectPath(organizationSlug: string, projectId: string, section?: string) {
   const base = `/org/${organizationSlug}/projects/${encodeURIComponent(projectId)}`;
   return section ? `${base}/${section}` : base;
+}
+
+export function buildTeamPath(organizationSlug: string, teamId: string) {
+  return `/org/${organizationSlug}/teams/${encodeURIComponent(teamId)}`;
+}
+
+export function buildDomainPath(organizationSlug: string, linkedDomainId: string) {
+  return `/org/${organizationSlug}/domains/${encodeURIComponent(linkedDomainId)}`;
 }
 
 export function buildAutomationsPath(
@@ -231,6 +242,21 @@ export function buildGlobalNavigationGroups(
             description: "Sidebar description for the Domains navigation item",
           }),
           featureFlagKey: WORKSPACE_DOMAINS_FLAG,
+        },
+        {
+          label: intl.formatMessage({
+            defaultMessage: "Hyperlab",
+            id: "e1WibRfkfv",
+            description: "Sidebar navigation item for Hyperlab experiments",
+          }),
+          href: org("hyperlab"),
+          icon: FlaskConicalIcon,
+          description: intl.formatMessage({
+            defaultMessage: "Flags and experiments for your apps",
+            id: "4/gpJsFcCP",
+            description: "Sidebar description for the Hyperlab navigation item",
+          }),
+          featureFlagKey: WORKSPACE_HYPERLAB_FLAG,
         },
         {
           label: intl.formatMessage({
@@ -418,6 +444,10 @@ export function stripAppLocalePrefix(pathname: string | null | undefined) {
   return `/${rest.join("/")}`.replace(/\/+$/, "") || "/";
 }
 
+export function isOrganizationSettingsPath(pathname: string | null | undefined) {
+  return /^\/org\/[^/]+\/settings(?:\/|$)/.test(stripAppLocalePrefix(pathname));
+}
+
 export function parseProjectRoute(pathname: string | null) {
   if (!pathname) return null;
 
@@ -433,6 +463,34 @@ export function parseProjectRoute(pathname: string | null) {
     organizationSlug,
     projectId: decodePathSegment(projectIdSegment),
     section,
+  };
+}
+
+export function parseTeamRoute(pathname: string | null) {
+  if (!pathname) return null;
+
+  const match = stripAppLocalePrefix(pathname).match(/^\/org\/([^/]+)\/teams\/([^/]+)$/);
+  if (!match) return null;
+
+  const [, organizationSlug, teamIdSegment] = match;
+
+  return {
+    organizationSlug,
+    teamId: decodePathSegment(teamIdSegment),
+  };
+}
+
+export function parseDomainRoute(pathname: string | null) {
+  if (!pathname) return null;
+
+  const match = stripAppLocalePrefix(pathname).match(/^\/org\/([^/]+)\/domains\/([^/]+)$/);
+  if (!match) return null;
+
+  const [, organizationSlug, linkedDomainIdSegment] = match;
+
+  return {
+    organizationSlug,
+    linkedDomainId: decodePathSegment(linkedDomainIdSegment),
   };
 }
 

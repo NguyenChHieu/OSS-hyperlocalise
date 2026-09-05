@@ -18,6 +18,7 @@ import { getIntlShape } from "@/lib/app-i18n/intl";
 import {
   WORKSPACE_AUTOMATIONS_FLAG,
   WORKSPACE_DOMAINS_FLAG,
+  WORKSPACE_HYPERLAB_FLAG,
   WORKSPACE_KNOWLEDGE_FLAG,
 } from "@/lib/flags/workos-flag-entities";
 import { RELEASE_CAT_ALL_FILES_FLAG } from "@/lib/flags/release-flag-keys";
@@ -29,9 +30,14 @@ import {
   buildOrganizationPath,
   buildProjectNavigationItems,
   buildProjectPath,
+  buildTeamPath,
+  buildDomainPath,
   isInboxNewRequestPath,
   isNavigationItemActive,
+  isOrganizationSettingsPath,
+  parseDomainRoute,
   parseProjectRoute,
+  parseTeamRoute,
   stripAppLocalePrefix,
 } from "./navigation-config";
 
@@ -130,6 +136,7 @@ describe("workspace people navigation", () => {
 
     expect(isNavigationItemActive("/org/acme/members", membersHref)).toBe(true);
     expect(isNavigationItemActive("/en/org/acme/members", membersHref)).toBe(true);
+    expect(isNavigationItemActive("/org/acme/members/permissions", membersHref)).toBe(true);
     expect(isNavigationItemActive("/org/acme/teams", membersHref)).toBe(false);
     expect(isNavigationItemActive("/org/acme/teams/team_1", membersHref)).toBe(false);
   });
@@ -199,6 +206,8 @@ describe("path builders", () => {
     expect(byLabel.get("Guideline")?.featureFlagKey).toBe(WORKSPACE_KNOWLEDGE_FLAG);
     expect(byLabel.get("Board")?.featureFlagKey).toBeUndefined();
     expect(byLabel.get("Domains")?.featureFlagKey).toBe(WORKSPACE_DOMAINS_FLAG);
+    expect(byLabel.get("Hyperlab")?.href).toBe("/org/acme/hyperlab");
+    expect(byLabel.get("Hyperlab")?.featureFlagKey).toBe(WORKSPACE_HYPERLAB_FLAG);
 
     expect(groups.map((group) => group.label)).toEqual([undefined, "Agents", "Workspace"]);
     expect(groups[1]?.items.map((item) => item.label)).toEqual([
@@ -284,6 +293,56 @@ describe("parseProjectRoute", () => {
       projectId: "proj_1",
       section: "jobs",
     });
+  });
+});
+
+describe("parseTeamRoute", () => {
+  it("returns null for empty and non-team routes", () => {
+    expect(parseTeamRoute(null)).toBeNull();
+    expect(parseTeamRoute("/org/acme/teams")).toBeNull();
+    expect(parseTeamRoute("/org/acme/projects/proj_1")).toBeNull();
+  });
+
+  it("parses team detail routes", () => {
+    expect(parseTeamRoute("/org/acme/teams/team_1")).toEqual({
+      organizationSlug: "acme",
+      teamId: "team_1",
+    });
+    expect(parseTeamRoute("/en/org/acme/teams/team_1")).toEqual({
+      organizationSlug: "acme",
+      teamId: "team_1",
+    });
+  });
+});
+
+describe("parseDomainRoute", () => {
+  it("returns null for empty and non-domain routes", () => {
+    expect(parseDomainRoute(null)).toBeNull();
+    expect(parseDomainRoute("/org/acme/domains")).toBeNull();
+    expect(parseDomainRoute("/org/acme/projects/proj_1")).toBeNull();
+  });
+
+  it("parses domain detail routes", () => {
+    expect(parseDomainRoute("/org/acme/domains/ld_1")).toEqual({
+      organizationSlug: "acme",
+      linkedDomainId: "ld_1",
+    });
+    expect(parseDomainRoute("/en/org/acme/domains/ld_1")).toEqual({
+      organizationSlug: "acme",
+      linkedDomainId: "ld_1",
+    });
+  });
+});
+
+describe("buildTeamPath", () => {
+  it("encodes team ids in the path", () => {
+    expect(buildTeamPath("acme", "team_1")).toBe("/org/acme/teams/team_1");
+  });
+});
+
+describe("buildDomainPath", () => {
+  it("encodes linked domain ids in the path", () => {
+    expect(buildDomainPath("acme", "ld_1")).toBe("/org/acme/domains/ld_1");
   });
 });
 
@@ -374,5 +433,19 @@ describe("isInboxNewRequestPath", () => {
     expect(isInboxNewRequestPath("/en/org/acme/inbox/new")).toBe(true);
     expect(isInboxNewRequestPath("/org/acme/inbox")).toBe(false);
     expect(isInboxNewRequestPath("/org/acme/inbox/thread_1")).toBe(false);
+  });
+});
+
+describe("isOrganizationSettingsPath", () => {
+  it("matches org settings routes, including locale prefixes", () => {
+    expect(isOrganizationSettingsPath("/org/acme/settings")).toBe(true);
+    expect(isOrganizationSettingsPath("/org/acme/settings/billing")).toBe(true);
+    expect(isOrganizationSettingsPath("/en/org/acme/settings/account")).toBe(true);
+  });
+
+  it("does not match project settings or other org routes", () => {
+    expect(isOrganizationSettingsPath("/org/acme/projects/proj_1/settings")).toBe(false);
+    expect(isOrganizationSettingsPath("/org/acme/members")).toBe(false);
+    expect(isOrganizationSettingsPath(null)).toBe(false);
   });
 });

@@ -163,12 +163,12 @@ const FEED_CURSOR_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 
 function parseFeedCursor(
   cursor: string,
-): { createdAt: string; sortRank: number; id: string } | null {
+): { createdAt: string; sortRank: number; id: string; issueId?: string } | null {
   const parts = cursor.split("|");
-  if (parts.length !== 3) {
+  if (parts.length !== 3 && parts.length !== 4) {
     return null;
   }
-  const [createdAt, sortRankRaw, id] = parts;
+  const [createdAt, sortRankRaw, id, issueId] = parts;
   if (!createdAt || Number.isNaN(Date.parse(createdAt))) {
     return null;
   }
@@ -178,11 +178,20 @@ function parseFeedCursor(
   if (!id || !FEED_CURSOR_UUID_PATTERN.test(id)) {
     return null;
   }
-  return { createdAt, sortRank: Number(sortRankRaw), id };
+  if (issueId !== undefined && !FEED_CURSOR_UUID_PATTERN.test(issueId)) {
+    return null;
+  }
+  return { createdAt, sortRank: Number(sortRankRaw), id, issueId };
 }
 
-function encodeFeedCursor(input: { createdAt: string; sortRank: number; id: string }) {
-  return `${input.createdAt}|${input.sortRank}|${input.id}`;
+function encodeFeedCursor(input: {
+  createdAt: string;
+  sortRank: number;
+  id: string;
+  issueId?: string;
+}) {
+  const cursor = `${input.createdAt}|${input.sortRank}|${input.id}`;
+  return input.issueId ? `${cursor}|${input.issueId}` : cursor;
 }
 
 type ActivityRow = {
@@ -825,6 +834,7 @@ export class IssueSheetService {
     role: OrganizationMembershipRole;
     limit?: number;
     cursor?: string;
+    mode?: "all" | "comments";
   }): Promise<IssueSheetFeedResult> {
     const [issue] = await this.database
       .select({ id: schema.issueSheetIssues.id })
@@ -848,66 +858,93 @@ export class IssueSheetService {
       throw new Error("invalid_issue_sheet_feed_cursor");
     }
 
+    const commentsOnly = input.mode === "comments";
+
+    if (parsedCursor?.issueId && parsedCursor.issueId !== issue.id) {
+      throw new Error("invalid_issue_sheet_feed_cursor");
+    }
+
+    if (
+      parsedCursor &&
+      commentsOnly &&
+      (parsedCursor.sortRank !== 1 || parsedCursor.issueId === undefined)
+    ) {
+      throw new Error("invalid_issue_sheet_feed_cursor");
+    }
+
+    const kindFilter = commentsOnly ? sql`and feed.kind = 'comment_thread'` : sql``;
+
     const cursorFilter = parsedCursor
       ? sql`and (feed.created_at, feed.sort_rank, feed.id) > (${parsedCursor.createdAt}::timestamptz, ${parsedCursor.sortRank}, ${parsedCursor.id}::uuid)`
       : sql``;
 
+    const activityCount = commentsOnly
+      ? sql`0`
+      : sql`
+      (
+        select count(*)::int
+        from ${schema.issueSheetActivities}
+        where ${schema.issueSheetActivities.organizationId} = ${input.organizationId}
+          and ${schema.issueSheetActivities.projectId} = ${input.projectId}
+          and ${schema.issueSheetActivities.issueId} = ${issue.id}
+      )
+    `;
+
+    const totalQuery = sql`
+  select (
+    ${activityCount}
+    +
+    (
+      select count(*)::int
+      from ${schema.issueSheetComments}
+      where ${schema.issueSheetComments.organizationId} = ${input.organizationId}
+        and ${schema.issueSheetComments.projectId} = ${input.projectId}
+        and ${schema.issueSheetComments.issueId} = ${issue.id}
+        and ${schema.issueSheetComments.depth} = 0
+    )
+  ) as total
+`;
+
     const [totalRow, feedResult] = await Promise.all([
+      this.database.execute(totalQuery),
       this.database.execute(sql`
-        select (
-          (
-            select count(*)::int
-            from ${schema.issueSheetActivities}
-            where ${schema.issueSheetActivities.organizationId} = ${input.organizationId}
-              and ${schema.issueSheetActivities.projectId} = ${input.projectId}
-              and ${schema.issueSheetActivities.issueId} = ${issue.id}
-          )
-          +
-          (
-            select count(*)::int
-            from ${schema.issueSheetComments}
-            where ${schema.issueSheetComments.organizationId} = ${input.organizationId}
-              and ${schema.issueSheetComments.projectId} = ${input.projectId}
-              and ${schema.issueSheetComments.issueId} = ${issue.id}
-              and ${schema.issueSheetComments.depth} = 0
-          )
-        ) as total
-      `),
-      this.database.execute(sql`
-        select feed.id, feed.kind, feed.created_at, feed.created_at_cursor, feed.sort_rank
-        from (
-          select
-            ${schema.issueSheetActivities.id} as id,
-            'activity'::text as kind,
-            ${schema.issueSheetActivities.createdAt} as created_at,
-            ${schema.issueSheetActivities.createdAt}::text as created_at_cursor,
-            case
-              when ${schema.issueSheetActivities.type} = ${ISSUE_SHEET_ACTIVITY_ISSUE_CREATED}
-              then 0
-              else 1
-            end as sort_rank
-          from ${schema.issueSheetActivities}
-          where ${schema.issueSheetActivities.organizationId} = ${input.organizationId}
-            and ${schema.issueSheetActivities.projectId} = ${input.projectId}
-            and ${schema.issueSheetActivities.issueId} = ${issue.id}
-          union all
-          select
-            ${schema.issueSheetComments.id} as id,
-            'comment_thread'::text as kind,
-            ${schema.issueSheetComments.createdAt} as created_at,
-            ${schema.issueSheetComments.createdAt}::text as created_at_cursor,
-            1 as sort_rank
-          from ${schema.issueSheetComments}
-          where ${schema.issueSheetComments.organizationId} = ${input.organizationId}
-            and ${schema.issueSheetComments.projectId} = ${input.projectId}
-            and ${schema.issueSheetComments.issueId} = ${issue.id}
-            and ${schema.issueSheetComments.depth} = 0
-        ) as feed
-        where true
-        ${cursorFilter}
-        order by feed.created_at asc, feed.sort_rank asc, feed.id asc
-        limit ${limit + 1}
-      `),
+    select feed.id, feed.kind, feed.created_at, feed.created_at_cursor, feed.sort_rank
+    from (
+      select
+        ${schema.issueSheetActivities.id} as id,
+        'activity'::text as kind,
+        ${schema.issueSheetActivities.createdAt} as created_at,
+        ${schema.issueSheetActivities.createdAt}::text as created_at_cursor,
+        case
+          when ${schema.issueSheetActivities.type} = ${ISSUE_SHEET_ACTIVITY_ISSUE_CREATED}
+          then 0
+          else 1
+        end as sort_rank
+      from ${schema.issueSheetActivities}
+      where ${schema.issueSheetActivities.organizationId} = ${input.organizationId}
+        and ${schema.issueSheetActivities.projectId} = ${input.projectId}
+        and ${schema.issueSheetActivities.issueId} = ${issue.id}
+
+      union all
+
+      select
+        ${schema.issueSheetComments.id} as id,
+        'comment_thread'::text as kind,
+        ${schema.issueSheetComments.createdAt} as created_at,
+        ${schema.issueSheetComments.createdAt}::text as created_at_cursor,
+        1 as sort_rank
+      from ${schema.issueSheetComments}
+      where ${schema.issueSheetComments.organizationId} = ${input.organizationId}
+        and ${schema.issueSheetComments.projectId} = ${input.projectId}
+        and ${schema.issueSheetComments.issueId} = ${issue.id}
+        and ${schema.issueSheetComments.depth} = 0
+    ) as feed
+    where true
+    ${kindFilter}
+    ${cursorFilter}
+    order by feed.created_at asc, feed.sort_rank asc, feed.id asc
+    limit ${limit + 1}
+  `),
     ]);
 
     const total = Number(rowsFromExecute<{ total?: number }>(totalRow)[0]?.total ?? 0);
@@ -1017,6 +1054,7 @@ export class IssueSheetService {
         createdAt: String(last.created_at_cursor),
         sortRank: Number(last.sort_rank),
         id: String(last.id),
+        ...(commentsOnly ? { issueId: issue.id } : {}),
       });
     }
 

@@ -232,6 +232,45 @@ export const workspaceAutomationRunStatusEnum = pgEnum("workspace_automation_run
   "skipped",
 ]);
 /**
+ * Tracks persisted visual workflow definitions from draft authoring through active scheduling and archival.
+ */
+export const visualWorkflowStatusEnum = pgEnum("visual_workflow_status", [
+  "draft",
+  "active",
+  "paused",
+  "archived",
+]);
+/**
+ * Records why a persisted visual workflow run was created.
+ */
+export const visualWorkflowRunTriggerSourceEnum = pgEnum("visual_workflow_run_trigger_source", [
+  "manual",
+  "scheduled",
+  "github",
+  "source_upload",
+]);
+/**
+ * Tracks persisted visual workflow run execution from queueing through terminal outcomes.
+ */
+export const visualWorkflowRunStatusEnum = pgEnum("visual_workflow_run_status", [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "cancelled",
+  "skipped",
+]);
+/**
+ * Tracks per-node execution status within a visual workflow run.
+ */
+export const visualWorkflowNodeRunStatusEnum = pgEnum("visual_workflow_node_run_status", [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "skipped",
+]);
+/**
  * Defines where automated TMS agent settings apply: organization-wide, project-specific, or provider-credential-specific.
  */
 export const tmsAgentAutomationScopeEnum = pgEnum("tms_agent_automation_scope", [
@@ -342,4 +381,24 @@ export const repositorySourceFileIngestStateEnum = pgEnum("repository_source_fil
   "ingested",
   "skipped",
   "failed",
+]);
+/**
+ * Distinguishes experiment flags (tied to a rollout) from static config flags.
+ */
+export const experimentFlagKindEnum = pgEnum("experiment_flag_kind", ["experiment", "config"]);
+/**
+ * Tracks whether an experiment is editable, live, or retired.
+ */
+export const experimentStatusEnum = pgEnum("experiment_status", ["draft", "active", "archived"]);
+/**
+ * Distinguishes a single-variant toggle from a multi-variant A/B experiment.
+ */
+export const experimentKindEnum = pgEnum("experiment_kind", ["toggle", "ab"]);
+/**
+ * Output format for an OTA distribution. V1 ships JSON (web), Android XML, and iOS Strings.
+ */
+export const otaDistributionFormatEnum = pgEnum("ota_distribution_format", [
+  "json",
+  "android_xml",
+  "ios_strings",
 ]);

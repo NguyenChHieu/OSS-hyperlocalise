@@ -10,26 +10,41 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { Suspense } from "react";
-
 import { FeatureTeaserPage } from "@/components/feature-teaser/feature-teaser-page";
 import { getMergedWorkspaceAutomationTemplates } from "@/lib/agents/workspace-automation-templates.server";
 import {
   getWorkspaceFeatureFlagEnabled,
   workspaceAutomationsFlag,
+  workspaceVisualWorkflowsFlag,
 } from "@/lib/flags/workspace-flags";
 import { requireAppAuthContext } from "@/lib/workos/app-auth";
 
+import { OrgPageSuspense } from "../_components/org-page-suspense";
 import { AutomationsPageContent } from "./_components/automations-page-content";
 
-export default async function AutomationsPage({
+export default function AutomationsPage({
+  params,
+}: {
+  params: Promise<{ organizationSlug: string }>;
+}) {
+  return (
+    <OrgPageSuspense>
+      <AutomationsPageLoader params={params} />
+    </OrgPageSuspense>
+  );
+}
+
+async function AutomationsPageLoader({
   params,
 }: {
   params: Promise<{ organizationSlug: string }>;
 }) {
   const { organizationSlug } = await params;
   const auth = await requireAppAuthContext({ organizationSlug });
-  const automationsEnabled = await getWorkspaceFeatureFlagEnabled(workspaceAutomationsFlag, auth);
+  const [automationsEnabled, visualWorkflowsEnabled] = await Promise.all([
+    getWorkspaceFeatureFlagEnabled(workspaceAutomationsFlag, auth),
+    getWorkspaceFeatureFlagEnabled(workspaceVisualWorkflowsFlag, auth),
+  ]);
 
   if (!automationsEnabled) {
     return <FeatureTeaserPage feature="automations" scope="workspace" />;
@@ -38,8 +53,10 @@ export default async function AutomationsPage({
   const templates = getMergedWorkspaceAutomationTemplates();
 
   return (
-    <Suspense fallback={null}>
-      <AutomationsPageContent organizationSlug={organizationSlug} templates={templates} />
-    </Suspense>
+    <AutomationsPageContent
+      organizationSlug={organizationSlug}
+      templates={templates}
+      visualWorkflowsEnabled={visualWorkflowsEnabled}
+    />
   );
 }

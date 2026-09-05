@@ -357,7 +357,7 @@ func runCheck(ctx context.Context, o checkOptions) (checkReport, error) {
 	}
 
 	_, resolveSpan := tr.Start(ctx, "check.resolve")
-	cfg, err := config.Load(o.configPath)
+	cfg, err := config.LoadForCLI(o.configPath)
 	if err != nil {
 		resolveSpan.SetStatus(codes.Error, "load_config")
 		resolveSpan.End()
@@ -393,7 +393,12 @@ func runCheck(ctx context.Context, o checkOptions) (checkReport, error) {
 	)
 	resolveSpan.End()
 
-	index, err := buildCheckConfigIndex(cfg, buckets, locales)
+	configRoot, err := config.ConfigDirectory(o.configPath)
+	if err != nil {
+		return checkReport{}, fmt.Errorf("resolve config directory: %w", err)
+	}
+
+	index, err := buildCheckConfigIndex(cfg, buckets, locales, configRoot)
 	if err != nil {
 		return checkReport{}, err
 	}
@@ -403,12 +408,12 @@ func runCheck(ctx context.Context, o checkOptions) (checkReport, error) {
 		prefixIndex = collectPackPrefixIndex()
 	}
 
-	selection, err := buildCheckSelection(index, o.file, o.key, o.prefixID, prefixIndex)
+	selection, err := buildCheckSelection(index, o.file, o.key, o.prefixID, prefixIndex, configRoot)
 	if err != nil {
 		return checkReport{}, err
 	}
 	if o.diffStdin {
-		selection, err = buildCheckSelectionFromDiff(index, o.diffContent, o.key, o.prefixID, o.ignoreDuplicateID, prefixIndex)
+		selection, err = buildCheckSelectionFromDiff(index, o.diffContent, o.key, o.prefixID, o.ignoreDuplicateID, prefixIndex, configRoot)
 		if err != nil {
 			return checkReport{}, err
 		}
@@ -433,7 +438,7 @@ func runCheck(ctx context.Context, o checkOptions) (checkReport, error) {
 	}, nil
 }
 
-func buildCheckConfigIndex(cfg *config.I18NConfig, buckets, locales []string) (*checkConfigIndex, error) {
+func buildCheckConfigIndex(cfg *config.I18NConfig, buckets, locales []string, configRoot string) (*checkConfigIndex, error) {
 	index := &checkConfigIndex{
 		sourceByPath:   make(map[string]checkSourceDescriptor),
 		targetToSource: make(map[string]checkTargetLookup),
@@ -443,12 +448,12 @@ func buildCheckConfigIndex(cfg *config.I18NConfig, buckets, locales []string) (*
 		bucket := cfg.Buckets[bucketName]
 		for _, file := range bucket.Files {
 			sourcePattern := pathresolver.ResolveSourcePath(file.From, cfg.Locales.Source)
-			sourcePaths, err := resolveSourcePathsForStatus(sourcePattern)
+			sourcePaths, err := resolveSourcePathsForStatus(configRoot, sourcePattern)
 			if err != nil {
 				return nil, fmt.Errorf("resolve source paths for %q: %w", sourcePattern, err)
 			}
 			for _, sourcePath := range sourcePaths {
-				if shouldIgnoreSourcePathForStatus(sourcePath, cfg.Locales.Targets) {
+				if shouldIgnoreSourcePathForStatus(sourcePath, configRoot, cfg.Locales.Targets) {
 					continue
 				}
 
@@ -459,7 +464,7 @@ func buildCheckConfigIndex(cfg *config.I18NConfig, buckets, locales []string) (*
 				}
 				for _, locale := range locales {
 					targetPattern := pathresolver.ResolveTargetPath(file.To, cfg.Locales.Source, locale)
-					targetPath, err := resolveTargetPathForStatus(sourcePattern, targetPattern, sourcePath)
+					targetPath, err := resolveTargetPathForStatus(configRoot, sourcePattern, targetPattern, sourcePath)
 					if err != nil {
 						return nil, fmt.Errorf("resolve target path for source %q: %w", sourcePath, err)
 					}
@@ -481,7 +486,7 @@ func buildCheckConfigIndex(cfg *config.I18NConfig, buckets, locales []string) (*
 	return index, nil
 }
 
-func buildCheckSelection(index *checkConfigIndex, sourceFileFilter, keyFilter string, prefixID bool, prefixIndex packPrefixIndex) (checkSelection, error) {
+func buildCheckSelection(index *checkConfigIndex, sourceFileFilter, keyFilter string, prefixID bool, prefixIndex packPrefixIndex, configRoot string) (checkSelection, error) {
 	selection := checkSelection{}
 
 	trimmedKey := strings.TrimSpace(keyFilter)
@@ -496,22 +501,18 @@ func buildCheckSelection(index *checkConfigIndex, sourceFileFilter, keyFilter st
 	if trimmedFile == "" {
 		return selection, nil
 	}
-	fileFilter, err := filepath.Abs(trimmedFile)
-	if err != nil {
-		return checkSelection{}, fmt.Errorf("resolve --file path %q: %w", trimmedFile, err)
-	}
-	fileFilter = filepath.Clean(fileFilter)
-	if _, ok := index.sourceByPath[fileFilter]; !ok {
+	desc, ok := lookupCheckSourceDescriptor(index, configRoot, trimmedFile)
+	if !ok {
 		selection.bySource = map[string]checkSourceScope{}
 		return selection, nil
 	}
 	selection.bySource = map[string]checkSourceScope{
-		fileFilter: {},
+		filepath.Clean(desc.sourcePath): {},
 	}
 	return selection, nil
 }
 
-func buildCheckSelectionFromDiff(index *checkConfigIndex, diffContent []byte, keyFilter string, prefixID, ignoreDuplicateID bool, prefixIndex packPrefixIndex) (checkSelection, error) {
+func buildCheckSelectionFromDiff(index *checkConfigIndex, diffContent []byte, keyFilter string, prefixID, ignoreDuplicateID bool, prefixIndex packPrefixIndex, configRoot string) (checkSelection, error) {
 	changedFiles, err := parseUnifiedDiffChangedFiles(diffContent)
 	if err != nil {
 		return checkSelection{}, err
@@ -530,7 +531,7 @@ func buildCheckSelectionFromDiff(index *checkConfigIndex, diffContent []byte, ke
 		changedPath := filepath.Clean(changed.path)
 		changedKeys := changed.keys
 		if prefixID {
-			if _, isSource := index.sourceByPath[changedPath]; isSource {
+			if _, isSource := lookupCheckSourceDescriptor(index, configRoot, changedPath); isSource {
 				var err error
 				changedKeys, err = normalizeCheckChangedKeys(changed.keys, prefixIndex, ignoreDuplicateID)
 				if err != nil {
@@ -538,7 +539,7 @@ func buildCheckSelectionFromDiff(index *checkConfigIndex, diffContent []byte, ke
 				}
 			}
 		}
-		if sourceDesc, ok := index.sourceByPath[changedPath]; ok {
+		if sourceDesc, ok := lookupCheckSourceDescriptor(index, configRoot, changedPath); ok {
 			scope := selection.bySource[filepath.Clean(sourceDesc.sourcePath)]
 			scope.keys = intersectChangedKeys(scope.keys, changedKeys, filterKey)
 			scope.sourceInDiff = true
@@ -546,7 +547,7 @@ func buildCheckSelectionFromDiff(index *checkConfigIndex, diffContent []byte, ke
 			selection.bySource[filepath.Clean(sourceDesc.sourcePath)] = scope
 			continue
 		}
-		targetLookup, ok := index.targetToSource[changedPath]
+		targetLookup, ok := lookupCheckTargetLookup(index, configRoot, changedPath)
 		if !ok {
 			continue
 		}

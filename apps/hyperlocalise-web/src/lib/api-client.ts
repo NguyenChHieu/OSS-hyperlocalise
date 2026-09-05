@@ -85,7 +85,16 @@ function createOrgSlugClient(origin: string) {
       "slack-connect",
       "github-installation",
     ]),
-    ...pickClientPaths(workspace, ["teams", "members", "workspace", "billing", "api-keys"]),
+    ...pickClientPaths(workspace, [
+      "teams",
+      "members",
+      "workspace",
+      "billing",
+      "api-keys",
+      "activity-logs",
+      "hyperlab",
+      "overview",
+    ]),
   };
 }
 

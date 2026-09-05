@@ -26,13 +26,12 @@ import {
   SidebarRail,
   SidebarTrigger,
 } from "@/components/ui/sidebar";
-import LocaleToggle from "@/components/locale-toggle/locale-toggle";
-import ThemeToggle from "@/components/theme-toggle/theme-toggle";
+import { cn } from "@/lib/primitives/cn";
 import { AppShellBreadcrumb } from "./app-shell-breadcrumb";
 import { AppShellNavigation } from "./app-shell-navigation";
 import { TmsUserConnectButton } from "./tms-user-connect-button";
 import { TmsUserOAuthErrorToast } from "./tms-user-oauth-error-toast";
-import type { NavigationGroup } from "./navigation-config";
+import { isOrganizationSettingsPath, type NavigationGroup } from "./navigation-config";
 import { AppShellHeaderActions } from "./store/app-shell-header-actions";
 import { AppShellStoreProvider } from "./store/app-shell-store-context";
 import { SidebarStoreBridge } from "./store/sidebar-store-bridge";
@@ -88,6 +87,7 @@ export function AppShellClient({
   const organizationSlug = activeOrganization.slug ?? "";
   const isContentEditorWorkspaceRoute =
     pathname.includes("/strings") || pathname.includes("/files/content-editor");
+  const isOrgSettingsRoute = isOrganizationSettingsPath(pathname);
   const tmsUserConnectQuery = useTmsUserConnectCta(organizationSlug, {
     enabled: Boolean(organizationSlug),
     initialData: tmsUserConnectCta,
@@ -106,7 +106,7 @@ export function AppShellClient({
           {
             "--app-shell-content-height":
               "calc(100svh - var(--app-shell-header-height) - var(--app-shell-footer-height))",
-            "--app-shell-plan-footer-height": "calc(2.5rem + env(safe-area-inset-bottom))",
+            "--app-shell-plan-footer-height": "calc(3rem + env(safe-area-inset-bottom))",
             "--app-shell-footer-height":
               "calc(var(--app-shell-plan-footer-height) + var(--app-shell-dock-height, 0px))",
             "--sidebar-width": "15rem",
@@ -127,7 +127,12 @@ export function AppShellClient({
                 className="size-7 shrink-0 rounded-lg"
               />
               <div className="min-w-0 group-data-[collapsible=icon]:hidden">
-                <TypographyP className="truncate text-sm font-medium text-sidebar-foreground">
+                <TypographyP
+                  className="text-sidebar-foreground"
+                  lineClamp={1}
+                  size="small"
+                  weight="medium"
+                >
                   <FormattedMessage {...appShellClientMessages.brandName} />
                 </TypographyP>
               </div>
@@ -162,22 +167,28 @@ export function AppShellClient({
                     connectMethod={resolvedTmsUserConnectCta.connectMethod}
                   />
                 ) : null}
-                <LocaleToggle />
-                <ThemeToggle />
                 <NavUser
-                  organizationName={activeOrganization.name}
                   organizationSlug={activeOrganization.slug ?? ""}
                   organizations={organizations}
                   showApiKeysLink={showApiKeysLink}
                   showBillingLink={showBillingLink}
                   showMembersLink={showMembersLink}
-                  user={{ name: user.name, avatar: user.avatarUrl ?? "" }}
+                  user={{
+                    name: user.name,
+                    email: user.email,
+                    avatar: user.avatarUrl ?? "",
+                  }}
                 />
               </div>
             </div>
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">
+          <div
+            className={cn(
+              "flex min-h-0 flex-1 flex-col",
+              isOrgSettingsRoute ? "overflow-hidden" : "overflow-y-auto px-4 py-5 sm:px-6 lg:px-8",
+            )}
+          >
             {children}
           </div>
         </SidebarInset>

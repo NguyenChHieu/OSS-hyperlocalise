@@ -13,8 +13,7 @@
 
 import type { IntlShape } from "react-intl";
 
-import type { ApiKeyOwner, ApiKeyPermission } from "@/api/routes/api-key/api-key.schema";
-import { defaultApiKeyPermissions } from "@/api/routes/api-key/api-key.schema";
+import type { ApiKeyOwner } from "@/api/routes/api-key/api-key.schema";
 
 export type AccessTokenSummary = {
   id: string;
@@ -27,15 +26,6 @@ export type AccessTokenSummary = {
   owner?: ApiKeyOwner | null;
 };
 
-export const ACCESS_TOKEN_PERMISSIONS = defaultApiKeyPermissions;
-
-export function selectOwnedAccessTokens<T extends { owner?: { userId: string } | null }>(
-  tokens: readonly T[],
-  currentUserId: string,
-): T[] {
-  return tokens.filter((token) => token.owner?.userId === currentUserId);
-}
-
 export function formatAccessTokenDate(
   intl: Pick<IntlShape, "formatDate">,
   date: string | null,
@@ -45,25 +35,5 @@ export function formatAccessTokenDate(
     return neverUsedLabel;
   }
 
-  return intl.formatDate(new Date(date), {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-export function toggleAccessTokenPermission(
-  permissions: readonly ApiKeyPermission[],
-  permission: ApiKeyPermission,
-  enabled: boolean,
-): ApiKeyPermission[] {
-  if (enabled) {
-    return ACCESS_TOKEN_PERMISSIONS.filter(
-      (scope) => scope === permission || permissions.includes(scope),
-    );
-  }
-
-  return permissions.filter((scope) => scope !== permission);
+  return intl.formatDate(new Date(date), { dateStyle: "medium" });
 }

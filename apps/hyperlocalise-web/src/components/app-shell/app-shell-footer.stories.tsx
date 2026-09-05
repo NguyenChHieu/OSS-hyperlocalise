@@ -10,11 +10,15 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { useEffect, type ReactNode } from "react";
+import { useEffect, type CSSProperties, type ReactNode } from "react";
 import type { Meta, StoryObj } from "@storybook/nextjs-vite";
 import { expect, fn, userEvent, within } from "storybook/test";
 
 import { AppShellStoreProvider } from "@/components/app-shell/store/app-shell-store-context";
+import {
+  APP_SHELL_STORY_ORGANIZATION_SLUG,
+  appShellStoryUser,
+} from "@/components/app-shell/app-shell.stories.fixture";
 import {
   CAT_ISSUE_GUIDANCE_OPEN_EVENT,
   EMPTY_CAT_ISSUE_GUIDANCE_STATUS,
@@ -27,19 +31,21 @@ import {
   type ContentEditorGlossaryGuidanceStatus,
 } from "@/components/content-editor/intelligence/content-editor-glossary-guidance-event";
 
-import type { InboxCurrentUser } from "@/app/[lang]/(authenticated)/org/[organizationSlug]/inbox/_components/inbox-types";
 import { AppShellFooter } from "./app-shell-footer";
 
-const currentUser: InboxCurrentUser = {
+const currentUser = {
   avatarUrl: null,
-  email: "storybook@example.com",
-  name: "Storybook User",
+  email: appShellStoryUser.email,
+  name: appShellStoryUser.name,
 };
 
 function FooterStoryFrame({ children }: { children: ReactNode }) {
   return (
     <AppShellStoreProvider defaultNavigationGroups={[]}>
-      <div className="min-h-screen bg-muted/20 text-foreground">
+      <div
+        className="min-h-screen bg-muted/20 text-foreground"
+        style={{ "--app-shell-plan-footer-height": "3rem" } as CSSProperties}
+      >
         <div className="mx-auto max-w-5xl px-6 py-10">
           <p className="text-sm text-muted-foreground">
             App shell content placeholder so the fixed footer is shown in context.
@@ -101,7 +107,7 @@ const meta = {
     ),
   ],
   args: {
-    organizationSlug: "acme",
+    organizationSlug: APP_SHELL_STORY_ORGANIZATION_SLUG,
     showPlan: false,
     showGlossaryGuidance: false,
     showIssueGuidance: false,

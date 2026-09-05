@@ -22,8 +22,8 @@ import {
   VISUAL_CATALOG_CATEGORY_ORDER,
   VISUAL_NODE_CATALOG,
   type VisualNodeCatalogItem,
-} from "@/lib/visual-workflows/mock/node-catalog";
-import type { VisualCatalogCategory, VisualCatalogType } from "@/lib/visual-workflows/mock/types";
+} from "@/lib/visual-workflows/catalog/node-catalog";
+import type { VisualCatalogCategory, VisualCatalogType } from "@/lib/visual-workflows/schema/types";
 import { cn } from "@/lib/primitives/cn";
 
 import { visualWorkflowEditorMessages as messages } from "./visual-workflow-editor.messages";
@@ -142,10 +142,22 @@ function titleFor(type: VisualCatalogType) {
   switch (type) {
     case "trigger.manual":
       return messages.nodeManualTrigger;
+    case "trigger.scheduled":
+      return messages.nodeScheduledTrigger;
+    case "trigger.github":
+      return messages.nodeGithubTrigger;
+    case "trigger.source_upload":
+      return messages.nodeSourceUploadTrigger;
     case "action.http":
       return messages.nodeHttp;
+    case "action.notify_slack":
+      return messages.nodeNotifySlack;
     case "logic.if":
       return messages.nodeIf;
+    case "logic.switch":
+      return messages.nodeSwitch;
+    case "logic.set":
+      return messages.nodeSet;
     case "ai.agent":
       return messages.nodeAi;
     case "logic.for_each":
@@ -157,10 +169,22 @@ function hintFor(type: VisualCatalogType) {
   switch (type) {
     case "trigger.manual":
       return messages.nodeManualTriggerHint;
+    case "trigger.scheduled":
+      return messages.nodeScheduledTriggerHint;
+    case "trigger.github":
+      return messages.nodeGithubTriggerHint;
+    case "trigger.source_upload":
+      return messages.nodeSourceUploadTriggerHint;
     case "action.http":
       return messages.nodeHttpHint;
+    case "action.notify_slack":
+      return messages.nodeNotifySlackHint;
     case "logic.if":
       return messages.nodeIfHint;
+    case "logic.switch":
+      return messages.nodeSwitchHint;
+    case "logic.set":
+      return messages.nodeSetHint;
     case "ai.agent":
       return messages.nodeAiHint;
     case "logic.for_each":

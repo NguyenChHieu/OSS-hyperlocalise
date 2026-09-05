@@ -1,0 +1,44 @@
+/*
+ * Copyright (c) 2026 Hyperlocalise Pty Ltd
+ *
+ * Use of this software is governed by the Business Source License 1.1
+ * included in this application's LICENSE file.
+ *
+ * Change Date: Four years after publication of the applicable version.
+ *
+ * On the Change Date, in accordance with the Business Source License, use
+ * of this software will be governed by the GNU General Public License
+ * Version 2.0 or later.
+ */
+import { hasCapability } from "@/api/auth/policy";
+import { requireAppCapability } from "@/lib/workos/app-auth";
+
+import { HyperlabAudiencesPage } from "../_components/hyperlab-audiences-page";
+import { OrgPageSuspense } from "../../_components/org-page-suspense";
+
+export default function HyperlabAudiencesRoute({
+  params,
+}: {
+  params: Promise<{ organizationSlug: string }>;
+}) {
+  return (
+    <OrgPageSuspense>
+      <HyperlabAudiencesRouteLoader params={params} />
+    </OrgPageSuspense>
+  );
+}
+
+async function HyperlabAudiencesRouteLoader({
+  params,
+}: {
+  params: Promise<{ organizationSlug: string }>;
+}) {
+  const { organizationSlug } = await params;
+  const auth = await requireAppCapability("experiments:read", { organizationSlug });
+  return (
+    <HyperlabAudiencesPage
+      organizationSlug={organizationSlug}
+      canWrite={hasCapability(auth.membership.role, "experiments:write")}
+    />
+  );
+}

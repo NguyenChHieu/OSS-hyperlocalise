@@ -24,8 +24,10 @@ import {
   WORKSPACE_DOMAINS_FLAG,
   WORKSPACE_FEATURE_UNAVAILABLE_REASON,
   WORKSPACE_GLOSSARY_SEARCH_FLAG,
+  WORKSPACE_HYPERLAB_FLAG,
   WORKSPACE_KNOWLEDGE_FLAG,
   WORKSPACE_VISUAL_MOCK_FLAG,
+  WORKSPACE_VISUAL_WORKFLOWS_FLAG,
   type WorkosFlagEntities,
   type WorkspaceFeatureFlagState,
 } from "./workos-flag-entities";
@@ -58,6 +60,13 @@ export const workspaceVisualMockFlag = flag<boolean, WorkosFlagEntities>({
   adapter: workosAdapter(),
 });
 
+export const workspaceVisualWorkflowsFlag = flag<boolean, WorkosFlagEntities>({
+  key: WORKSPACE_VISUAL_WORKFLOWS_FLAG,
+  defaultValue: false,
+  description: "Advanced visual workflow editor for deterministic automation graphs.",
+  adapter: workosAdapter(),
+});
+
 export const workspaceDomainsFlag = flag<boolean, WorkosFlagEntities>({
   key: WORKSPACE_DOMAINS_FLAG,
   defaultValue: false,
@@ -73,20 +82,30 @@ export const workspaceGlossarySearchFlag = flag<boolean, WorkosFlagEntities>({
   adapter: workosAdapter(),
 });
 
+export const workspaceHyperlabFlag = flag<boolean, WorkosFlagEntities>({
+  key: WORKSPACE_HYPERLAB_FLAG,
+  defaultValue: false,
+  description: "Hyperlab experiments and feature flags for customer applications.",
+  adapter: workosAdapter(),
+});
+
 export async function evaluateWorkspaceFeatureFlags(
   auth: Pick<AppAuthContext, "activeOrganization" | "user">,
 ): Promise<WorkspaceFeatureFlagState> {
   const identify = () => createWorkosIdentify(auth);
 
-  const [automations, knowledge, visualMock, domains, glossarySearch] = await Promise.all([
-    workspaceAutomationsFlag.run({ identify }),
-    workspaceKnowledgeFlag.run({ identify }),
-    workspaceVisualMockFlag.run({ identify }),
-    workspaceDomainsFlag.run({ identify }),
-    workspaceGlossarySearchFlag.run({ identify }),
-  ]);
+  const [automations, knowledge, visualMock, visualWorkflows, domains, glossarySearch, hyperlab] =
+    await Promise.all([
+      workspaceAutomationsFlag.run({ identify }),
+      workspaceKnowledgeFlag.run({ identify }),
+      workspaceVisualMockFlag.run({ identify }),
+      workspaceVisualWorkflowsFlag.run({ identify }),
+      workspaceDomainsFlag.run({ identify }),
+      workspaceGlossarySearchFlag.run({ identify }),
+      workspaceHyperlabFlag.run({ identify }),
+    ]);
 
-  return { automations, knowledge, visualMock, domains, glossarySearch };
+  return { automations, knowledge, visualMock, visualWorkflows, domains, glossarySearch, hyperlab };
 }
 
 export async function resolveWorkspaceVisualMockFlag(input: {

@@ -39,6 +39,7 @@ import {
   workspaceResourceLimitErrorDetails,
   workspaceResourceLimitMessage,
 } from "@/lib/billing/workspace-resource-limits";
+import { enqueueActivityLogEvent } from "@/lib/activity-log/activity-log-writer";
 import { db, schema, type DatabaseClient } from "@/lib/database/client";
 import type { Project } from "@/lib/database/types";
 import { getFileStorageAdapter } from "@/lib/file-storage/get-file-storage-adapter";
@@ -116,6 +117,7 @@ import {
   listFilteredProjectFiles,
 } from "@/lib/projects/files/project-file-service";
 import { enqueueSourceFileIngestAfterUpload } from "@/lib/projects/files/source-file-ingest";
+import { localizeAndStoreDocumentVariant } from "@/lib/projects/files/document-variant-service";
 import {
   localizeAndStoreImageVariant,
   projectImageAssetPath,
@@ -252,6 +254,7 @@ import {
   loadContentEditorSegmentVisualContext,
 } from "@/lib/translation/content-editor-core";
 import {
+  inferSupportedDocumentTranslationFileFormat,
   inferSupportedFileTranslationFileFormat,
   inferSupportedImageTranslationFileFormat,
   inferSupportedSourceUploadFormat,
@@ -1128,6 +1131,21 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         }
 
         const project = limitResult.value;
+        await enqueueActivityLogEvent({
+          actorCredentialId: null,
+          actorKind: "user",
+          actorUserId: c.var.auth.user.localUserId,
+          eventType: "project_created",
+          organizationId: c.var.auth.organization.localOrganizationId,
+          payload: {
+            name: project.name,
+            providerKind: project.externalProviderKind ?? undefined,
+            resourceId: project.id,
+            source: project.source,
+          },
+          targetId: project.id,
+          targetKind: "project",
+        });
         return c.json({ project: { ...project, openJobCount: 0 } }, 201);
       } catch (error) {
         if (error instanceof Error && error.message === "invalid_project_team") {
@@ -2174,6 +2192,68 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
 
           const targetAssetUrl = result.value.storedFileId
             ? projectVideoAssetPath({
+                organizationSlug,
+                projectId: params.projectId,
+                fileId: result.value.storedFileId,
+              })
+            : null;
+
+          return c.json(
+            {
+              imageVariant: {
+                id: result.value.id,
+                status: result.value.status,
+                targetAssetUrl,
+                storedFileId: result.value.storedFileId,
+              },
+            },
+            200,
+          );
+        }
+
+        if (inferSupportedDocumentTranslationFileFormat(body.sourcePath)) {
+          const sourceFile = fileBackedSourceFile;
+          if (!sourceFile) {
+            return badRequestResponse(
+              c,
+              "source_file_not_found",
+              "Source file not found for the given path",
+            );
+          }
+
+          const latestVersion = await getLatestRepositorySourceFileVersion({
+            organizationId,
+            projectId: params.projectId,
+            sourcePath: body.sourcePath,
+          });
+          if (!latestVersion?.storedFileId) {
+            return badRequestResponse(
+              c,
+              "source_bytes_missing",
+              "Source document bytes are missing",
+            );
+          }
+
+          const result = await localizeAndStoreDocumentVariant({
+            organizationId,
+            projectId: params.projectId,
+            sourcePath: body.sourcePath,
+            targetLocale: body.targetLocale,
+            sourceLocale: project.sourceLocale,
+            sourceStoredFileId: latestVersion.storedFileId,
+            repositorySourceFileId: sourceFile.id,
+            instructions: body.instructions,
+            provenance: "agent",
+            createdByUserId: c.var.auth.user.localUserId,
+            force: body.force,
+          });
+
+          if (!result.ok) {
+            return badRequestResponse(c, result.error.code, "Document regeneration failed");
+          }
+
+          const targetAssetUrl = result.value.storedFileId
+            ? projectImageAssetPath({
                 organizationSlug,
                 projectId: params.projectId,
                 fileId: result.value.storedFileId,
@@ -3793,6 +3873,20 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
         return projectNotFoundResponse(c);
       }
 
+      await enqueueActivityLogEvent({
+        actorCredentialId: null,
+        actorKind: "user",
+        actorUserId: c.var.auth.user.localUserId,
+        eventType: "project_settings_changed",
+        organizationId: c.var.auth.organization.localOrganizationId,
+        payload: {
+          changedFields: Object.keys(payload),
+          projectId: project.id,
+        },
+        targetId: project.id,
+        targetKind: "project",
+      });
+
       const openJobCount = await countOpenJobs(c.var.auth, project.id);
       return c.json({ project: { ...project, openJobCount } }, 200);
     })
@@ -3811,6 +3905,17 @@ export function createProjectRoutes(options: CreateProjectRoutesOptions = {}) {
       if (deleteResult === "not_found") {
         return projectNotFoundResponse(c);
       }
+
+      await enqueueActivityLogEvent({
+        actorCredentialId: null,
+        actorKind: "user",
+        actorUserId: c.var.auth.user.localUserId,
+        eventType: "project_deleted",
+        organizationId: c.var.auth.organization.localOrganizationId,
+        payload: { resourceId: params.projectId },
+        targetId: params.projectId,
+        targetKind: "project",
+      });
 
       return c.body(null, 204);
     });

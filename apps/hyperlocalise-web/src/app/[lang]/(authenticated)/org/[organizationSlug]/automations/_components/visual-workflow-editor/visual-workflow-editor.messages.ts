@@ -25,6 +25,11 @@ export const visualWorkflowEditorMessages = defineMessages({
     id: "4LzDIQaYVP",
     description: "Badge indicating the visual editor is a prototype",
   },
+  playgroundBadge: {
+    defaultMessage: "Playground",
+    id: "TzH92UpIsI",
+    description: "Badge indicating the visual editor is an interactive playground",
+  },
   editorTab: {
     defaultMessage: "Editor",
     id: "sHEScxEFix",
@@ -50,6 +55,46 @@ export const visualWorkflowEditorMessages = defineMessages({
     id: "tZkO4BrIat",
     description: "Disabled workflow active-state toggle label",
   },
+  activeLabel: {
+    defaultMessage: "Active",
+    id: "EOnZA0Blf8",
+    description: "Label when a visual workflow is active and receiving production triggers",
+  },
+  pausedLabel: {
+    defaultMessage: "Paused",
+    id: "wO5LCBiwAW",
+    description: "Badge label when a visual workflow is paused",
+  },
+  executionsLoading: {
+    defaultMessage: "Loading runs…",
+    id: "2UzN/e58h6",
+    description: "Loading state for the visual workflow executions tab",
+  },
+  executionsEmpty: {
+    defaultMessage: "No runs yet. Test the workflow or activate a production trigger.",
+    id: "xCzhnb7LDc",
+    description: "Empty state for the visual workflow executions list",
+  },
+  executionsSelectRun: {
+    defaultMessage: "Select a run to inspect node-level status.",
+    id: "3CTikplBoF",
+    description: "Prompt when no run is selected in the executions tab",
+  },
+  executionsNoNodeRuns: {
+    defaultMessage: "No node runs recorded for this execution yet.",
+    id: "XDw6P/hnSY",
+    description: "Empty node run table in executions detail",
+  },
+  executionNodeColumn: {
+    defaultMessage: "Node",
+    id: "U2UH4sKilD",
+    description: "Column header for node id in execution detail",
+  },
+  executionStatusColumn: {
+    defaultMessage: "Status",
+    id: "86k8CEUaJ5",
+    description: "Column header for node status in execution detail",
+  },
   share: {
     defaultMessage: "Share",
     id: "LwRsugxcAC",
@@ -57,8 +102,13 @@ export const visualWorkflowEditorMessages = defineMessages({
   },
   save: {
     defaultMessage: "Save",
-    id: "w2aW2pUc2c",
-    description: "Disabled save button in visual workflow chrome",
+    id: "U87kn4cxmh",
+    description: "Save button in visual workflow chrome",
+  },
+  saving: {
+    defaultMessage: "Saving…",
+    id: "4JSF3BIeDZ",
+    description: "Save button label while a visual workflow is being saved",
   },
   exportJson: {
     defaultMessage: "Export JSON",
@@ -160,6 +210,26 @@ export const visualWorkflowEditorMessages = defineMessages({
     id: "N80yyF08UZ",
     description: "Catalog description for the if/else node",
   },
+  nodeSwitch: {
+    defaultMessage: "Switch",
+    id: "Qb8e9HBTwT",
+    description: "Catalog title for the switch node",
+  },
+  nodeSwitchHint: {
+    defaultMessage: "Route to one of several branches.",
+    id: "eGggF69cbr",
+    description: "Catalog description for the switch node",
+  },
+  nodeSet: {
+    defaultMessage: "Set fields",
+    id: "DQLb5tVkm8",
+    description: "Catalog title for the set fields node",
+  },
+  nodeSetHint: {
+    defaultMessage: "Assign values into the workflow context.",
+    id: "ZXPdUvtPkF",
+    description: "Catalog description for the set fields node",
+  },
   nodeAi: {
     defaultMessage: "AI Agent",
     id: "mHug8Cyl7z",
@@ -176,9 +246,49 @@ export const visualWorkflowEditorMessages = defineMessages({
     description: "Catalog title for the for-each placeholder node",
   },
   nodeLoopHint: {
-    defaultMessage: "Iterate over items. Coming soon.",
-    id: "o1RbbbgBAc",
-    description: "Catalog description for the for-each placeholder node",
+    defaultMessage: "Iterate over a collection sequentially.",
+    id: "UBB7DkzFVO",
+    description: "Catalog description for the for-each node",
+  },
+  nodeScheduledTrigger: {
+    defaultMessage: "Schedule",
+    id: "Q6fTrZjDFK",
+    description: "Catalog title for the scheduled trigger node",
+  },
+  nodeScheduledTriggerHint: {
+    defaultMessage: "Run on a recurring schedule.",
+    id: "K8Rm2vBkxl",
+    description: "Catalog description for the scheduled trigger node",
+  },
+  nodeGithubTrigger: {
+    defaultMessage: "GitHub",
+    id: "X6j8iQtiXf",
+    description: "Catalog title for the GitHub trigger node",
+  },
+  nodeGithubTriggerHint: {
+    defaultMessage: "Start when a repository event occurs.",
+    id: "oJs8Cbpwe6",
+    description: "Catalog description for the GitHub trigger node",
+  },
+  nodeSourceUploadTrigger: {
+    defaultMessage: "Source upload",
+    id: "3v87yVdwpX",
+    description: "Catalog title for the source upload trigger node",
+  },
+  nodeSourceUploadTriggerHint: {
+    defaultMessage: "Start when a source file is uploaded.",
+    id: "96dcZwdhGc",
+    description: "Catalog description for the source upload trigger node",
+  },
+  nodeNotifySlack: {
+    defaultMessage: "Notify Slack",
+    id: "t2I2Yj3t0M",
+    description: "Catalog title for the notify Slack action node",
+  },
+  nodeNotifySlackHint: {
+    defaultMessage: "Send a Slack message to a channel.",
+    id: "5/GGmNLCh0",
+    description: "Catalog description for the notify Slack action node",
   },
   addNode: {
     defaultMessage: "Add node",
@@ -195,6 +305,21 @@ export const visualWorkflowEditorMessages = defineMessages({
     id: "t4mVRTnKLW",
     description: "Right panel heading when a node is selected",
   },
+  triggerType: {
+    defaultMessage: "Trigger",
+    id: "cSkIY27SIk",
+    description: "Label for changing the selected visual workflow trigger type",
+  },
+  deleteStep: {
+    defaultMessage: "Delete step",
+    id: "d/T+F7hGuw",
+    description: "Button that removes the selected node from the visual workflow canvas",
+  },
+  deleteWorkflow: {
+    defaultMessage: "Delete",
+    id: "nqnh5BEInQ",
+    description: "Button that deletes the current visual workflow",
+  },
   httpMethod: {
     defaultMessage: "Method",
     id: "42t+jTqT0q",
@@ -204,6 +329,171 @@ export const visualWorkflowEditorMessages = defineMessages({
     defaultMessage: "URL",
     id: "k66v97xuuE",
     description: "HTTP node URL field label",
+  },
+  httpQueryParams: {
+    defaultMessage: "Query parameters",
+    id: "ZlYq8eSzg2",
+    description: "HTTP node query parameters label",
+  },
+  httpHeaders: {
+    defaultMessage: "Headers",
+    id: "UPSrigC8qi",
+    description: "HTTP node headers label",
+  },
+  httpBodyType: {
+    defaultMessage: "Body type",
+    id: "gXUXFoSBuO",
+    description: "HTTP node body type label",
+  },
+  httpBodyNone: {
+    defaultMessage: "None",
+    id: "jtMuzhGEyo",
+    description: "HTTP node body type none option",
+  },
+  httpBodyJson: {
+    defaultMessage: "JSON",
+    id: "n5goMj2vzm",
+    description: "HTTP node body type json option",
+  },
+  httpBodyText: {
+    defaultMessage: "Text",
+    id: "8Xv6VRwnt8",
+    description: "HTTP node body type text option",
+  },
+  httpBody: {
+    defaultMessage: "Body",
+    id: "Ajr/yjqPyf",
+    description: "HTTP node body field label",
+  },
+  httpAuthType: {
+    defaultMessage: "Authentication",
+    id: "YHVrBzelKI",
+    description: "HTTP node auth type label",
+  },
+  httpAuthNone: {
+    defaultMessage: "None",
+    id: "LfRnarhSYl",
+    description: "HTTP node auth none option",
+  },
+  httpAuthBearer: {
+    defaultMessage: "Bearer token",
+    id: "VaBWbObFr8",
+    description: "HTTP node bearer auth option",
+  },
+  httpAuthApiKey: {
+    defaultMessage: "API key",
+    id: "JxY8wqGfw1",
+    description: "HTTP node api key auth option",
+  },
+  httpAuthToken: {
+    defaultMessage: "Token",
+    id: "M872sYIDd7",
+    description: "HTTP node auth token label",
+  },
+  httpAuthHeaderName: {
+    defaultMessage: "Header name",
+    id: "GYOEi48Bxv",
+    description: "HTTP node api key header name label",
+  },
+  httpParseJson: {
+    defaultMessage: "Parse JSON response",
+    id: "2tQhE9LloD",
+    description: "HTTP node parse json checkbox label",
+  },
+  httpFailOnError: {
+    defaultMessage: "Fail on HTTP error status",
+    id: "HCpKchokfS",
+    description: "HTTP node fail on error checkbox label",
+  },
+  onErrorLabel: {
+    defaultMessage: "On error",
+    id: "NFSiCA4x/F",
+    description: "Label for node error behavior select",
+  },
+  onErrorStop: {
+    defaultMessage: "Stop workflow",
+    id: "lPNvi3t9/d",
+    description: "Stop workflow on node error",
+  },
+  onErrorContinue: {
+    defaultMessage: "Continue workflow",
+    id: "1GLSyoUT4Z",
+    description: "Continue workflow on node error",
+  },
+  onErrorBranch: {
+    defaultMessage: "Error branch",
+    id: "UJFX+3Y3fz",
+    description: "Route to error branch on node error",
+  },
+  errorHandle: {
+    defaultMessage: "error",
+    id: "nYOxYYV5jF",
+    description: "Label on error output handle",
+  },
+  switchExpression: {
+    defaultMessage: "Expression",
+    id: "vKVR+7LwqC",
+    description: "Switch node expression field label",
+  },
+  switchCases: {
+    defaultMessage: "Cases",
+    id: "0vaHgLAQkS",
+    description: "Switch node cases section label",
+  },
+  switchCaseValue: {
+    defaultMessage: "Case {index}",
+    id: "bE+/1fvD7l",
+    description: "Placeholder for switch case value input",
+  },
+  addSwitchCase: {
+    defaultMessage: "Add case",
+    id: "n4hpRZLl37",
+    description: "Button to add a switch case",
+  },
+  switchCaseHandle: {
+    defaultMessage: "Case {index}",
+    id: "04QgRuZsOk",
+    description: "Label for numbered switch output handle",
+  },
+  switchDefaultHandle: {
+    defaultMessage: "default",
+    id: "F9TbntyBsV",
+    description: "Label for switch default output handle",
+  },
+  setAssignments: {
+    defaultMessage: "Field assignments",
+    id: "VMyrNr9Y/C",
+    description: "Set node assignments section label",
+  },
+  setFieldName: {
+    defaultMessage: "Field name",
+    id: "UWp9ixlYUw",
+    description: "Set node field name placeholder",
+  },
+  setFieldValue: {
+    defaultMessage: "Value",
+    id: "B6FNmz1hFv",
+    description: "Set node field value placeholder",
+  },
+  keyValueKey: {
+    defaultMessage: "Key",
+    id: "Is9VBW0Pl3",
+    description: "Key placeholder for key-value editor",
+  },
+  keyValueValue: {
+    defaultMessage: "Value",
+    id: "umK6yIapNV",
+    description: "Value placeholder for key-value editor",
+  },
+  addKeyValuePair: {
+    defaultMessage: "Add row",
+    id: "fYm7crAvvb",
+    description: "Button to add key-value row",
+  },
+  nodeOutputTitle: {
+    defaultMessage: "Last output",
+    id: "I4MDdItT7N",
+    description: "Heading for inline node output inspector",
   },
   ifCondition: {
     defaultMessage: "Condition",
@@ -240,6 +530,11 @@ export const visualWorkflowEditorMessages = defineMessages({
     id: "7A2BIhpV5s",
     description: "Bottom-center button that runs the fake workflow animation",
   },
+  testRunFailed: {
+    defaultMessage: "Workflow test run failed.",
+    id: "z5dStQCLpf",
+    description: "Toast when a server-backed visual workflow test run fails",
+  },
   testingWorkflow: {
     defaultMessage: "Testing…",
     id: "yDT7YBlKvk",
@@ -260,6 +555,26 @@ export const visualWorkflowEditorMessages = defineMessages({
     id: "Mepjj5xstx",
     description: "Validation message when a node has no incoming edge",
   },
+  invalidEdge: {
+    defaultMessage: "Remove edges that point to missing steps.",
+    id: "UvtZVrIkJR",
+    description: "Validation message when an edge references a missing node",
+  },
+  invalidTriggerConfig: {
+    defaultMessage: "Fix the trigger configuration before activating this workflow.",
+    id: "7j13INCpbH",
+    description: "Validation message when trigger config is invalid for activation",
+  },
+  nestedForEach: {
+    defaultMessage: "Nested For Each loops are not supported yet.",
+    id: "pyS8Vyq98T",
+    description: "Validation message when a for-each loop contains another for-each loop",
+  },
+  invalidNodeConfig: {
+    defaultMessage: "Fix the step configuration before saving this workflow.",
+    id: "2963Vncu1b",
+    description: "Validation message when a non-trigger node config is invalid",
+  },
   trueHandle: {
     defaultMessage: "true",
     id: "76uDSBNqg0",
@@ -269,6 +584,146 @@ export const visualWorkflowEditorMessages = defineMessages({
     defaultMessage: "false",
     id: "kXUdWEZuUt",
     description: "Label on the if-node false output handle",
+  },
+  saved: {
+    defaultMessage: "Saved",
+    id: "C6xexxLShL",
+    description: "Confirmation after saving a visual workflow",
+  },
+  saveFailed: {
+    defaultMessage: "Could not save workflow",
+    id: "vZgNJeOOdN",
+    description: "Toast when saving a visual workflow fails",
+  },
+  activateFailed: {
+    defaultMessage: "Could not update workflow status. Use a production trigger before activating.",
+    id: "SyXUY/R958",
+    description: "Toast when activating a visual workflow fails",
+  },
+  activated: {
+    defaultMessage: "Workflow activated",
+    id: "wv8HUfa79G",
+    description: "Toast when a visual workflow is activated",
+  },
+  paused: {
+    defaultMessage: "Workflow paused",
+    id: "W3kvUxF+V1",
+    description: "Toast when a visual workflow is paused",
+  },
+  forEachCollection: {
+    defaultMessage: "Collection expression",
+    id: "TSLfOgCp9k",
+    description: "Label for for-each collection expression field",
+  },
+  slackChannelId: {
+    defaultMessage: "Slack channel ID",
+    id: "ALH+xiJiG8",
+    description: "Label for Slack channel id on notify slack node",
+  },
+  slackMessage: {
+    defaultMessage: "Message",
+    id: "NGsHVcOyFb",
+    description: "Label for Slack message on notify slack node",
+  },
+  githubRepositoryId: {
+    defaultMessage: "GitHub repository ID",
+    id: "a1/Cklodwn",
+    description: "Label for GitHub installation repository id on trigger node",
+  },
+  githubBranches: {
+    defaultMessage: "Branch patterns",
+    id: "IsFQvqwJAO",
+    description: "Label for GitHub branch patterns on trigger node",
+  },
+  githubEvents: {
+    defaultMessage: "Events",
+    id: "BFGbjLDQqh",
+    description: "Label for GitHub events on trigger node",
+  },
+  githubEventPush: {
+    defaultMessage: "Push",
+    id: "h+QA+7BAPb",
+    description: "GitHub push event checkbox label",
+  },
+  githubEventPullRequest: {
+    defaultMessage: "Pull request",
+    id: "qxdCTJo5wL",
+    description: "GitHub pull request event checkbox label",
+  },
+  scheduleCadence: {
+    defaultMessage: "Cadence",
+    id: "+KX/fjdtO4",
+    description: "Label for schedule cadence on scheduled trigger node",
+  },
+  scheduleHourly: {
+    defaultMessage: "Hourly",
+    id: "fB8k9m+qMa",
+    description: "Hourly schedule cadence option",
+  },
+  scheduleDaily: {
+    defaultMessage: "Daily",
+    id: "yoc2jz/v8a",
+    description: "Daily schedule cadence option",
+  },
+  scheduleWeekly: {
+    defaultMessage: "Weekly",
+    id: "xM1UVGq/9v",
+    description: "Weekly schedule cadence option",
+  },
+  scheduleHour: {
+    defaultMessage: "Hour (UTC)",
+    id: "f30lOJsKLX",
+    description: "Label for schedule hour field",
+  },
+  scheduleDayOfWeek: {
+    defaultMessage: "Day of week",
+    id: "2HD/xUOuDn",
+    description: "Label for weekly schedule day field",
+  },
+  scheduleTimezone: {
+    defaultMessage: "Timezone",
+    id: "TQPbZg8LsO",
+    description: "Label for schedule timezone field",
+  },
+  scheduleSunday: {
+    defaultMessage: "Sunday",
+    id: "IDmuYPzcIE",
+    description: "Sunday option for weekly schedule",
+  },
+  scheduleMonday: {
+    defaultMessage: "Monday",
+    id: "vy+5ISEhNS",
+    description: "Monday option for weekly schedule",
+  },
+  scheduleTuesday: {
+    defaultMessage: "Tuesday",
+    id: "aewkbG6Jn7",
+    description: "Tuesday option for weekly schedule",
+  },
+  scheduleWednesday: {
+    defaultMessage: "Wednesday",
+    id: "QVQzu9FFdo",
+    description: "Wednesday option for weekly schedule",
+  },
+  scheduleThursday: {
+    defaultMessage: "Thursday",
+    id: "oF3U8SKzm3",
+    description: "Thursday option for weekly schedule",
+  },
+  scheduleFriday: {
+    defaultMessage: "Friday",
+    id: "JLv9f0uEE2",
+    description: "Friday option for weekly schedule",
+  },
+  scheduleSaturday: {
+    defaultMessage: "Saturday",
+    id: "yN3IaRAmIM",
+    description: "Saturday option for weekly schedule",
+  },
+  sourceUploadProjectId: {
+    defaultMessage: "Project ID (optional)",
+    id: "ImtoSoLxJY",
+    description: "Optional project filter for source upload trigger",
   },
   triggerBadge: {
     defaultMessage: "Trigger",

@@ -1,9 +1,22 @@
 ---
 title: "Phrase adapter"
-description: "Configure Phrase for remote translation synchronization."
+description: "Configure Phrase for native sync mode or Phrase-compatible file mode."
 ---
 
-## Required config
+## Two Phrase workflows
+
+Hyperlocalise supports two Phrase integrations:
+
+1. Native sync mode with `i18n.yml` plus `sync push` / `sync pull`
+2. Phrase-compatible file mode with `.phrase.yml` plus `hyperlocalise phrase ...`
+
+Use native sync mode when you want Hyperlocalise-managed entry sync.
+
+Use file mode when you want a closer drop-in replacement for Phrase Strings CLI file workflows. See [phrase](/cli/commands/phrase) for commands, flags, and examples.
+
+## Native sync mode
+
+### Required config
 
 ```jsonc
 {
@@ -18,61 +31,26 @@ description: "Configure Phrase for remote translation synchronization."
 }
 ```
 
-## Optional config fields
+### Optional config fields
 
 - `sourceLanguage`
 - `targetLanguages`
 - `timeoutSeconds`
 - `fileFormat` (required when `mode` is `files`)
 
-## Modes
+### Modes
 
 - `strings`: pull and push using Phrase key and translation APIs.
 - `files`: pull and push using Phrase export/import jobs.
+
+## Phrase-compatible file mode
+
+Use `.phrase.yml`. If `--config` is omitted, Hyperlocalise checks `PHRASEAPP_CONFIG`, then `.phrase.yml` in the current directory, then `$HOME/.phrase.yml`.
+
+See [phrase](/cli/commands/phrase) for the full command tree, supported config fields, and the gap list versus the official Strings CLI.
 
 ## Common issues
 
 - token not found: export `PHRASE_API_TOKEN`
 - mode validation error: set `mode` to `strings` or `files`
 - file mode import failure: verify `fileFormat` matches your project settings
-
-## Phrase CLI config
-
-The file workflow commands can also read Phrase's `.phrase.yml` format:
-
-```yaml
-phrase:
-  access_token: $PHRASE_ACCESS_TOKEN
-  project_id: project-uuid
-  file_format: json
-  host: https://api.phrase.com/v2
-  locale_mapping:
-    fr-FR: fr
-  push:
-    sources:
-      - file: ./locales/en.json
-        params:
-          locale_id: en-US
-          tags: app,source
-          update_translations: true
-  pull:
-    targets:
-      - file: ./locales/<locale_name>.json
-        params:
-          locale_id: fr-FR
-          include_unverified_translations: false
-```
-
-Supported commands:
-
-- `hyperlocalise phrase init`
-- `hyperlocalise phrase config validate --config .phrase.yml`
-- `hyperlocalise phrase push --config .phrase.yml`
-- `hyperlocalise phrase pull --config .phrase.yml`
-- `hyperlocalise phrase locales list --config .phrase.yml`
-- `hyperlocalise phrase upload sources --config .phrase.yml`
-- `hyperlocalise phrase download translations --config .phrase.yml`
-
-If `--config` is omitted, Hyperlocalise checks `PHRASEAPP_CONFIG`, then `.phrase.yml` in the current directory, then `$HOME/.phrase.yml`.
-
-See the [phrase commands](/cli/commands/phrase) reference for flags, token lookup, and the Strings CLI gap table.

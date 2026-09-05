@@ -27,19 +27,22 @@ import { Canvas } from "@/components/ai-elements/canvas";
 import { Controls } from "@/components/ai-elements/controls";
 import { Panel } from "@/components/ai-elements/panel";
 import { Button } from "@/components/ui/button";
-import { isTriggerType } from "@/lib/visual-workflows/mock/node-catalog";
-import type { VisualWorkflowRfEdge, VisualWorkflowRfNode } from "@/lib/visual-workflows/mock/types";
+import { isTriggerType, VISUAL_NODE_CATALOG } from "@/lib/visual-workflows/catalog/node-catalog";
+import type {
+  VisualCatalogType,
+  VisualWorkflowRfEdge,
+  VisualWorkflowRfNode,
+} from "@/lib/visual-workflows/schema/types";
 
 import { VisualWorkflowCompactNode } from "./nodes/visual-workflow-compact-node";
 import { visualWorkflowEditorMessages as messages } from "./visual-workflow-editor.messages";
 
-const nodeTypes = {
-  "trigger.manual": VisualWorkflowCompactNode,
-  "action.http": VisualWorkflowCompactNode,
-  "logic.if": VisualWorkflowCompactNode,
-  "ai.agent": VisualWorkflowCompactNode,
-  "logic.for_each": VisualWorkflowCompactNode,
-};
+export const VISUAL_WORKFLOW_NODE_TYPES = Object.fromEntries(
+  VISUAL_NODE_CATALOG.filter((item) => item.enabled).map((item) => [
+    item.type,
+    VisualWorkflowCompactNode,
+  ]),
+) as Record<VisualCatalogType, typeof VisualWorkflowCompactNode>;
 
 export function VisualWorkflowCanvas({
   nodes,
@@ -84,7 +87,7 @@ export function VisualWorkflowCanvas({
         className="h-full"
         nodes={nodes}
         edges={edges}
-        nodeTypes={nodeTypes}
+        nodeTypes={VISUAL_WORKFLOW_NODE_TYPES}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
@@ -139,7 +142,7 @@ export function applyVisualWorkflowConnection(
   return addEdge(
     {
       ...connection,
-      label: sourceHandle === "true" || sourceHandle === "false" ? sourceHandle : undefined,
+      label: sourceHandle ?? undefined,
     },
     edges,
   );

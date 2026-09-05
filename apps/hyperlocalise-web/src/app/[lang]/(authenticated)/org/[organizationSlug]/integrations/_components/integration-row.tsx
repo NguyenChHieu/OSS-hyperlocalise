@@ -14,18 +14,29 @@
  */
 import { ArrowDown01Icon, ArrowUpRight01Icon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import type { ReactNode, Ref } from "react";
+import Link from "next/link";
+import type { ReactNode } from "react";
 import { FormattedMessage } from "react-intl";
 
 import { integrationRowMessages } from "./integration-row.messages";
 
 import { Button } from "@/components/ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item";
+import { Box } from "@/components/ui/layout/box";
+import { Rows } from "@/components/ui/layout/rows";
 import { Skeleton } from "@/components/ui/skeleton";
-import { TypographyH3 } from "@/components/ui/typography";
+import { TypographyH4, TypographyMuted } from "@/components/ui/typography";
 import { cn } from "@/lib/primitives/cn";
 
-export type IntegrationRowAction = "connect" | "manage" | "coming-soon" | "view-only";
+export type IntegrationRowAction = "connect" | "manage" | "coming-soon" | "view-only" | "open";
 
 type IntegrationRowProps = {
   name: string;
@@ -33,6 +44,7 @@ type IntegrationRowProps = {
   icon?: ReactNode;
   iconMuted?: boolean;
   action: IntegrationRowAction;
+  href?: string;
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
   onConnect?: () => void;
@@ -42,37 +54,68 @@ type IntegrationRowProps = {
   children?: ReactNode;
 };
 
-const actionStyles: Record<
-  IntegrationRowAction,
-  {
-    icon: string;
-    row: string;
-    panel: string;
-    button?: string;
-  }
-> = {
-  "coming-soon": {
-    icon: "border-border bg-muted text-muted-foreground",
-    row: "hover:bg-muted/20",
-    panel: "border-border bg-muted/20",
-  },
-  "view-only": {
-    icon: "border-border bg-muted text-muted-foreground",
-    row: "hover:bg-muted/20",
-    panel: "border-border bg-muted/20",
-  },
-  connect: {
-    icon: "border-border bg-muted/50 text-muted-foreground",
-    row: "hover:bg-muted/20",
-    panel: "border-border bg-muted/20",
-    button: "border-primary/30 bg-primary/10 text-primary hover:bg-primary/15",
-  },
-  manage: {
-    icon: "border-border bg-muted text-foreground",
-    row: "hover:bg-muted/20",
-    panel: "border-border bg-muted/20",
-  },
-};
+export function IntegrationRowFrame({
+  open,
+  onOpenChange,
+  highlighted,
+  icon,
+  iconMuted = false,
+  name,
+  description,
+  nameExtra,
+  action,
+  showPanel,
+  children,
+}: {
+  open: boolean;
+  onOpenChange?: (open: boolean) => void;
+  highlighted: boolean;
+  icon?: ReactNode;
+  iconMuted?: boolean;
+  name: string;
+  description: string;
+  nameExtra?: ReactNode;
+  action: ReactNode;
+  showPanel: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <Collapsible open={open} onOpenChange={onOpenChange}>
+      <Rows spacing="1u">
+        <Item variant={highlighted ? "muted" : "outline"}>
+          <ItemMedia variant="image">
+            <Box
+              display="flex"
+              alignItems="center"
+              justifyContent="center"
+              width="full"
+              height="full"
+              background={iconMuted ? "muted" : "canvas"}
+            >
+              {icon}
+            </Box>
+          </ItemMedia>
+          <ItemContent>
+            <ItemTitle>
+              {name}
+              {nameExtra}
+            </ItemTitle>
+            <ItemDescription>{description}</ItemDescription>
+          </ItemContent>
+          <ItemActions>{action}</ItemActions>
+        </Item>
+
+        {showPanel ? (
+          <CollapsibleContent>
+            <Box background="muted" border="standard" borderRadius="large" padding="2u">
+              {children}
+            </Box>
+          </CollapsibleContent>
+        ) : null}
+      </Rows>
+    </Collapsible>
+  );
+}
 
 export function IntegrationRow({
   name,
@@ -80,101 +123,77 @@ export function IntegrationRow({
   icon,
   iconMuted = false,
   action,
+  href,
   expanded = false,
   onExpandedChange,
   onConnect,
   isConnecting = false,
   isLoading = false,
-  isLast = false,
   children,
 }: IntegrationRowProps) {
-  const showPanel = action === "manage" && children;
-  const activeStyle = actionStyles[action];
-  const iconContainerClass = iconMuted
-    ? "border-border bg-background text-foreground"
-    : activeStyle.icon;
+  const showPanel = Boolean(action === "manage" && children);
 
   return (
-    <Collapsible
+    <IntegrationRowFrame
       open={expanded}
       onOpenChange={onExpandedChange}
-      className={cn(!isLast && "border-b border-border")}
+      highlighted={expanded}
+      icon={icon}
+      iconMuted={iconMuted || action !== "manage"}
+      name={name}
+      description={description}
+      showPanel={showPanel}
+      action={
+        isLoading && (action === "connect" || action === "manage") ? (
+          <Skeleton className="h-8 w-[5.75rem]" aria-hidden />
+        ) : action === "coming-soon" ? (
+          <Button type="button" variant="outline" size="sm" disabled>
+            <FormattedMessage {...integrationRowMessages.comingSoon} />
+          </Button>
+        ) : action === "open" && href ? (
+          <Button nativeButton={false} variant="outline" size="sm" render={<Link href={href} />}>
+            <FormattedMessage {...integrationRowMessages.open} />
+            <HugeiconsIcon icon={ArrowUpRight01Icon} className="size-3.5" strokeWidth={2} />
+          </Button>
+        ) : action === "view-only" ? (
+          <TypographyMuted>
+            <FormattedMessage {...integrationRowMessages.adminsCanConnect} />
+          </TypographyMuted>
+        ) : action === "connect" ? (
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            onClick={onConnect}
+            disabled={isConnecting}
+          >
+            {isConnecting ? (
+              <FormattedMessage {...integrationRowMessages.connecting} />
+            ) : (
+              <FormattedMessage {...integrationRowMessages.connect} />
+            )}
+            <HugeiconsIcon icon={ArrowUpRight01Icon} className="size-3.5" strokeWidth={2} />
+          </Button>
+        ) : showPanel ? (
+          <CollapsibleTrigger
+            render={
+              <Button type="button" variant="outline" size="sm">
+                <FormattedMessage {...integrationRowMessages.manage} />
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  className={cn("size-3.5 transition-transform", expanded && "rotate-180")}
+                  strokeWidth={2}
+                />
+              </Button>
+            }
+          />
+        ) : null
+      }
     >
-      <div
-        className={cn(
-          "flex items-center gap-4 px-5 py-4 transition-colors",
-          activeStyle.row,
-          expanded && activeStyle.panel,
-        )}
-      >
-        <div
-          className={cn(
-            "flex size-10 shrink-0 items-center justify-center rounded-lg border p-2 transition-colors",
-            iconContainerClass,
-          )}
-        >
-          {icon}
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <p className="text-base font-medium text-foreground">{name}</p>
-          <p className="mt-0.5 text-sm leading-6 text-muted-foreground">{description}</p>
-        </div>
-
-        <div className="shrink-0">
-          {isLoading && (action === "connect" || action === "manage") ? (
-            <Skeleton className="h-8 w-[5.75rem] rounded-md" aria-hidden />
-          ) : action === "coming-soon" ? (
-            <Button type="button" variant="outline" size="sm" disabled>
-              <FormattedMessage {...integrationRowMessages.comingSoon} />
-            </Button>
-          ) : action === "view-only" ? (
-            <span className="text-sm text-muted-foreground">
-              <FormattedMessage {...integrationRowMessages.adminsCanConnect} />
-            </span>
-          ) : action === "connect" ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onConnect}
-              disabled={isConnecting}
-              className={activeStyle.button}
-            >
-              {isConnecting ? (
-                <FormattedMessage {...integrationRowMessages.connecting} />
-              ) : (
-                <FormattedMessage {...integrationRowMessages.connect} />
-              )}
-              <HugeiconsIcon icon={ArrowUpRight01Icon} className="size-3.5" strokeWidth={2} />
-            </Button>
-          ) : showPanel ? (
-            <CollapsibleTrigger
-              render={
-                <Button type="button" variant="outline" size="sm">
-                  <FormattedMessage {...integrationRowMessages.manage} />
-                  <HugeiconsIcon
-                    icon={ArrowDown01Icon}
-                    className={cn("size-3.5 transition-transform", expanded && "rotate-180")}
-                    strokeWidth={2}
-                  />
-                </Button>
-              }
-            />
-          ) : null}
-        </div>
-      </div>
-
-      {showPanel ? (
-        <CollapsibleContent className={cn("border-t px-5 py-5", activeStyle.panel)}>
-          {children}
-        </CollapsibleContent>
-      ) : null}
-    </Collapsible>
+      {children}
+    </IntegrationRowFrame>
   );
 }
-
-export const integrationConnectButtonClassName = actionStyles.connect.button!;
 
 type CollapsibleIntegrationRowProps = {
   name: string;
@@ -198,122 +217,68 @@ export function CollapsibleIntegrationRow({
   expanded,
   onExpandedChange,
   isLoading = false,
-  isLast = false,
   children,
 }: CollapsibleIntegrationRowProps) {
   const showPanel = userIsAdmin || isConnected;
 
   return (
-    <Collapsible
+    <IntegrationRowFrame
       open={showPanel && expanded}
       onOpenChange={onExpandedChange}
-      className={cn(!isLast && "border-b border-border")}
-    >
-      <div
-        className={cn(
-          "flex items-center gap-4 px-5 py-4 transition-colors",
-          "hover:bg-muted/20",
-          expanded && "bg-muted/20",
-        )}
-      >
-        <div
-          className={cn(
-            "flex size-10 shrink-0 items-center justify-center rounded-lg border border-border p-2",
-            isConnected
-              ? "border-border bg-muted text-foreground"
-              : "border-border bg-muted/50 text-muted-foreground",
-          )}
-        >
-          {icon}
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <p className="text-base font-medium text-foreground">{name}</p>
-          <p className="mt-0.5 text-sm leading-6 text-muted-foreground">{description}</p>
-        </div>
-
-        <div className="shrink-0">
-          {isLoading && showPanel ? (
-            <Skeleton className="h-8 w-[5.75rem] rounded-md" aria-hidden />
-          ) : showPanel ? (
-            <CollapsibleTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className={
-                    userIsAdmin && !isConnected ? integrationConnectButtonClassName : undefined
-                  }
-                >
-                  {userIsAdmin ? (
-                    isConnected ? (
-                      <FormattedMessage {...integrationRowMessages.manage} />
-                    ) : (
-                      <FormattedMessage {...integrationRowMessages.connect} />
-                    )
+      highlighted={expanded}
+      icon={icon}
+      iconMuted={!isConnected}
+      name={name}
+      description={description}
+      showPanel={showPanel}
+      action={
+        isLoading && showPanel ? (
+          <Skeleton className="h-8 w-[5.75rem]" aria-hidden />
+        ) : showPanel ? (
+          <CollapsibleTrigger
+            render={
+              <Button
+                type="button"
+                variant={userIsAdmin && !isConnected ? "default" : "outline"}
+                size="sm"
+              >
+                {userIsAdmin ? (
+                  isConnected ? (
+                    <FormattedMessage {...integrationRowMessages.manage} />
                   ) : (
-                    <FormattedMessage {...integrationRowMessages.viewOnly} />
-                  )}
-                  <HugeiconsIcon
-                    icon={ArrowDown01Icon}
-                    className={cn("size-3.5 transition-transform", expanded && "rotate-180")}
-                    strokeWidth={2}
-                  />
-                </Button>
-              }
-            />
-          ) : (
-            <span className="text-sm text-muted-foreground">
-              <FormattedMessage {...integrationRowMessages.adminsCanConnect} />
-            </span>
-          )}
-        </div>
-      </div>
-
-      {showPanel ? (
-        <CollapsibleContent className={cn("border-t px-5 py-5", "border-border bg-muted/20")}>
-          {children}
-        </CollapsibleContent>
-      ) : null}
-    </Collapsible>
+                    <FormattedMessage {...integrationRowMessages.connect} />
+                  )
+                ) : (
+                  <FormattedMessage {...integrationRowMessages.viewOnly} />
+                )}
+                <HugeiconsIcon
+                  icon={ArrowDown01Icon}
+                  className={cn("size-3.5 transition-transform", expanded && "rotate-180")}
+                  strokeWidth={2}
+                />
+              </Button>
+            }
+          />
+        ) : (
+          <TypographyMuted>
+            <FormattedMessage {...integrationRowMessages.adminsCanConnect} />
+          </TypographyMuted>
+        )
+      }
+    >
+      {children}
+    </IntegrationRowFrame>
   );
 }
 
-export function IntegrationCategoryLabel({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <TypographyH3
-      className={cn("pb-0 font-sans text-lg font-medium tracking-normal md:text-lg", className)}
-    >
-      {children}
-    </TypographyH3>
-  );
+export function IntegrationCategoryLabel({ children }: { children: ReactNode }) {
+  return <TypographyH4>{children}</TypographyH4>;
 }
 
-export function IntegrationCategoryCard({
-  children,
-  className,
-  ref,
-}: {
-  children: ReactNode;
-  className?: string;
-  ref?: Ref<HTMLDivElement>;
-}) {
+export function IntegrationCategoryCard({ children }: { children: ReactNode }) {
   return (
-    <div
-      ref={ref}
-      className={cn(
-        "overflow-hidden rounded-lg border border-border bg-card text-card-foreground",
-        className,
-      )}
-    >
+    <Box border="standard" borderRadius="standard" background="surface">
       {children}
-    </div>
+    </Box>
   );
 }

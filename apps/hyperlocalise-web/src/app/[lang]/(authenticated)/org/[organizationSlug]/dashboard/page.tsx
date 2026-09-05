@@ -10,12 +10,26 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
+import { isWorkspaceOperatorRole } from "@/api/auth/policy";
 import { evaluateWorkspaceFeatureFlags } from "@/lib/flags/workspace-flags";
 import { requireAppAuthContext } from "@/lib/workos/app-auth";
 
+import { OrgPageSuspense } from "../_components/org-page-suspense";
 import { DashboardPageContent } from "./_components/dashboard-page-content";
 
-export default async function OrganizationDashboardPage({
+export default function OrganizationDashboardPage({
+  params,
+}: {
+  params: Promise<{ organizationSlug: string }>;
+}) {
+  return (
+    <OrgPageSuspense>
+      <OrganizationDashboardPageContent params={params} />
+    </OrgPageSuspense>
+  );
+}
+
+async function OrganizationDashboardPageContent({
   params,
 }: {
   params: Promise<{ organizationSlug: string }>;
@@ -27,7 +41,7 @@ export default async function OrganizationDashboardPage({
   return (
     <DashboardPageContent
       organizationSlug={organizationSlug}
-      automationsEnabled={flags.automations}
+      automationsEnabled={flags.automations && isWorkspaceOperatorRole(auth.membership.role)}
     />
   );
 }

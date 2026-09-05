@@ -22,23 +22,33 @@ import {
 } from "@xyflow/react";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useIntl } from "react-intl";
+import { toast } from "sonner";
 
-import { runFakeWorkflow } from "@/lib/visual-workflows/mock/fake-run";
+import { runFakeWorkflow } from "@/lib/visual-workflows/preview/fake-run";
+import { runPlaygroundWorkflow } from "@/lib/visual-workflows/preview/playground-run";
 import {
   createDefaultConfig,
   getVisualNodeDimensions,
   isTriggerType,
-} from "@/lib/visual-workflows/mock/node-catalog";
-import { visualWorkflowDemoDraft } from "@/lib/visual-workflows/mock/demo-draft";
-import { toCanonicalDraft } from "@/lib/visual-workflows/mock/to-canonical-draft";
+} from "@/lib/visual-workflows/catalog/node-catalog";
+import {
+  removeVisualWorkflowNode,
+  replaceVisualWorkflowNodeType,
+} from "@/lib/visual-workflows/editor/visual-workflow-editor-graph";
+import { visualWorkflowDemoDraft } from "@/lib/visual-workflows/fixtures/demo-draft";
+import { toVisualWorkflowDefinition } from "@/lib/visual-workflows/schema/serializers";
 import type {
   MockNodeRunStatus,
   VisualCatalogType,
   VisualNodeConfig,
+  VisualWorkflowDefinition,
   VisualWorkflowRfEdge,
   VisualWorkflowRfNode,
-} from "@/lib/visual-workflows/mock/types";
-import { validateMockWorkflow } from "@/lib/visual-workflows/mock/validate-mock-workflow";
+  VisualWorkflowValidationIssue,
+} from "@/lib/visual-workflows/schema/types";
+import type { VisualWorkflowStatus } from "@/lib/visual-workflows/visual-workflow-types";
+import { validateVisualWorkflowDefinition } from "@/lib/visual-workflows/validation/validate-workflow";
+import { assertNever } from "@/lib/primitives/assert-never/assert-never";
 
 import { applyVisualWorkflowConnection, VisualWorkflowCanvas } from "./visual-workflow-canvas";
 import {
@@ -47,8 +57,10 @@ import {
 } from "./visual-workflow-canvas-actions";
 import { VisualWorkflowChrome } from "./visual-workflow-chrome";
 import { VisualWorkflowConfigPanel } from "./visual-workflow-config-panel";
+import { VisualWorkflowExecutionsPanel } from "./visual-workflow-executions-panel";
 import { visualWorkflowEditorMessages as messages } from "./visual-workflow-editor.messages";
 import { VisualWorkflowNodePicker } from "./visual-workflow-node-picker";
+import type { VisualWorkflowsApi } from "../visual-workflows-api";
 
 const NODE_GAP_X = 260;
 const NODE_GAP_Y = 36;
@@ -57,12 +69,40 @@ export function VisualWorkflowEditor({
   initialNodes = [],
   initialEdges = [],
   initialName,
+  previewMode = false,
+  playgroundMode = false,
+  onSave,
+  isSaving = false,
+  organizationSlug,
+  visualWorkflowId,
+  visualWorkflowsApi,
+  onPersistBeforeTest,
+  workflowStatus = "draft",
+  onStatusChange,
+  statusUpdating = false,
+  onDelete,
+  isDeleting = false,
 }: {
   initialNodes?: VisualWorkflowRfNode[];
   initialEdges?: VisualWorkflowRfEdge[];
   initialName?: string;
+  previewMode?: boolean;
+  playgroundMode?: boolean;
+  onSave?: (definition: VisualWorkflowDefinition) => void | Promise<void>;
+  isSaving?: boolean;
+  organizationSlug?: string;
+  visualWorkflowId?: string;
+  visualWorkflowsApi?: VisualWorkflowsApi;
+  onPersistBeforeTest?: (definition: VisualWorkflowDefinition) => Promise<unknown>;
+  workflowStatus?: VisualWorkflowStatus;
+  onStatusChange?: (active: boolean, definition: VisualWorkflowDefinition) => void | Promise<void>;
+  statusUpdating?: boolean;
+  onDelete?: () => void;
+  isDeleting?: boolean;
 }) {
   const intl = useIntl();
+  const [activeTab, setActiveTab] = useState<"editor" | "executions">("editor");
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
   const [name, setName] = useState(initialName ?? intl.formatMessage(messages.untitledName));
   const [nodes, setNodes] = useState<VisualWorkflowRfNode[]>(initialNodes);
   const [edges, setEdges] = useState<VisualWorkflowRfEdge[]>(initialEdges);
@@ -74,9 +114,14 @@ export function VisualWorkflowEditor({
   const runAbortRef = useRef<AbortController | null>(null);
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null;
-  const issues = useMemo(() => validateMockWorkflow(nodes, edges), [nodes, edges]);
+  const issues = useMemo(
+    () => validateVisualWorkflowDefinition(toVisualWorkflowDefinition({ name, nodes, edges })),
+    [edges, name, nodes],
+  );
   const hasTrigger = nodes.some((node) => isTriggerType(node.data.catalogType));
   const showConfig = panelMode === "config" && selectedNode !== null;
+  const saveDisabled = issues.length > 0;
+  const isActive = workflowStatus === "active";
 
   const onNodesChange = useCallback((changes: NodeChange<VisualWorkflowRfNode>[]) => {
     setNodes((current) => applyNodeChanges(changes, current));
@@ -167,6 +212,56 @@ export function VisualWorkflowEditor({
     [selectedNodeId],
   );
 
+  const onChangeNodeType = useCallback(
+    (type: VisualCatalogType) => {
+      if (!selectedNodeId) {
+        return;
+      }
+      setNodes((current) =>
+        current.map((node) =>
+          node.id === selectedNodeId ? replaceVisualWorkflowNodeType(node, type) : node,
+        ),
+      );
+    },
+    [selectedNodeId],
+  );
+
+  const onDeleteNode = useCallback(() => {
+    if (!selectedNodeId) {
+      return;
+    }
+    const next = removeVisualWorkflowNode(nodes, edges, selectedNodeId);
+    setNodes(next.nodes);
+    setEdges(next.edges);
+    setSelectedNodeId(null);
+    setPanelMode("picker");
+    setAddFrom(null);
+  }, [edges, nodes, selectedNodeId]);
+
+  const setNodeOutputSnapshot = useCallback(
+    (
+      nodeId: string,
+      output: Record<string, unknown> | null,
+      error: Record<string, unknown> | null,
+    ) => {
+      setNodes((current) =>
+        current.map((node) =>
+          node.id === nodeId
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  lastOutput: output,
+                  lastError: error,
+                },
+              }
+            : node,
+        ),
+      );
+    },
+    [],
+  );
+
   const setRunStatus = useCallback((nodeId: string, status: MockNodeRunStatus) => {
     setNodes((current) =>
       current.map((node) =>
@@ -175,25 +270,133 @@ export function VisualWorkflowEditor({
     );
   }, []);
 
-  const onTestWorkflow = useCallback(async () => {
+  const applyNodeRunStatuses = useCallback(
+    (
+      nodeRuns: Array<{
+        nodeId: string;
+        status: string;
+        outputSnapshot?: Record<string, unknown>;
+        error?: Record<string, unknown> | null;
+      }>,
+    ) => {
+      const runByNodeId = new Map(nodeRuns.map((nodeRun) => [nodeRun.nodeId, nodeRun]));
+      setNodes((current) =>
+        current.map((node) => {
+          const nodeRun = runByNodeId.get(node.id);
+          if (!nodeRun) {
+            return node;
+          }
+          const mappedStatus: MockNodeRunStatus =
+            nodeRun.status === "running"
+              ? "running"
+              : nodeRun.status === "succeeded"
+                ? "succeeded"
+                : nodeRun.status === "failed"
+                  ? "failed"
+                  : "idle";
+          return {
+            ...node,
+            data: {
+              ...node.data,
+              runStatus: mappedStatus,
+              lastOutput:
+                nodeRun.outputSnapshot && Object.keys(nodeRun.outputSnapshot).length > 0
+                  ? nodeRun.outputSnapshot
+                  : null,
+              lastError: nodeRun.error ?? null,
+            },
+          };
+        }),
+      );
+    },
+    [],
+  );
+
+  const onTestWorkflowClick = useCallback(async () => {
     runAbortRef.current?.abort();
     const controller = new AbortController();
     runAbortRef.current = controller;
     setIsRunning(true);
     setNodes((current) =>
-      current.map((node) => ({ ...node, data: { ...node.data, runStatus: "idle" } })),
+      current.map((node) => ({
+        ...node,
+        data: { ...node.data, runStatus: "idle", lastOutput: null, lastError: null },
+      })),
     );
-    await runFakeWorkflow({
-      nodes,
-      edges,
-      signal: controller.signal,
-      onStatus: setRunStatus,
-    });
-    setIsRunning(false);
-  }, [edges, nodes, setRunStatus]);
+
+    const definition = toVisualWorkflowDefinition({ name, nodes, edges });
+
+    try {
+      if (organizationSlug && visualWorkflowId && visualWorkflowsApi && onPersistBeforeTest) {
+        await onPersistBeforeTest(definition);
+        const idempotencyKey = `manual-${visualWorkflowId}-${Date.now()}`;
+        const { run } = await visualWorkflowsApi.createVisualWorkflowRun(
+          organizationSlug,
+          visualWorkflowId,
+          { idempotencyKey },
+        );
+
+        const terminalStatuses = new Set(["succeeded", "failed", "cancelled", "skipped"]);
+        let latestRun = run;
+        while (!terminalStatuses.has(latestRun.status)) {
+          if (controller.signal.aborted) {
+            return;
+          }
+          await sleep(750, controller.signal);
+          latestRun = await visualWorkflowsApi.getVisualWorkflowRun(
+            organizationSlug,
+            visualWorkflowId,
+            latestRun.id,
+          );
+          applyNodeRunStatuses(latestRun.nodeRuns ?? []);
+        }
+
+        applyNodeRunStatuses(latestRun.nodeRuns ?? []);
+        if (latestRun.status === "failed") {
+          toast.error(intl.formatMessage(messages.testRunFailed));
+        }
+      } else if (playgroundMode) {
+        const result = await runPlaygroundWorkflow({
+          name,
+          nodes,
+          edges,
+          signal: controller.signal,
+          onStatus: setRunStatus,
+          onOutput: setNodeOutputSnapshot,
+        });
+        if (result === "failed") {
+          toast.error(intl.formatMessage(messages.testRunFailed));
+        }
+      } else {
+        await runFakeWorkflow({
+          nodes,
+          edges,
+          signal: controller.signal,
+          onStatus: setRunStatus,
+        });
+      }
+    } finally {
+      if (!controller.signal.aborted) {
+        setIsRunning(false);
+      }
+    }
+  }, [
+    applyNodeRunStatuses,
+    edges,
+    intl,
+    name,
+    nodes,
+    onPersistBeforeTest,
+    organizationSlug,
+    playgroundMode,
+    setNodeOutputSnapshot,
+    setRunStatus,
+    visualWorkflowId,
+    visualWorkflowsApi,
+  ]);
 
   const draftJson = useCallback(() => {
-    return `${JSON.stringify(toCanonicalDraft({ name, nodes, edges }), null, 2)}\n`;
+    return `${JSON.stringify(toVisualWorkflowDefinition({ name, nodes, edges }), null, 2)}\n`;
   }, [edges, name, nodes]);
 
   const onExport = useCallback(() => {
@@ -212,6 +415,23 @@ export function VisualWorkflowEditor({
     window.setTimeout(() => setCopied(false), 1500);
   }, [draftJson]);
 
+  const handleSave = useCallback(() => {
+    if (!onSave || saveDisabled) {
+      return;
+    }
+    void onSave(toVisualWorkflowDefinition({ name, nodes, edges }));
+  }, [edges, name, nodes, onSave, saveDisabled]);
+
+  const handleStatusChange = useCallback(
+    async (active: boolean) => {
+      if (!onStatusChange || (active && saveDisabled)) {
+        return;
+      }
+      await onStatusChange(active, toVisualWorkflowDefinition({ name, nodes, edges }));
+    },
+    [edges, name, nodes, onStatusChange, saveDisabled],
+  );
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
       <VisualWorkflowChrome
@@ -220,65 +440,122 @@ export function VisualWorkflowEditor({
         copied={copied}
         onExport={onExport}
         onCopy={onCopy}
+        onSave={onSave ? handleSave : undefined}
+        isSaving={isSaving}
+        saveDisabled={saveDisabled}
+        previewMode={previewMode}
+        playgroundMode={playgroundMode}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        workflowStatus={workflowStatus}
+        onStatusChange={onStatusChange ? handleStatusChange : undefined}
+        statusDisabled={statusUpdating || (!isActive && saveDisabled)}
+        onDelete={onDelete}
+        isDeleting={isDeleting}
       />
-      <div className="flex min-h-0 flex-1">
-        <VisualWorkflowCanvasActionsProvider onAddFromNode={openPicker}>
-          <VisualWorkflowCanvas
-            nodes={nodes}
-            edges={edges}
-            isRunning={isRunning}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onSelectionChange={onSelectionChange}
-            onAddFirstStep={() => openPicker(null)}
-            onLoadSample={() => {
-              setName(visualWorkflowDemoDraft.name);
-              setNodes(visualWorkflowDemoDraft.nodes);
-              setEdges(visualWorkflowDemoDraft.edges);
-              setSelectedNodeId(null);
-              setPanelMode("picker");
-              setAddFrom(null);
-            }}
-            onTestWorkflow={onTestWorkflow}
-          />
-        </VisualWorkflowCanvasActionsProvider>
-        <aside className="flex w-[360px] shrink-0 flex-col border-l border-border bg-background">
-          {showConfig && selectedNode ? (
-            <VisualWorkflowConfigPanel
-              node={selectedNode}
-              issues={issues}
-              onBack={() => {
-                setPanelMode("picker");
+      {activeTab === "executions" && organizationSlug && visualWorkflowId && visualWorkflowsApi ? (
+        <VisualWorkflowExecutionsPanel
+          organizationSlug={organizationSlug}
+          visualWorkflowId={visualWorkflowId}
+          visualWorkflowsApi={visualWorkflowsApi}
+          selectedRunId={selectedRunId}
+          onSelectRun={setSelectedRunId}
+        />
+      ) : (
+        <div className="flex min-h-0 flex-1">
+          <VisualWorkflowCanvasActionsProvider onAddFromNode={openPicker}>
+            <VisualWorkflowCanvas
+              nodes={nodes}
+              edges={edges}
+              isRunning={isRunning}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onSelectionChange={onSelectionChange}
+              onAddFirstStep={() => openPicker(null)}
+              onLoadSample={() => {
+                setName(visualWorkflowDemoDraft.name);
+                setNodes(visualWorkflowDemoDraft.nodes);
+                setEdges(visualWorkflowDemoDraft.edges);
                 setSelectedNodeId(null);
+                setPanelMode("picker");
+                setAddFrom(null);
               }}
-              onChangeConfig={onChangeConfig}
+              onTestWorkflow={onTestWorkflowClick}
             />
-          ) : (
-            <>
-              <VisualWorkflowNodePicker
-                disableTriggers={hasTrigger || addFrom !== null}
-                onPick={addNode}
+          </VisualWorkflowCanvasActionsProvider>
+          <aside className="flex w-[360px] shrink-0 flex-col border-l border-border bg-background">
+            {showConfig && selectedNode ? (
+              <VisualWorkflowConfigPanel
+                node={selectedNode}
+                issues={issues}
+                onBack={() => {
+                  setPanelMode("picker");
+                  setSelectedNodeId(null);
+                }}
+                onChangeConfig={onChangeConfig}
+                onChangeNodeType={onChangeNodeType}
+                onDeleteNode={onDeleteNode}
               />
-              {issues.length > 0 ? (
-                <div className="border-t border-border px-4 py-3 text-sm text-destructive">
-                  {issues.map((issue) => (
-                    <p key={`${issue.code}-${issue.nodeId ?? "all"}`}>
-                      {intl.formatMessage(
-                        issue.code === "missing_trigger"
-                          ? messages.missingTrigger
-                          : issue.code === "multiple_triggers"
-                            ? messages.multipleTriggers
-                            : messages.orphanNode,
-                      )}
-                    </p>
-                  ))}
-                </div>
-              ) : null}
-            </>
-          )}
-        </aside>
-      </div>
+            ) : (
+              <>
+                <VisualWorkflowNodePicker
+                  disableTriggers={hasTrigger || addFrom !== null}
+                  onPick={addNode}
+                />
+                {issues.length > 0 ? (
+                  <div className="border-t border-border px-4 py-3 text-sm text-destructive">
+                    {issues.map((issue) => (
+                      <p key={`${issue.code}-${issue.nodeId ?? issue.edgeId ?? "all"}`}>
+                        {intl.formatMessage(issueMessage(issue.code))}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </aside>
+        </div>
+      )}
     </div>
   );
+}
+
+function issueMessage(code: VisualWorkflowValidationIssue["code"]) {
+  switch (code) {
+    case "missing_trigger":
+      return messages.missingTrigger;
+    case "multiple_triggers":
+      return messages.multipleTriggers;
+    case "orphan_node":
+      return messages.orphanNode;
+    case "invalid_edge":
+      return messages.invalidEdge;
+    case "invalid_trigger_config":
+      return messages.invalidTriggerConfig;
+    case "invalid_node_config":
+      return messages.invalidNodeConfig;
+    case "nested_for_each":
+      return messages.nestedForEach;
+    default:
+      return assertNever(code);
+  }
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve();
+      return;
+    }
+    const timeout = window.setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        window.clearTimeout(timeout);
+        resolve();
+      },
+      { once: true },
+    );
+  });
 }

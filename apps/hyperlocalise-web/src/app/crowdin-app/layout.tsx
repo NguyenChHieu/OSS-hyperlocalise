@@ -12,6 +12,8 @@
  */
 import type { ReactNode } from "react";
 
+import { BrandThemeProvider } from "@/components/ui/brand-theme";
+
 import "./crowdin-app.css";
 
 export const metadata = {
@@ -24,8 +26,10 @@ export const metadata = {
 
 export default function CrowdinAppLayout({ children }: { children: ReactNode }) {
   return (
-    <div data-crowdin-app className="crowdin-app-root min-h-svh bg-background text-foreground">
-      {children}
-    </div>
+    <BrandThemeProvider theme="product">
+      <div data-crowdin-app className="crowdin-app-root min-h-svh bg-background text-foreground">
+        {children}
+      </div>
+    </BrandThemeProvider>
   );
 }

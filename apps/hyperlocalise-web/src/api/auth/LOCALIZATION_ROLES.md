@@ -39,6 +39,7 @@ membership further limits which projects appear in listings.
 | `glossaries:read`            | ✓     | ✓                    | ✓         | ✓        | ✓          | ✓      |
 | `memories:read`              | ✓     | ✓                    | ✓         | ✓        | ✓          | ✓      |
 | `jobs:read`                  | ✓     | ✓                    | ✓         | ✓        | ✓          | ✓      |
+| `experiments:read`           | ✓     | ✓                    | ✓         | ✓        | ✓          | ✓      |
 | `jobs:create`                | ✓     | ✓                    | ✓         | ✓        | ✓          |        |
 | `jobs:write`                 | ✓     | ✓                    | ✓         | ✓        | ✓          |        |
 | `ai_actions:run`             | ✓     | ✓                    | ✓         | ✓        | ✓          |        |
@@ -60,8 +61,10 @@ membership further limits which projects appear in listings.
 | `api_keys:write`             | ✓     | ✓                    |           |          |            |        |
 | `integrations:read`          | ✓     | ✓                    | ✓         |          |            |        |
 | `integrations:write`         | ✓     | ✓                    |           |          |            |        |
+| `experiments:write`          | ✓     | ✓                    | ✓         |          |            |        |
 | `billing:read`               | ✓     | ✓                    |           |          |            |        |
 | `billing:write`              | ✓     |                      |           |          |            |        |
+| `activity_logs:read`         | ✓     | ✓                    |           |          |            |        |
 
 Translators and members cannot manage credentials, members, billing, or
 organization-wide settings. Developers can manage projects and technical jobs

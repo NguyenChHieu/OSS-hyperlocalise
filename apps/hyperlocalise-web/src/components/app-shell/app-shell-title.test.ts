@@ -51,12 +51,12 @@ describe("getAppShellTitle", () => {
     ["/org/acme/teams", "Teams"],
     ["/org/acme/teams/team_1", "team_1"],
     ["/org/acme/members", "Members"],
+    ["/org/acme/members/permissions", "Role permissions"],
     ["/org/acme/settings", "Settings"],
     ["/org/acme/settings/members", "Members"],
     ["/org/acme/settings/account", "Account"],
     ["/org/acme/settings/billing", "Billing"],
-    ["/org/acme/settings/personal-access-tokens", "Personal access tokens"],
-    ["/org/acme/settings/api-keys", "API Keys"],
+    ["/org/acme/settings/api-keys", "API keys"],
   ])("returns the route title for %s", (pathname, title) => {
     expect(getAppShellTitle(pathname, intl)).toBe(title);
   });
@@ -104,9 +104,9 @@ describe("getAppShellBreadcrumbs", () => {
       { label: "Settings", href: "/org/acme/settings" },
       { label: "Account" },
     ]);
-    expect(getAppShellBreadcrumbs("/org/acme/settings/personal-access-tokens", intl)).toEqual([
+    expect(getAppShellBreadcrumbs("/org/acme/settings/api-keys", intl)).toEqual([
       { label: "Settings", href: "/org/acme/settings" },
-      { label: "Personal access tokens" },
+      { label: "API keys" },
     ]);
   });
 
@@ -116,6 +116,15 @@ describe("getAppShellBreadcrumbs", () => {
       { label: "Teams", href: "/org/acme/teams" },
       { label: "team_1" },
     ]);
+    expect(
+      getAppShellBreadcrumbs("/org/acme/teams/team_1", intl, { teamName: "Engineering" }),
+    ).toEqual([{ label: "Teams", href: "/org/acme/teams" }, { label: "Engineering" }]);
+    expect(
+      getAppShellBreadcrumbs("/org/acme/teams/team_1", intl, { teamNameLoading: true }),
+    ).toEqual([
+      { label: "Teams", href: "/org/acme/teams" },
+      { label: "", isLoading: true },
+    ]);
   });
 
   it("returns domains breadcrumbs for domain detail pages", () => {
@@ -124,10 +133,23 @@ describe("getAppShellBreadcrumbs", () => {
       { label: "Domains", href: "/org/acme/domains" },
       { label: "ld_1" },
     ]);
+    expect(
+      getAppShellBreadcrumbs("/org/acme/domains/ld_1", intl, { domainName: "example.com" }),
+    ).toEqual([{ label: "Domains", href: "/org/acme/domains" }, { label: "example.com" }]);
+    expect(
+      getAppShellBreadcrumbs("/org/acme/domains/ld_1", intl, { domainNameLoading: true }),
+    ).toEqual([
+      { label: "Domains", href: "/org/acme/domains" },
+      { label: "", isLoading: true },
+    ]);
   });
 
   it("returns members breadcrumbs", () => {
     expect(getAppShellBreadcrumbs("/org/acme/members", intl)).toEqual([{ label: "Members" }]);
+    expect(getAppShellBreadcrumbs("/org/acme/members/permissions", intl)).toEqual([
+      { label: "Members", href: "/org/acme/members" },
+      { label: "Role permissions" },
+    ]);
   });
 
   it("returns project breadcrumbs with the project name", () => {
@@ -144,6 +166,18 @@ describe("getAppShellBreadcrumbs", () => {
     expect(getAppShellBreadcrumbs("/org/acme/projects/proj_1/jobs", intl)).toEqual([
       { label: "Projects", href: "/org/acme/projects" },
       { label: "proj_1", href: "/org/acme/projects/proj_1" },
+      { label: "Jobs" },
+    ]);
+  });
+
+  it("marks the project crumb as loading while the project name is being fetched", () => {
+    expect(
+      getAppShellBreadcrumbs("/org/acme/projects/proj_1/jobs", intl, {
+        projectNameLoading: true,
+      }),
+    ).toEqual([
+      { label: "Projects", href: "/org/acme/projects" },
+      { label: "", href: "/org/acme/projects/proj_1", isLoading: true },
       { label: "Jobs" },
     ]);
   });

@@ -10,10 +10,14 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import type { ReactNode } from "react";
+import { Suspense, type ReactNode } from "react";
 
-import { BrandThemeProvider } from "@/components/ui/brand-theme";
+import { OrganizationRouteLoading } from "./organization-route-loading";
 
-export default function AuthenticatedLayout({ children }: { children: ReactNode }) {
-  return <BrandThemeProvider theme="product">{children}</BrandThemeProvider>;
+type OrgPageSuspenseProps = {
+  children: ReactNode;
+};
+
+export function OrgPageSuspense({ children }: OrgPageSuspenseProps) {
+  return <Suspense fallback={<OrganizationRouteLoading />}>{children}</Suspense>;
 }

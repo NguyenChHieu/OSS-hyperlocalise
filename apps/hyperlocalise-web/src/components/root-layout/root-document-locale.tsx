@@ -1,3 +1,5 @@
+"use client";
+
 /*
  * Copyright (c) 2026 Hyperlocalise Pty Ltd
  *
@@ -10,10 +12,18 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import type { ReactNode } from "react";
+import { useLayoutEffect } from "react";
 
-import { BrandThemeProvider } from "@/components/ui/brand-theme";
+import type { AppLocale } from "@/lib/app-i18n/locales";
 
-export default function AuthenticatedLayout({ children }: { children: ReactNode }) {
-  return <BrandThemeProvider theme="product">{children}</BrandThemeProvider>;
+type RootDocumentLocaleProps = {
+  locale: AppLocale;
+};
+
+export function RootDocumentLocale({ locale }: RootDocumentLocaleProps) {
+  useLayoutEffect(() => {
+    document.documentElement.lang = locale;
+  }, [locale]);
+
+  return null;
 }

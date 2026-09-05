@@ -109,7 +109,7 @@ func (c *HTTPClient) WaitForUpload(ctx context.Context, in UploadWaitInput) (Sou
 
 	result, err := c.GetUpload(ctx, getInput)
 	if err != nil {
-		return SourceUploadResult{ID: strings.TrimSpace(in.UploadID)}, err
+		return uploadWaitResultOnError(in.UploadID, result, err, ctx)
 	}
 	if IsUploadSuccessState(result.State) {
 		return result, nil
@@ -123,11 +123,11 @@ func (c *HTTPClient) WaitForUpload(ctx context.Context, in UploadWaitInput) (Sou
 
 	for {
 		if err := sleepWithContext(ctx, interval); err != nil {
-			return result, fmt.Errorf("phrase upload %s wait timed out: state=%s: %w", result.ID, result.State, err)
+			return result, uploadWaitTimeoutError(result, err)
 		}
 		next, err := c.GetUpload(ctx, getInput)
 		if err != nil {
-			return result, err
+			return uploadWaitResultOnError(in.UploadID, result, err, ctx)
 		}
 		result = next
 		if IsUploadSuccessState(result.State) {
@@ -140,6 +140,23 @@ func (c *HTTPClient) WaitForUpload(ctx context.Context, in UploadWaitInput) (Sou
 			return result, fmt.Errorf("phrase upload %s is in unknown state %q", result.ID, result.State)
 		}
 	}
+}
+
+func uploadWaitResultOnError(uploadID string, last SourceUploadResult, err error, ctx context.Context) (SourceUploadResult, error) {
+	if last.ID == "" {
+		last.ID = strings.TrimSpace(uploadID)
+	}
+	if ctx.Err() != nil {
+		if last.State != "" {
+			return last, uploadWaitTimeoutError(last, ctx.Err())
+		}
+		return last, fmt.Errorf("phrase upload %s wait timed out: %w", last.ID, ctx.Err())
+	}
+	return last, err
+}
+
+func uploadWaitTimeoutError(result SourceUploadResult, err error) error {
+	return fmt.Errorf("phrase upload %s wait timed out: state=%s: %w", result.ID, result.State, err)
 }
 
 func (c *HTTPClient) uploadShow(ctx context.Context, projectID, uploadID string, opts *phraseapi.UploadShowOpts) (phraseapi.Upload, error) {

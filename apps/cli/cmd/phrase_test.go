@@ -1087,6 +1087,110 @@ func TestPhraseInitResolvesDefaultLocaleFromAPI(t *testing.T) {
 	if !strings.Contains(string(content), `locale_id: "en-US"`) {
 		t.Fatalf("expected default locale en-US, got: %s", content)
 	}
+	if !strings.Contains(string(content), "access_token: $PHRASE_TEST_TOKEN") {
+		t.Fatalf("expected access_token to match --token-env, got: %s", content)
+	}
+}
+
+func TestPhraseInitUsesPHRASEAPITokenInConfig(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("PHRASE_ACCESS_TOKEN", "")
+	t.Setenv("PHRASE_API_TOKEN", "secret")
+
+	cmd := newRootCmd("")
+	cmd.SetArgs([]string{"phrase", "init"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute phrase init: %v", err)
+	}
+	content, err := os.ReadFile(".phrase.yml")
+	if err != nil {
+		t.Fatalf("read .phrase.yml: %v", err)
+	}
+	if !strings.Contains(string(content), "access_token: $PHRASE_API_TOKEN") {
+		t.Fatalf("expected PHRASE_API_TOKEN in scaffold, got: %s", content)
+	}
+}
+
+func TestPhraseInitResolvesLocaleWithPHRASEAPITokenOnly(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("PHRASE_ACCESS_TOKEN", "")
+	t.Setenv("PHRASE_API_TOKEN", "secret")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/projects/project-1/locales" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "token secret" {
+			t.Fatalf("unexpected auth header: %q", r.Header.Get("Authorization"))
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"id": "loc-en-us", "name": "en-US", "code": "en-US", "default": true},
+		})
+	}))
+	defer server.Close()
+
+	cmd := newRootCmd("")
+	cmd.SetArgs([]string{"phrase", "init", "--project-id", "project-1", "--host", server.URL})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute phrase init: %v", err)
+	}
+	content, err := os.ReadFile(".phrase.yml")
+	if err != nil {
+		t.Fatalf("read .phrase.yml: %v", err)
+	}
+	text := string(content)
+	if !strings.Contains(text, `locale_id: "en-US"`) {
+		t.Fatalf("expected default locale en-US, got: %s", text)
+	}
+	if !strings.Contains(text, "access_token: $PHRASE_API_TOKEN") {
+		t.Fatalf("expected PHRASE_API_TOKEN in scaffold after API init, got: %s", text)
+	}
+}
+
+func TestPhraseInitTokenEnvPrecedenceOverAccessToken(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("PHRASE_ACCESS_TOKEN", "access")
+	t.Setenv("PHRASE_TEST_TOKEN", "secret")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "token secret" {
+			t.Fatalf("unexpected auth header: %q", r.Header.Get("Authorization"))
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"id": "loc-en", "name": "en", "code": "en", "default": true},
+		})
+	}))
+	defer server.Close()
+
+	cmd := newRootCmd("")
+	cmd.SetArgs([]string{"phrase", "init", "--project-id", "project-1", "--token-env", "PHRASE_TEST_TOKEN", "--host", server.URL})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute phrase init: %v", err)
+	}
+	content, err := os.ReadFile(".phrase.yml")
+	if err != nil {
+		t.Fatalf("read .phrase.yml: %v", err)
+	}
+	if !strings.Contains(string(content), "access_token: $PHRASE_TEST_TOKEN") {
+		t.Fatalf("expected token-env in scaffold, got: %s", content)
+	}
+}
+
+func TestPhraseInitPullTargetExtensionMatchesFormat(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cmd := newRootCmd("")
+	cmd.SetArgs([]string{"phrase", "init", "--project-id", "project-1", "--format", "yml", "--file", "./locales/en.yml"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute phrase init: %v", err)
+	}
+	content, err := os.ReadFile(".phrase.yml")
+	if err != nil {
+		t.Fatalf("read .phrase.yml: %v", err)
+	}
+	if !strings.Contains(string(content), `file: "./locales/<locale_name>.yml"`) {
+		t.Fatalf("expected yml pull target, got: %s", content)
+	}
 }
 
 func TestPhraseInitSourceLocaleFlagSkipsAPI(t *testing.T) {

@@ -471,7 +471,8 @@ func executePhraseInit(cmd *cobra.Command, o phraseInitOptions) error {
 	if err != nil {
 		return err
 	}
-	content := phraseInitYAML(projectID, format, file, host, sourceLocale)
+	initToken := phraseInitTokenSpec(cmd, o.tokenEnv)
+	content := phraseInitYAML(projectID, format, file, host, sourceLocale, initToken.Ref)
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return fmt.Errorf("write %s: %w", path, err)
 	}
@@ -479,12 +480,16 @@ func executePhraseInit(cmd *cobra.Command, o phraseInitOptions) error {
 	return err
 }
 
-func phraseInitYAML(projectID, format, file, host, sourceLocale string) string {
+func phraseInitYAML(projectID, format, file, host, sourceLocale, accessTokenRef string) string {
 	if strings.TrimSpace(sourceLocale) == "" {
 		sourceLocale = "en"
 	}
+	if strings.TrimSpace(accessTokenRef) == "" {
+		accessTokenRef = "$PHRASE_ACCESS_TOKEN"
+	}
+	pullTarget := phraseInitPullTargetFile(format, file)
 	return fmt.Sprintf(`phrase:
-  access_token: $PHRASE_ACCESS_TOKEN
+  access_token: %s
   project_id: %s
   file_format: %s
   host: %s
@@ -495,8 +500,51 @@ func phraseInitYAML(projectID, format, file, host, sourceLocale string) string {
           locale_id: %s
   pull:
     targets:
-      - file: ./locales/<locale_name>.json
-`, strconv.Quote(projectID), strconv.Quote(format), strconv.Quote(host), strconv.Quote(file), strconv.Quote(sourceLocale))
+      - file: %s
+`, accessTokenRef, strconv.Quote(projectID), strconv.Quote(format), strconv.Quote(host), strconv.Quote(file), strconv.Quote(sourceLocale), strconv.Quote(pullTarget))
+}
+
+func phraseInitPullTargetFile(format, sourceFile string) string {
+	if ext := strings.TrimSpace(filepath.Ext(sourceFile)); ext != "" {
+		return "./locales/<locale_name>" + ext
+	}
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "yml", "yaml":
+		return "./locales/<locale_name>.yml"
+	case "strings":
+		return "./locales/<locale_name>.strings"
+	default:
+		return "./locales/<locale_name>.json"
+	}
+}
+
+type phraseInitToken struct {
+	Value string
+	Ref   string
+}
+
+func phraseInitTokenSpec(cmd *cobra.Command, tokenEnv string) phraseInitToken {
+	if cmd.Flags().Changed("token-env") {
+		envName := strings.TrimSpace(tokenEnv)
+		if envName == "" {
+			envName = "PHRASE_API_TOKEN"
+		}
+		return phraseInitToken{
+			Value: strings.TrimSpace(os.Getenv(envName)),
+			Ref:   "$" + envName,
+		}
+	}
+	if token := strings.TrimSpace(os.Getenv("PHRASE_ACCESS_TOKEN")); token != "" {
+		return phraseInitToken{Value: token, Ref: "$PHRASE_ACCESS_TOKEN"}
+	}
+	envName := strings.TrimSpace(tokenEnv)
+	if envName == "" {
+		envName = "PHRASE_API_TOKEN"
+	}
+	if token := strings.TrimSpace(os.Getenv(envName)); token != "" {
+		return phraseInitToken{Value: token, Ref: "$" + envName}
+	}
+	return phraseInitToken{Ref: "$PHRASE_ACCESS_TOKEN"}
 }
 
 func phraseInitSourceLocale(cmd *cobra.Command, o phraseInitOptions, projectID, host string) (string, error) {
@@ -506,8 +554,8 @@ func phraseInitSourceLocale(cmd *cobra.Command, o phraseInitOptions, projectID, 
 	if projectID == "YOUR_PROJECT_ID" {
 		return "en", nil
 	}
-	token := phraseInitAPIToken(o.tokenEnv)
-	if token == "" {
+	initToken := phraseInitTokenSpec(cmd, o.tokenEnv)
+	if initToken.Value == "" {
 		return "en", nil
 	}
 	client, err := phrase.NewHTTPClientWithBaseURL(phrase.Config{}, host, &http.Client{Timeout: 30 * time.Second})
@@ -516,7 +564,7 @@ func phraseInitSourceLocale(cmd *cobra.Command, o phraseInitOptions, projectID, 
 	}
 	locales, err := client.ListLocales(backgroundContext(), phrase.LocaleListInput{
 		ProjectID: projectID,
-		APIToken:  token,
+		APIToken:  initToken.Value,
 	})
 	if err != nil {
 		return "", fmt.Errorf("phrase init: list project locales: %w", err)
@@ -529,17 +577,6 @@ func phraseInitSourceLocale(cmd *cobra.Command, o phraseInitOptions, projectID, 
 		return "", fmt.Errorf("phrase init: project has no locales; pass --source-locale")
 	}
 	return sourceLocale, nil
-}
-
-func phraseInitAPIToken(tokenEnv string) string {
-	if token := strings.TrimSpace(os.Getenv("PHRASE_ACCESS_TOKEN")); token != "" {
-		return token
-	}
-	token, err := phraseAPIToken("phrase init", tokenEnv)
-	if err != nil {
-		return ""
-	}
-	return token
 }
 
 func executePhraseLocalesList(cmd *cobra.Command, o phraseLocalesListOptions) error {

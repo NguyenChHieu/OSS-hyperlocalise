@@ -9,8 +9,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/hyperlocalise/hyperlocalise/internal/i18n/storage/phrase"
 )
@@ -798,12 +800,14 @@ func TestPhraseGlossaryDownloadWritesOutputFile(t *testing.T) {
 	if !strings.Contains(out.String(), "wrote "+outputPath+" terms=1 rows=1") {
 		t.Fatalf("unexpected summary: %q", out.String())
 	}
-	info, err := os.Stat(outputPath)
-	if err != nil {
-		t.Fatalf("stat output: %v", err)
-	}
-	if got, want := info.Mode().Perm(), os.FileMode(0o644); got != want {
-		t.Fatalf("output permissions = %v, want %v", got, want)
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(outputPath)
+		if err != nil {
+			t.Fatalf("stat output: %v", err)
+		}
+		if got, want := info.Mode().Perm(), os.FileMode(0o644); got != want {
+			t.Fatalf("output permissions = %v, want %v", got, want)
+		}
 	}
 }
 
@@ -1005,5 +1009,404 @@ func TestPhraseTranslationMemoryDownloadRefusesOverwriteWithoutForce(t *testing.
 	}
 	if !strings.Contains(err.Error(), "already exists; use --force to overwrite") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPhraseInitWritesConfigAndRefusesOverwrite(t *testing.T) {
+	t.Chdir(t.TempDir())
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"phrase", "init", "--project-id", "project-1", "--format", "json", "--file", "./locales/en.json", "--host", "https://api.phrase.com/v2"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute phrase init: %v", err)
+	}
+	if !strings.Contains(out.String(), "wrote .phrase.yml") {
+		t.Fatalf("unexpected output: %q", out.String())
+	}
+	content, err := os.ReadFile(".phrase.yml")
+	if err != nil {
+		t.Fatalf("read .phrase.yml: %v", err)
+	}
+	text := string(content)
+	if !strings.Contains(text, `project_id: "project-1"`) || !strings.Contains(text, "access_token: $PHRASE_ACCESS_TOKEN") {
+		t.Fatalf("unexpected config: %s", text)
+	}
+
+	cmd = newRootCmd("")
+	cmd.SetArgs([]string{"phrase", "init", "--project-id", "project-2"})
+	err = cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected overwrite error")
+	}
+	if !strings.Contains(err.Error(), "already exists; use --force to overwrite") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	cmd = newRootCmd("")
+	out = bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"phrase", "init", "--project-id", "project-2", "--force"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute phrase init --force: %v", err)
+	}
+	content, err = os.ReadFile(".phrase.yml")
+	if err != nil {
+		t.Fatalf("read .phrase.yml: %v", err)
+	}
+	if !strings.Contains(string(content), `project_id: "project-2"`) {
+		t.Fatalf("expected overwrite: %s", content)
+	}
+}
+
+func TestPhraseInitResolvesDefaultLocaleFromAPI(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("PHRASE_TEST_TOKEN", "secret")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/projects/project-1/locales" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"id": "loc-en-us", "name": "en-US", "code": "en-US", "default": true},
+			{"id": "loc-vi", "name": "vi", "code": "vi", "default": false},
+		})
+	}))
+	defer server.Close()
+
+	cmd := newRootCmd("")
+	cmd.SetArgs([]string{"phrase", "init", "--project-id", "project-1", "--token-env", "PHRASE_TEST_TOKEN", "--host", server.URL})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute phrase init: %v", err)
+	}
+	content, err := os.ReadFile(".phrase.yml")
+	if err != nil {
+		t.Fatalf("read .phrase.yml: %v", err)
+	}
+	if !strings.Contains(string(content), `locale_id: "en-US"`) {
+		t.Fatalf("expected default locale en-US, got: %s", content)
+	}
+}
+
+func TestPhraseInitSourceLocaleFlagSkipsAPI(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("PHRASE_TEST_TOKEN", "secret")
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatalf("unexpected API call: %s", r.URL.Path)
+	}))
+	defer server.Close()
+
+	cmd := newRootCmd("")
+	cmd.SetArgs([]string{"phrase", "init", "--project-id", "project-1", "--source-locale", "fr-FR", "--token-env", "PHRASE_TEST_TOKEN", "--host", server.URL})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute phrase init: %v", err)
+	}
+	content, err := os.ReadFile(".phrase.yml")
+	if err != nil {
+		t.Fatalf("read .phrase.yml: %v", err)
+	}
+	if !strings.Contains(string(content), `locale_id: "fr-FR"`) {
+		t.Fatalf("expected source locale fr-FR, got: %s", content)
+	}
+}
+
+func TestPhrasePushDryRunUsesPhraseConfig(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "locales", "en.json")
+	if err := os.MkdirAll(filepath.Dir(sourcePath), 0o755); err != nil {
+		t.Fatalf("mkdir locales: %v", err)
+	}
+	if err := os.WriteFile(sourcePath, []byte(`{"hello":"Hello"}`), 0o644); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+	configPath := filepath.Join(dir, ".phrase.yml")
+	if err := os.WriteFile(configPath, []byte("phrase:\n  project_id: project-1\n  file_format: json\n  push:\n    sources:\n      - file: ./locales/en.json\n        params:\n          locale_id: en\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"phrase", "push", "--config", configPath, "--dry-run"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute phrase push: %v", err)
+	}
+	if !strings.Contains(out.String(), "dry-run action=phrase-upload-sources") || !strings.Contains(out.String(), "files=1") {
+		t.Fatalf("unexpected output: %q", out.String())
+	}
+}
+
+func TestPhrasePullDryRunUsesPhraseConfig(t *testing.T) {
+	dir := t.TempDir()
+	configPath := filepath.Join(dir, ".phrase.yml")
+	if err := os.WriteFile(configPath, []byte("phrase:\n  project_id: project-1\n  file_format: json\n  pull:\n    targets:\n      - file: ./locales/fr.json\n        params:\n          locale_id: fr\n"), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"phrase", "pull", "--config", configPath, "--dry-run"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute phrase pull: %v", err)
+	}
+	if !strings.Contains(out.String(), "dry-run action=phrase-download-translations") {
+		t.Fatalf("unexpected output: %q", out.String())
+	}
+}
+
+func TestPhraseLocalesListTextAndJSON(t *testing.T) {
+	t.Setenv("PHRASE_TEST_TOKEN", "secret")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/projects/project-1/locales" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "token secret" {
+			t.Fatalf("unexpected auth header: %q", r.Header.Get("Authorization"))
+		}
+		_ = json.NewEncoder(w).Encode([]map[string]any{
+			{"id": "loc-en", "name": "English", "code": "en", "default": true},
+			{"id": "loc-fr", "name": "French", "code": "fr", "default": false},
+		})
+	}))
+	defer server.Close()
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"phrase", "locales", "list", "--project-id", "project-1", "--token-env", "PHRASE_TEST_TOKEN", "--api-base-url", server.URL})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute phrase locales list: %v", err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "id=loc-en name=English code=en default=true") || !strings.Contains(text, "id=loc-fr") {
+		t.Fatalf("unexpected text output: %q", text)
+	}
+
+	cmd = newRootCmd("")
+	out = bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"phrase", "locales", "list", "--project-id", "project-1", "--output", "json", "--token-env", "PHRASE_TEST_TOKEN", "--api-base-url", server.URL})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute phrase locales list json: %v", err)
+	}
+	if !strings.Contains(out.String(), `"Code": "en"`) && !strings.Contains(out.String(), `"code": "en"`) {
+		t.Fatalf("unexpected json output: %q", out.String())
+	}
+}
+
+func TestPhrasePushWaitPollsUntilSuccess(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "en.json")
+	if err := os.WriteFile(sourcePath, []byte(`{"hello":"Hello"}`), 0o644); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+	t.Setenv("PHRASE_TEST_TOKEN", "secret")
+	phraseUploadPollInterval = time.Millisecond
+	t.Cleanup(func() { phraseUploadPollInterval = time.Second })
+
+	shows := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/uploads":
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "upload-1", "state": "processing", "summary": map[string]int{}})
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/uploads/upload-1":
+			shows++
+			state := "processing"
+			if shows > 1 {
+				state = "success"
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "upload-1", "state": state, "summary": map[string]int{"translation_keys_created": 1}})
+		default:
+			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"phrase", "push", "--project-id", "project-1", "--source-locale", "en", "--format", "json", "--file", sourcePath, "--wait", "--wait-timeout", "5s", "--token-env", "PHRASE_TEST_TOKEN", "--api-base-url", server.URL})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute phrase push --wait: %v", err)
+	}
+	if shows < 2 {
+		t.Fatalf("expected poll, shows=%d", shows)
+	}
+	if !strings.Contains(out.String(), "upload_id=upload-1") || !strings.Contains(out.String(), "state=success") {
+		t.Fatalf("unexpected output: %q", out.String())
+	}
+}
+
+func TestPhraseUploadSourcesWaitFailsOnErrorState(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "en.json")
+	if err := os.WriteFile(sourcePath, []byte(`{"hello":"Hello"}`), 0o644); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+	t.Setenv("PHRASE_TEST_TOKEN", "secret")
+	phraseUploadPollInterval = time.Millisecond
+	t.Cleanup(func() { phraseUploadPollInterval = time.Second })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/uploads":
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "upload-1", "state": "processing"})
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/uploads/upload-1":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "upload-1", "state": "error"})
+		default:
+			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"phrase", "upload", "sources", "--project-id", "project-1", "--source-locale", "en", "--format", "json", "--file", sourcePath, "--wait", "--token-env", "PHRASE_TEST_TOKEN", "--api-base-url", server.URL})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "state=error") {
+		t.Fatalf("expected failed-state error, got %v", err)
+	}
+	if !strings.Contains(out.String(), "upload_id=upload-1") {
+		t.Fatalf("expected upload_id in output after wait failure: %q", out.String())
+	}
+}
+
+func TestPhraseUploadSourcesWaitKeepsUploadIDWhenShowFails(t *testing.T) {
+	dir := t.TempDir()
+	sourcePath := filepath.Join(dir, "en.json")
+	if err := os.WriteFile(sourcePath, []byte(`{"hello":"Hello"}`), 0o644); err != nil {
+		t.Fatalf("write source file: %v", err)
+	}
+	t.Setenv("PHRASE_TEST_TOKEN", "secret")
+	phraseUploadPollInterval = time.Millisecond
+	t.Cleanup(func() { phraseUploadPollInterval = time.Second })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/uploads":
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "upload-1", "state": "processing"})
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/uploads/upload-1":
+			http.Error(w, "boom", http.StatusInternalServerError)
+		default:
+			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"phrase", "upload", "sources", "--project-id", "project-1", "--source-locale", "en", "--format", "json", "--file", sourcePath, "--wait", "--wait-timeout", "5s", "--token-env", "PHRASE_TEST_TOKEN", "--api-base-url", server.URL})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("expected wait show error")
+	}
+	if !strings.Contains(out.String(), "upload_id=upload-1") {
+		t.Fatalf("expected upload_id after poll failure: %q", out.String())
+	}
+}
+
+func TestPhraseUploadsCleanupDryRunDoesNotDelete(t *testing.T) {
+	t.Setenv("PHRASE_TEST_TOKEN", "secret")
+	deleted := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/uploads/upload-1":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "upload-1", "state": "success"})
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/keys":
+			if r.URL.Query().Get("q") != "unmentioned_in_upload:upload-1" {
+				t.Fatalf("q=%q", r.URL.Query().Get("q"))
+			}
+			_ = json.NewEncoder(w).Encode([]map[string]string{{"id": "k1", "name": "stale.key"}})
+		case r.Method == http.MethodDelete:
+			deleted = true
+			http.Error(w, "must not delete", http.StatusInternalServerError)
+		default:
+			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"phrase", "uploads", "cleanup", "--id", "upload-1", "--project-id", "project-1", "--dry-run", "--token-env", "PHRASE_TEST_TOKEN", "--api-base-url", server.URL})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute cleanup dry-run: %v", err)
+	}
+	if deleted {
+		t.Fatalf("dry-run deleted keys")
+	}
+	if !strings.Contains(out.String(), "name=stale.key") || !strings.Contains(out.String(), "dry-run action=phrase-uploads-cleanup") {
+		t.Fatalf("unexpected output: %q", out.String())
+	}
+}
+
+func TestPhraseUploadsCleanupRefusesUnprocessedUpload(t *testing.T) {
+	t.Setenv("PHRASE_TEST_TOKEN", "secret")
+	deleted := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			deleted = true
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "upload-1", "state": "processing"})
+	}))
+	defer server.Close()
+
+	cmd := newRootCmd("")
+	cmd.SetArgs([]string{"phrase", "uploads", "cleanup", "--id", "upload-1", "--project-id", "project-1", "--token-env", "PHRASE_TEST_TOKEN", "--api-base-url", server.URL})
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "not processed") {
+		t.Fatalf("expected fail-closed error, got %v", err)
+	}
+	if deleted {
+		t.Fatalf("must not delete keys for an unprocessed upload")
+	}
+}
+
+func TestPhraseUploadsCleanupDeletesUnmentionedKeys(t *testing.T) {
+	t.Setenv("PHRASE_TEST_TOKEN", "secret")
+	var deleteQuery string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/uploads/upload-1":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "upload-1", "state": "success"})
+		case r.Method == http.MethodDelete && r.URL.Path == "/projects/project-1/keys":
+			deleteQuery = r.URL.Query().Get("q")
+			_ = json.NewEncoder(w).Encode(map[string]int{"records_affected": 4})
+		default:
+			t.Fatalf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	cmd := newRootCmd("")
+	out := bytes.NewBuffer(nil)
+	cmd.SetOut(out)
+	cmd.SetArgs([]string{"phrase", "uploads", "cleanup", "--id", "upload-1", "--project-id", "project-1", "--token-env", "PHRASE_TEST_TOKEN", "--api-base-url", server.URL})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute cleanup: %v", err)
+	}
+	if deleteQuery != "unmentioned_in_upload:upload-1" {
+		t.Fatalf("delete q=%q", deleteQuery)
+	}
+	if !strings.Contains(out.String(), "keys_deleted=4") {
+		t.Fatalf("unexpected output: %q", out.String())
+	}
+}
+
+func TestPhraseUploadsCleanupRequiresID(t *testing.T) {
+	cmd := newRootCmd("")
+	cmd.SetArgs([]string{"phrase", "uploads", "cleanup", "--project-id", "project-1"})
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("expected missing --id error")
 	}
 }

@@ -149,18 +149,23 @@ func (c *HTTPClient) uploadSourceFileAttempt(ctx context.Context, projectID, fil
 }
 
 func successfulUploadFromError(resp *phraseapi.APIResponse, err error) (phraseapi.Upload, bool) {
+	return decodeSuccessfulAPIBody[phraseapi.Upload](resp, err)
+}
+
+func decodeSuccessfulAPIBody[T any](resp *phraseapi.APIResponse, err error) (T, bool) {
+	var zero T
 	if resp == nil || resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return phraseapi.Upload{}, false
+		return zero, false
 	}
 	bodyErr, ok := err.(interface{ Body() []byte })
 	if !ok || len(bodyErr.Body()) == 0 {
-		return phraseapi.Upload{}, false
+		return zero, false
 	}
-	var upload phraseapi.Upload
-	if err := json.Unmarshal(bodyErr.Body(), &upload); err != nil {
-		return phraseapi.Upload{}, false
+	var value T
+	if json.Unmarshal(bodyErr.Body(), &value) != nil {
+		return zero, false
 	}
-	return upload, true
+	return value, true
 }
 
 func apiResponseHTTPResponse(resp *phraseapi.APIResponse) *http.Response {

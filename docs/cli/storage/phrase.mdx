@@ -65,8 +65,14 @@ phrase:
 
 Supported commands:
 
+- `hyperlocalise phrase init`
 - `hyperlocalise phrase config validate --config .phrase.yml`
+- `hyperlocalise phrase push --config .phrase.yml`
+- `hyperlocalise phrase pull --config .phrase.yml`
+- `hyperlocalise phrase locales list --config .phrase.yml`
 - `hyperlocalise phrase upload sources --config .phrase.yml`
 - `hyperlocalise phrase download translations --config .phrase.yml`
 
 If `--config` is omitted, Hyperlocalise checks `PHRASEAPP_CONFIG`, then `.phrase.yml` in the current directory, then `$HOME/.phrase.yml`.
+
+See the [phrase commands](/cli/commands/phrase) reference for flags, token lookup, and the Strings CLI gap table.

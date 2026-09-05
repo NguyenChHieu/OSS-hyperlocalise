@@ -1,0 +1,126 @@
+---
+title: "phrase"
+description: "Phrase Strings file workflow commands powered by .phrase.yml."
+---
+
+## Usage
+
+```bash
+hyperlocalise phrase init [--project-id <id>] [--format <format>] [--file <path>] [--host <url>] [--source-locale <id>] [--token-env <name>] [--force]
+hyperlocalise phrase config validate [--config <path>]
+hyperlocalise phrase push [--config <path>] [--project-id <id>] [--source-locale <id>] [--file <path>] [--format <format>] [--wait] [--wait-timeout <duration>] [--dry-run]
+hyperlocalise phrase pull [--config <path>] [--project-id <id>] [--target-locale <id>] [--format <format>] [--output <path>] [--dry-run]
+hyperlocalise phrase locales list [--config <path>] [--project-id <id>] [--branch <name>] [--output text|json]
+hyperlocalise phrase uploads cleanup --id <upload_id> [--config <path>] [--project-id <id>] [--dry-run]
+hyperlocalise phrase upload sources [--config <path>] [--project-id <id>] [--source-locale <id>] [--file <path>] [--format <format>] [--wait] [--wait-timeout <duration>] [--dry-run]
+hyperlocalise phrase download sources --project-id <id> --source-locale <id> --format <format> [--output <path>]
+hyperlocalise phrase download translations [--config <path>] [--project-id <id>] [--target-locale <id>] [--format <format>] [--output <path>]
+hyperlocalise phrase glossary download [--account-id <id>] [--glossary-id <id>] [--language <id>] [--output <path>]
+hyperlocalise phrase tm download --tm-id <id> --source-language <id> --target-language <id> [--format csv|tmx]
+```
+
+## What this command family does
+
+These commands operate on Phrase Strings file mode.
+
+They are separate from Hyperlocalise native `i18n.yml` and `sync push` / `sync pull` workflows.
+
+Use them when you want Phrase's `.phrase.yml` file mode:
+
+- scaffold a non-interactive `.phrase.yml` with `phrase init`
+- source-file upload from `phrase.push.sources` (`push` is an alias of `upload sources`)
+- translation download into `phrase.pull.targets` (`pull` is an alias of `download translations`)
+- locale listing from the Phrase project
+- glossary and translation-memory **download** (CSV/TMX)
+
+`phrase init` refuses to overwrite an existing `.phrase.yml` unless you pass `--force`. When `--project-id` is set and `PHRASE_ACCESS_TOKEN` or `PHRASE_API_TOKEN` is available, init calls Phrase to set `phrase.push.sources[].params.locale_id` to the project default locale; otherwise it falls back to `en`. Pass `--source-locale` to override. Do not commit a generated config that contains secrets.
+
+## Config lookup
+
+If `--config` is omitted, Hyperlocalise checks `PHRASEAPP_CONFIG`, then `.phrase.yml` in the current directory, then `$HOME/.phrase.yml`.
+
+## Access token
+
+- If `phrase.access_token` is omitted or empty, Hyperlocalise reads `PHRASE_ACCESS_TOKEN`, then `PHRASE_API_TOKEN`.
+- If `phrase.access_token` is `$VAR` or `${VAR}`, that environment variable is used only. An empty value does **not** fall through to `PHRASE_ACCESS_TOKEN` or `PHRASE_API_TOKEN`.
+- Manual flags use `--token-env` (default `PHRASE_API_TOKEN`).
+
+## Strings CLI gap inventory
+
+| Official Strings CLI | Hyperlocalise today |
+| --- | --- |
+| `phrase init` | Supported (non-interactive scaffold; no wizard) |
+| `phrase push` | Supported (`upload sources` alias, same config resolution) |
+| `phrase push --wait` | Supported (also `upload sources --wait`; polls until `success` or `error`/`failed`; unknown states fail closed; `--wait-timeout` default 10m; still prints `upload_id` if wait fails) |
+| `phrase pull` | Supported (`download translations` alias, same config resolution) |
+| `phrase locales list` | Supported (`--output text\|json`) |
+| `phrase uploads cleanup --id` | Supported (deletes **keys** unmentioned in that upload, not translations only; `--dry-run` lists and does not delete; refuses non-`success` uploads) |
+| `delete_unmentioned_keys` in `.phrase.yml` / `push --cleanup` | Unsupported (do not auto-run cleanup from `push`) |
+| Push param `translation_key_prefix` | Unsupported (parsed on pull only) |
+| Full API CLI (`keys`, `translations`, `jobs`, `locales create`) | Out of scope |
+| Glossary/TM upload | Out of scope (download is Hyperlocalise-shaped CSV/TMX) |
+| `phrase status` | Out of scope |
+
+## Examples
+
+```bash
+hyperlocalise phrase init --project-id abc123 --format json --file ./locales/en.json
+hyperlocalise phrase config validate
+hyperlocalise phrase push --dry-run
+hyperlocalise phrase push --wait
+hyperlocalise phrase locales list --output json
+hyperlocalise phrase pull
+hyperlocalise phrase uploads cleanup --id <upload_id> --dry-run
+```
+
+## Live smoke (throwaway Phrase project)
+
+Use a **dedicated throwaway Strings project**, not production. Cleanup deletes **keys**, not only translations.
+
+1. In Phrase, create a Strings project with source locale `en` and at least one target (for example `fr`).
+2. Create an access token (read/write). Do not commit it. In PowerShell:
+
+```powershell
+$env:PHRASE_ACCESS_TOKEN = "<token>"
+```
+
+On bash: `export PHRASE_ACCESS_TOKEN=<token>`.
+
+3. In an empty temp directory (set the token first so `init` can resolve the project default locale):
+
+```bash
+go run ./apps/cli phrase init --project-id <project_id> --format json --file ./locales/en.json
+mkdir -p locales
+cat > locales/en.json <<'EOF'
+{
+  "hello": { "message": "Hello" },
+  "unused": { "message": "drop me" }
+}
+EOF
+go run ./apps/cli phrase config validate
+go run ./apps/cli phrase locales list
+go run ./apps/cli phrase push --dry-run
+go run ./apps/cli phrase push --wait
+```
+
+If no token is set at init time, `locale_id` defaults to `en`; edit `.phrase.yml` or rerun `init --force` after exporting `PHRASE_ACCESS_TOKEN`. Use Phrase JSON (`{"key":{"message":"..."}}`) when the project expects structured JSON, not flat `{"key":"value"}`.
+
+Confirm the last command prints `upload_id=...` and `state=success` (not `processing`). Copy the upload id.
+
+4. Pull:
+
+```bash
+go run ./apps/cli phrase pull --force
+```
+
+Confirm a target file appears under `locales/` (or the path in `.phrase.yml`).
+
+5. Cleanup dry-run, then skip or run for real only if this project is disposable:
+
+```bash
+go run ./apps/cli phrase uploads cleanup --id <upload_id> --dry-run
+# deletes keys not present in that upload — do not run on a shared project
+# go run ./apps/cli phrase uploads cleanup --id <upload_id>
+```
+
+Do not commit `.phrase.yml`. Official `phrase` CLI is optional for comparison (`phrase push --wait`); Hyperlocalise’s commands are `go run ./apps/cli phrase ...`.

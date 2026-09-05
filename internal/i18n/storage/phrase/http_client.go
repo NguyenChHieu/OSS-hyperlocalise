@@ -172,6 +172,9 @@ func (c *HTTPClient) listLocalesPage(ctx context.Context, projectID string, opts
 		if err == nil {
 			return locales, nil
 		}
+		if locales, ok := decodeSuccessfulAPIBody[[]phraseapi.Locale](resp, err); ok {
+			return locales, nil
+		}
 		if !shouldRetry(apiResponseHTTPResponse(resp), err) || attempt >= maxRetries {
 			return nil, phraseAPIError("GET", fmt.Sprintf("/projects/%s/locales", projectID), resp, err)
 		}

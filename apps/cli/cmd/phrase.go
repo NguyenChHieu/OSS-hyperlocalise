@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,6 +29,8 @@ type phraseUploadSourcesOptions struct {
 	apiBaseURL         string
 	updateTranslations bool
 	skipUploadTags     bool
+	wait               bool
+	waitTimeout        time.Duration
 	dryRun             bool
 }
 
@@ -90,12 +93,36 @@ type phraseGlossaryDownloadOptions struct {
 	dryRun     bool
 }
 
+type phraseInitOptions struct {
+	projectID    string
+	format       string
+	file         string
+	host         string
+	sourceLocale string
+	tokenEnv     string
+	force        bool
+}
+
+type phraseLocalesListOptions struct {
+	configPath string
+	projectID  string
+	branch     string
+	output     string
+	tokenEnv   string
+	apiBaseURL string
+}
+
 func newPhraseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "phrase",
 		Short: "Phrase file workflow commands",
 	}
+	cmd.AddCommand(newPhraseInitCmd())
 	cmd.AddCommand(newPhraseConfigCmd())
+	cmd.AddCommand(newPhrasePushCmd())
+	cmd.AddCommand(newPhrasePullCmd())
+	cmd.AddCommand(newPhraseLocalesCmd())
+	cmd.AddCommand(newPhraseUploadsCmd())
 	cmd.AddCommand(newPhraseUploadCmd())
 	cmd.AddCommand(newPhraseDownloadCmd())
 	cmd.AddCommand(newPhraseGlossaryCmd())
@@ -128,6 +155,126 @@ func newPhraseConfigValidateCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&configPath, "config", "", "path to .phrase.yml")
+	return cmd
+}
+
+func newPhraseInitCmd() *cobra.Command {
+	o := phraseInitOptions{
+		format: "json",
+		file:   "./locales/en.json",
+		host:   "https://api.phrase.com/v2",
+	}
+	cmd := &cobra.Command{
+		Use:          "init",
+		Short:        "write a starter .phrase.yml",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return executePhraseInit(cmd, o)
+		},
+	}
+	cmd.Flags().StringVar(&o.projectID, "project-id", "", "Phrase project ID")
+	cmd.Flags().StringVar(&o.format, "format", o.format, "Phrase file format, for example json or yml")
+	cmd.Flags().StringVar(&o.file, "file", o.file, "source file path to list under phrase.push.sources")
+	cmd.Flags().StringVar(&o.host, "host", o.host, "Phrase API host")
+	cmd.Flags().StringVar(&o.sourceLocale, "source-locale", "", "source locale for phrase.push.sources[].params.locale_id; when omitted, uses the project default locale when a token is available")
+	cmd.Flags().StringVar(&o.tokenEnv, "token-env", o.tokenEnv, "environment variable containing the Phrase API token")
+	cmd.Flags().BoolVar(&o.force, "force", false, "overwrite an existing .phrase.yml")
+	return cmd
+}
+
+func newPhrasePushCmd() *cobra.Command {
+	o := phraseUploadSourcesOptions{tokenEnv: "PHRASE_API_TOKEN"}
+	cmd := &cobra.Command{
+		Use:          "push",
+		Short:        "upload source files to Phrase",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return executePhraseUploadSources(cmd, o)
+		},
+	}
+	addPhraseUploadSourcesFlags(cmd, &o)
+	return cmd
+}
+
+func newPhrasePullCmd() *cobra.Command {
+	o := phraseDownloadTranslationsOptions{tokenEnv: "PHRASE_API_TOKEN"}
+	cmd := &cobra.Command{
+		Use:          "pull",
+		Short:        "download translated content from Phrase",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return executePhraseDownloadTranslations(cmd, o)
+		},
+	}
+	addPhraseDownloadTranslationsFlags(cmd, &o)
+	return cmd
+}
+
+func newPhraseLocalesCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "locales",
+		Short: "Phrase locale commands",
+	}
+	cmd.AddCommand(newPhraseLocalesListCmd())
+	return cmd
+}
+
+func newPhraseLocalesListCmd() *cobra.Command {
+	o := phraseLocalesListOptions{tokenEnv: "PHRASE_API_TOKEN", output: "text"}
+	cmd := &cobra.Command{
+		Use:          "list",
+		Short:        "list locales in a Phrase project",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return executePhraseLocalesList(cmd, o)
+		},
+	}
+	cmd.Flags().StringVar(&o.configPath, "config", "", "path to .phrase.yml")
+	cmd.Flags().StringVar(&o.projectID, "project-id", "", "Phrase project ID")
+	cmd.Flags().StringVar(&o.branch, "branch", "", "Phrase branch name")
+	cmd.Flags().StringVar(&o.output, "output", o.output, "output format: text or json")
+	cmd.Flags().StringVar(&o.tokenEnv, "token-env", o.tokenEnv, "environment variable containing the Phrase API token")
+	cmd.Flags().StringVar(&o.apiBaseURL, "api-base-url", "", "Phrase API base URL")
+	return cmd
+}
+
+type phraseUploadsCleanupOptions struct {
+	configPath string
+	projectID  string
+	uploadID   string
+	branch     string
+	tokenEnv   string
+	apiBaseURL string
+	dryRun     bool
+}
+
+func newPhraseUploadsCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "uploads",
+		Short: "Phrase upload commands",
+	}
+	cmd.AddCommand(newPhraseUploadsCleanupCmd())
+	return cmd
+}
+
+func newPhraseUploadsCleanupCmd() *cobra.Command {
+	o := phraseUploadsCleanupOptions{tokenEnv: "PHRASE_API_TOKEN"}
+	cmd := &cobra.Command{
+		Use:          "cleanup",
+		Short:        "delete keys unmentioned in an upload",
+		SilenceUsage: true,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return executePhraseUploadsCleanup(cmd, o)
+		},
+	}
+	cmd.Flags().StringVar(&o.configPath, "config", "", "path to .phrase.yml")
+	cmd.Flags().StringVar(&o.projectID, "project-id", "", "Phrase project ID")
+	cmd.Flags().StringVar(&o.uploadID, "id", "", "upload ID returned by push or upload sources")
+	cmd.Flags().StringVar(&o.branch, "branch", "", "Phrase branch name")
+	cmd.Flags().StringVar(&o.tokenEnv, "token-env", o.tokenEnv, "environment variable containing the Phrase API token")
+	cmd.Flags().StringVar(&o.apiBaseURL, "api-base-url", "", "Phrase API base URL")
+	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "list unmentioned keys without deleting them")
+	_ = cmd.MarkFlagRequired("id")
 	return cmd
 }
 
@@ -248,17 +395,7 @@ func newPhraseDownloadTranslationsCmd() *cobra.Command {
 			return executePhraseDownloadTranslations(cmd, o)
 		},
 	}
-	cmd.Flags().StringVar(&o.configPath, "config", "", "path to .phrase.yml")
-	cmd.Flags().StringVar(&o.projectID, "project-id", "", "Phrase project ID")
-	cmd.Flags().StringSliceVarP(&o.targetLocales, "target-locale", "l", nil, "Phrase target locale ID(s) or name(s)")
-	cmd.Flags().StringVar(&o.format, "format", "", "Phrase file format, for example json, yml, or strings")
-	cmd.Flags().StringVarP(&o.output, "output", "o", "", "output file path; omit or use - for stdout when downloading one locale; use %locale% for multiple locales")
-	cmd.Flags().StringVar(&o.branch, "branch", "", "Phrase branch name")
-	cmd.Flags().StringSliceVar(&o.tags, "tag", nil, "tag(s) to limit downloaded keys")
-	cmd.Flags().StringVar(&o.tokenEnv, "token-env", o.tokenEnv, "environment variable containing the Phrase API token")
-	cmd.Flags().StringVar(&o.apiBaseURL, "api-base-url", "", "Phrase API base URL")
-	cmd.Flags().BoolVar(&o.force, "force", false, "overwrite an existing output file")
-	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "preview command without downloading content")
+	addPhraseDownloadTranslationsFlags(cmd, &o)
 	return cmd
 }
 
@@ -272,6 +409,11 @@ func newPhraseUploadSourcesCmd() *cobra.Command {
 			return executePhraseUploadSources(cmd, o)
 		},
 	}
+	addPhraseUploadSourcesFlags(cmd, &o)
+	return cmd
+}
+
+func addPhraseUploadSourcesFlags(cmd *cobra.Command, o *phraseUploadSourcesOptions) {
 	cmd.Flags().StringVar(&o.configPath, "config", "", "path to .phrase.yml")
 	cmd.Flags().StringVar(&o.projectID, "project-id", "", "Phrase project ID")
 	cmd.Flags().StringVar(&o.sourceLocale, "source-locale", "", "Phrase source locale ID or name")
@@ -283,8 +425,322 @@ func newPhraseUploadSourcesCmd() *cobra.Command {
 	cmd.Flags().StringVar(&o.apiBaseURL, "api-base-url", "", "Phrase API base URL")
 	cmd.Flags().BoolVar(&o.updateTranslations, "update-translations", false, "update existing translations from the uploaded source file")
 	cmd.Flags().BoolVar(&o.skipUploadTags, "skip-upload-tags", false, "do not create upload tags in Phrase")
+	cmd.Flags().BoolVar(&o.wait, "wait", false, "wait until each upload reaches a terminal state")
+	cmd.Flags().DurationVar(&o.waitTimeout, "wait-timeout", 10*time.Minute, "maximum time to wait for each upload when --wait is set")
 	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "preview command without uploading files")
-	return cmd
+}
+
+func addPhraseDownloadTranslationsFlags(cmd *cobra.Command, o *phraseDownloadTranslationsOptions) {
+	cmd.Flags().StringVar(&o.configPath, "config", "", "path to .phrase.yml")
+	cmd.Flags().StringVar(&o.projectID, "project-id", "", "Phrase project ID")
+	cmd.Flags().StringSliceVarP(&o.targetLocales, "target-locale", "l", nil, "Phrase target locale ID(s) or name(s)")
+	cmd.Flags().StringVar(&o.format, "format", "", "Phrase file format, for example json, yml, or strings")
+	cmd.Flags().StringVarP(&o.output, "output", "o", "", "output file path; omit or use - for stdout when downloading one locale; use %locale% for multiple locales")
+	cmd.Flags().StringVar(&o.branch, "branch", "", "Phrase branch name")
+	cmd.Flags().StringSliceVar(&o.tags, "tag", nil, "tag(s) to limit downloaded keys")
+	cmd.Flags().StringVar(&o.tokenEnv, "token-env", o.tokenEnv, "environment variable containing the Phrase API token")
+	cmd.Flags().StringVar(&o.apiBaseURL, "api-base-url", "", "Phrase API base URL")
+	cmd.Flags().BoolVar(&o.force, "force", false, "overwrite an existing output file")
+	cmd.Flags().BoolVar(&o.dryRun, "dry-run", false, "preview command without downloading content")
+}
+
+func executePhraseInit(cmd *cobra.Command, o phraseInitOptions) error {
+	const path = ".phrase.yml"
+	if _, err := os.Stat(path); err == nil && !o.force {
+		return fmt.Errorf("%s already exists; use --force to overwrite", path)
+	} else if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("check %s: %w", path, err)
+	}
+	projectID := strings.TrimSpace(o.projectID)
+	if projectID == "" {
+		projectID = "YOUR_PROJECT_ID"
+	}
+	format := strings.TrimSpace(o.format)
+	if format == "" {
+		format = "json"
+	}
+	file := strings.TrimSpace(o.file)
+	if file == "" {
+		file = "./locales/en.json"
+	}
+	host := strings.TrimSpace(o.host)
+	if host == "" {
+		host = "https://api.phrase.com/v2"
+	}
+	sourceLocale, err := phraseInitSourceLocale(cmd, o, projectID, host)
+	if err != nil {
+		return err
+	}
+	initToken := phraseInitTokenSpec(cmd, o.tokenEnv)
+	content := phraseInitYAML(projectID, format, file, host, sourceLocale, initToken.Ref)
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return fmt.Errorf("write %s: %w", path, err)
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "wrote %s\n", path)
+	return err
+}
+
+func phraseInitYAML(projectID, format, file, host, sourceLocale, accessTokenRef string) string {
+	if strings.TrimSpace(sourceLocale) == "" {
+		sourceLocale = "en"
+	}
+	pullTarget := phraseInitPullTargetFile(format, file)
+	accessTokenLine := ""
+	if ref := strings.TrimSpace(accessTokenRef); ref != "" {
+		accessTokenLine = fmt.Sprintf("  access_token: %s\n", ref)
+	}
+	return fmt.Sprintf(`phrase:
+%s  project_id: %s
+  file_format: %s
+  host: %s
+  push:
+    sources:
+      - file: %s
+        params:
+          locale_id: %s
+  pull:
+    targets:
+      - file: %s
+`, accessTokenLine, strconv.Quote(projectID), strconv.Quote(format), strconv.Quote(host), strconv.Quote(file), strconv.Quote(sourceLocale), strconv.Quote(pullTarget))
+}
+
+func phraseInitPullTargetFile(format, sourceFile string) string {
+	if ext := strings.TrimSpace(filepath.Ext(sourceFile)); ext != "" {
+		return "./locales/<locale_name>" + ext
+	}
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "yml", "yaml":
+		return "./locales/<locale_name>.yml"
+	case "strings":
+		return "./locales/<locale_name>.strings"
+	default:
+		return "./locales/<locale_name>.json"
+	}
+}
+
+type phraseInitToken struct {
+	Value string
+	Ref   string
+}
+
+func phraseInitTokenSpec(cmd *cobra.Command, tokenEnv string) phraseInitToken {
+	if cmd.Flags().Changed("token-env") {
+		envName := strings.TrimSpace(tokenEnv)
+		if envName == "" {
+			envName = "PHRASE_API_TOKEN"
+		}
+		return phraseInitToken{
+			Value: strings.TrimSpace(os.Getenv(envName)),
+			Ref:   "$" + envName,
+		}
+	}
+	if token := strings.TrimSpace(os.Getenv("PHRASE_ACCESS_TOKEN")); token != "" {
+		return phraseInitToken{Value: token, Ref: "$PHRASE_ACCESS_TOKEN"}
+	}
+	envName := strings.TrimSpace(tokenEnv)
+	if envName == "" {
+		envName = "PHRASE_API_TOKEN"
+	}
+	if token := strings.TrimSpace(os.Getenv(envName)); token != "" {
+		return phraseInitToken{Value: token, Ref: "$" + envName}
+	}
+	return phraseInitToken{}
+}
+
+func phraseInitSourceLocale(cmd *cobra.Command, o phraseInitOptions, projectID, host string) (string, error) {
+	if cmd.Flags().Changed("source-locale") {
+		return strings.TrimSpace(o.sourceLocale), nil
+	}
+	if projectID == "YOUR_PROJECT_ID" {
+		return "en", nil
+	}
+	initToken := phraseInitTokenSpec(cmd, o.tokenEnv)
+	if initToken.Value == "" {
+		return "en", nil
+	}
+	client, err := phrase.NewHTTPClientWithBaseURL(phrase.Config{}, host, &http.Client{Timeout: 30 * time.Second})
+	if err != nil {
+		return "", err
+	}
+	locales, err := client.ListLocales(backgroundContext(), phrase.LocaleListInput{
+		ProjectID: projectID,
+		APIToken:  initToken.Value,
+	})
+	if err != nil {
+		return "", fmt.Errorf("phrase init: list project locales: %w", err)
+	}
+	sourceLocale, err := defaultPhraseLocale(locales)
+	if err != nil {
+		return "", fmt.Errorf("phrase init: %w", err)
+	}
+	if sourceLocale == "" {
+		return "", fmt.Errorf("phrase init: project has no locales; pass --source-locale")
+	}
+	return sourceLocale, nil
+}
+
+func executePhraseLocalesList(cmd *cobra.Command, o phraseLocalesListOptions) error {
+	projectID := strings.TrimSpace(o.projectID)
+	branch := strings.TrimSpace(o.branch)
+	token := ""
+	apiBaseURL := strings.TrimSpace(o.apiBaseURL)
+	useConfig := shouldUsePhraseCLIConfig(o.configPath, strings.TrimSpace(o.projectID) != "")
+	if useConfig {
+		cfg, _, err := phrase.LoadCLIConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		if projectID == "" {
+			projectID = strings.TrimSpace(cfg.ProjectID)
+		}
+		token, err = phraseConfigAPIToken(cmd, cfg, o.tokenEnv, "phrase locales list")
+		if err != nil {
+			return err
+		}
+		apiBaseURL = phraseConfigAPIBaseURL(cmd, cfg, o.apiBaseURL)
+	} else {
+		var err error
+		token, err = phraseAPIToken("phrase locales list", o.tokenEnv)
+		if err != nil {
+			return err
+		}
+	}
+	if projectID == "" {
+		return fmt.Errorf("phrase locales list: --project-id is required")
+	}
+	client, err := phrase.NewHTTPClientWithBaseURL(phrase.Config{}, apiBaseURL, &http.Client{Timeout: 30 * time.Second})
+	if err != nil {
+		return err
+	}
+	locales, err := client.ListLocales(backgroundContext(), phrase.LocaleListInput{
+		ProjectID: projectID,
+		APIToken:  token,
+		Branch:    branch,
+	})
+	if err != nil {
+		return fmt.Errorf("phrase locales list: %w", err)
+	}
+	return writeCrowdinEncodedOutput(cmd.OutOrStdout(), o.output, func() error {
+		for _, locale := range locales {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "id=%s name=%s code=%s default=%t\n", locale.ID, locale.Name, locale.Code, locale.Default); err != nil {
+				return err
+			}
+		}
+		return nil
+	}, locales)
+}
+
+var phraseUploadPollInterval = time.Second
+
+func printPhraseUploadResult(cmd *cobra.Command, file string, result phrase.SourceUploadResult) (int, error) {
+	return fmt.Fprintf(cmd.OutOrStdout(), "uploaded file=%s upload_id=%s state=%s keys_created=%d keys_updated=%d translations_created=%d translations_updated=%d skipped=%d\n", file, result.ID, result.State, result.Summary.TranslationKeysCreated, result.Summary.TranslationKeysUpdated, result.Summary.TranslationsCreated, result.Summary.TranslationsUpdated, result.Summary.TranslationKeysIgnored)
+}
+
+func waitForPhraseUploadIfRequested(cmd *cobra.Command, client *phrase.HTTPClient, token, projectID, branch string, o phraseUploadSourcesOptions, result phrase.SourceUploadResult) (phrase.SourceUploadResult, error) {
+	if !o.wait {
+		return result, nil
+	}
+	if o.waitTimeout <= 0 {
+		return result, fmt.Errorf("phrase upload sources: --wait-timeout must be greater than 0")
+	}
+	parent := cmd.Context()
+	if parent == nil {
+		parent = backgroundContext()
+	}
+	ctx, cancel := context.WithTimeout(parent, o.waitTimeout)
+	defer cancel()
+	waited, err := client.WaitForUpload(ctx, phrase.UploadWaitInput{
+		ProjectID: projectID,
+		APIToken:  token,
+		UploadID:  result.ID,
+		Branch:    branch,
+		Interval:  phraseUploadPollInterval,
+	})
+	if err != nil {
+		if strings.TrimSpace(waited.ID) == "" {
+			waited.ID = result.ID
+			waited.State = result.State
+			waited.Summary = result.Summary
+		}
+		return waited, fmt.Errorf("phrase upload sources: %w", err)
+	}
+	return waited, nil
+}
+
+func executePhraseUploadsCleanup(cmd *cobra.Command, o phraseUploadsCleanupOptions) error {
+	uploadID := strings.TrimSpace(o.uploadID)
+	if uploadID == "" {
+		return fmt.Errorf("phrase uploads cleanup: --id is required")
+	}
+	projectID := strings.TrimSpace(o.projectID)
+	branch := strings.TrimSpace(o.branch)
+	token := ""
+	apiBaseURL := strings.TrimSpace(o.apiBaseURL)
+	useConfig := shouldUsePhraseCLIConfig(o.configPath, strings.TrimSpace(o.projectID) != "")
+	if useConfig {
+		cfg, _, err := phrase.LoadCLIConfig(o.configPath)
+		if err != nil {
+			return err
+		}
+		if projectID == "" {
+			projectID = strings.TrimSpace(cfg.ProjectID)
+		}
+		token, err = phraseConfigAPIToken(cmd, cfg, o.tokenEnv, "phrase uploads cleanup")
+		if err != nil {
+			return err
+		}
+		apiBaseURL = phraseConfigAPIBaseURL(cmd, cfg, o.apiBaseURL)
+	} else {
+		var err error
+		token, err = phraseAPIToken("phrase uploads cleanup", o.tokenEnv)
+		if err != nil {
+			return err
+		}
+	}
+	if projectID == "" {
+		return fmt.Errorf("phrase uploads cleanup: --project-id is required")
+	}
+	client, err := phrase.NewHTTPClientWithBaseURL(phrase.Config{}, apiBaseURL, &http.Client{Timeout: 30 * time.Second})
+	if err != nil {
+		return err
+	}
+	upload, err := client.GetUpload(backgroundContext(), phrase.UploadGetInput{
+		ProjectID: projectID,
+		APIToken:  token,
+		UploadID:  uploadID,
+		Branch:    branch,
+	})
+	if err != nil {
+		return fmt.Errorf("phrase uploads cleanup: %w", err)
+	}
+	if !phrase.IsProcessedUploadState(upload.State) {
+		return fmt.Errorf("phrase uploads cleanup: upload %s is not processed (state=%s); wait until state=success before deleting keys", uploadID, upload.State)
+	}
+	input := phrase.UploadCleanupInput{
+		ProjectID: projectID,
+		APIToken:  token,
+		UploadID:  uploadID,
+		Branch:    branch,
+	}
+	if o.dryRun {
+		keys, err := client.ListUnmentionedKeys(backgroundContext(), input)
+		if err != nil {
+			return fmt.Errorf("phrase uploads cleanup: %w", err)
+		}
+		for _, key := range keys {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "key_id=%s name=%s\n", key.ID, key.Name); err != nil {
+				return err
+			}
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "dry-run action=phrase-uploads-cleanup upload_id=%s state=%s keys=%d\n", uploadID, upload.State, len(keys))
+		return err
+	}
+	result, err := client.DeleteUnmentionedKeys(backgroundContext(), input)
+	if err != nil {
+		return fmt.Errorf("phrase uploads cleanup: %w", err)
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "action=phrase-uploads-cleanup upload_id=%s state=%s keys_deleted=%d\n", uploadID, upload.State, result.RecordsAffected)
+	return err
 }
 
 func executePhraseTranslationMemoryDownload(cmd *cobra.Command, o phraseTranslationMemoryDownloadOptions) error {
@@ -513,10 +969,14 @@ func executePhraseUploadSources(cmd *cobra.Command, o phraseUploadSourcesOptions
 		if err != nil {
 			return fmt.Errorf("phrase upload sources: %w", err)
 		}
-		processed++
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "uploaded file=%s upload_id=%s state=%s keys_created=%d keys_updated=%d translations_created=%d translations_updated=%d skipped=%d\n", file, result.ID, result.State, result.Summary.TranslationKeysCreated, result.Summary.TranslationKeysUpdated, result.Summary.TranslationsCreated, result.Summary.TranslationsUpdated, result.Summary.TranslationKeysIgnored); err != nil {
+		result, waitErr := waitForPhraseUploadIfRequested(cmd, client, token, strings.TrimSpace(o.projectID), strings.TrimSpace(o.branch), o, result)
+		if _, err := printPhraseUploadResult(cmd, file, result); err != nil {
 			return err
 		}
+		if waitErr != nil {
+			return waitErr
+		}
+		processed++
 	}
 	_, err = fmt.Fprintf(cmd.OutOrStdout(), "action=phrase-upload-sources processed=%d skipped=0 warnings=0\n", processed)
 	return err
@@ -729,10 +1189,14 @@ func executePhraseUploadSourcesFromConfig(cmd *cobra.Command, o phraseUploadSour
 		if err != nil {
 			return fmt.Errorf("phrase upload sources: %w", err)
 		}
-		processed++
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "uploaded file=%s upload_id=%s state=%s keys_created=%d keys_updated=%d translations_created=%d translations_updated=%d skipped=%d\n", task.input.FilePath, result.ID, result.State, result.Summary.TranslationKeysCreated, result.Summary.TranslationKeysUpdated, result.Summary.TranslationsCreated, result.Summary.TranslationsUpdated, result.Summary.TranslationKeysIgnored); err != nil {
+		result, waitErr := waitForPhraseUploadIfRequested(cmd, client, token, task.input.ProjectID, task.input.Branch, o, result)
+		if _, err := printPhraseUploadResult(cmd, task.input.FilePath, result); err != nil {
 			return err
 		}
+		if waitErr != nil {
+			return waitErr
+		}
+		processed++
 	}
 	_, err = fmt.Fprintf(cmd.OutOrStdout(), "action=phrase-upload-sources processed=%d skipped=0 warnings=0\n", processed)
 	return err

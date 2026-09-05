@@ -1030,8 +1030,8 @@ func TestPhraseInitWritesConfigAndRefusesOverwrite(t *testing.T) {
 		t.Fatalf("read .phrase.yml: %v", err)
 	}
 	text := string(content)
-	if !strings.Contains(text, `project_id: "project-1"`) || !strings.Contains(text, "access_token: $PHRASE_ACCESS_TOKEN") {
-		t.Fatalf("unexpected config: %s", text)
+	if !strings.Contains(text, `project_id: "project-1"`) || strings.Contains(text, "access_token:") {
+		t.Fatalf("expected offline scaffold without access_token, got: %s", text)
 	}
 
 	cmd = newRootCmd("")
@@ -1108,6 +1108,31 @@ func TestPhraseInitUsesPHRASEAPITokenInConfig(t *testing.T) {
 	}
 	if !strings.Contains(string(content), "access_token: $PHRASE_API_TOKEN") {
 		t.Fatalf("expected PHRASE_API_TOKEN in scaffold, got: %s", content)
+	}
+}
+
+func TestPhraseInitOfflineConfigResolvesPHRASEAPIToken(t *testing.T) {
+	t.Chdir(t.TempDir())
+	t.Setenv("PHRASE_ACCESS_TOKEN", "")
+	t.Setenv("PHRASE_API_TOKEN", "")
+
+	cmd := newRootCmd("")
+	cmd.SetArgs([]string{"phrase", "init", "--project-id", "project-1"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute phrase init: %v", err)
+	}
+	t.Setenv("PHRASE_API_TOKEN", "secret")
+
+	cfg, _, err := phrase.LoadCLIConfig("")
+	if err != nil {
+		t.Fatalf("load phrase config: %v", err)
+	}
+	token, err := cfg.RequireAPIToken("phrase push")
+	if err != nil {
+		t.Fatalf("require api token: %v", err)
+	}
+	if token != "secret" {
+		t.Fatalf("expected PHRASE_API_TOKEN after offline init, got %q", token)
 	}
 }
 

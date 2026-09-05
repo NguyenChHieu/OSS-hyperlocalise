@@ -484,13 +484,13 @@ func phraseInitYAML(projectID, format, file, host, sourceLocale, accessTokenRef 
 	if strings.TrimSpace(sourceLocale) == "" {
 		sourceLocale = "en"
 	}
-	if strings.TrimSpace(accessTokenRef) == "" {
-		accessTokenRef = "$PHRASE_ACCESS_TOKEN"
-	}
 	pullTarget := phraseInitPullTargetFile(format, file)
+	accessTokenLine := ""
+	if ref := strings.TrimSpace(accessTokenRef); ref != "" {
+		accessTokenLine = fmt.Sprintf("  access_token: %s\n", ref)
+	}
 	return fmt.Sprintf(`phrase:
-  access_token: %s
-  project_id: %s
+%s  project_id: %s
   file_format: %s
   host: %s
   push:
@@ -501,7 +501,7 @@ func phraseInitYAML(projectID, format, file, host, sourceLocale, accessTokenRef 
   pull:
     targets:
       - file: %s
-`, accessTokenRef, strconv.Quote(projectID), strconv.Quote(format), strconv.Quote(host), strconv.Quote(file), strconv.Quote(sourceLocale), strconv.Quote(pullTarget))
+`, accessTokenLine, strconv.Quote(projectID), strconv.Quote(format), strconv.Quote(host), strconv.Quote(file), strconv.Quote(sourceLocale), strconv.Quote(pullTarget))
 }
 
 func phraseInitPullTargetFile(format, sourceFile string) string {
@@ -544,7 +544,7 @@ func phraseInitTokenSpec(cmd *cobra.Command, tokenEnv string) phraseInitToken {
 	if token := strings.TrimSpace(os.Getenv(envName)); token != "" {
 		return phraseInitToken{Value: token, Ref: "$" + envName}
 	}
-	return phraseInitToken{Ref: "$PHRASE_ACCESS_TOKEN"}
+	return phraseInitToken{}
 }
 
 func phraseInitSourceLocale(cmd *cobra.Command, o phraseInitOptions, projectID, host string) (string, error) {

@@ -266,8 +266,8 @@ export function AutomationsPageView({
                 variant="outline"
               >
                 <FormattedMessage
-                  defaultMessage="Advanced workflows"
-                  id="5Q7wl9b9ir"
+                  defaultMessage="Visual workflows"
+                  id="zK2bwfb+JP"
                   description="Link from automations list to visual workflows"
                 />
               </Button>

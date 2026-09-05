@@ -151,8 +151,8 @@ export function getIntegrationDetailCopy(locale: string) {
       description: "Heading for the integration capabilities section",
     }),
     workflowsHeading: intl.formatMessage({
-      defaultMessage: "Example workflows",
-      id: "BNs8waALWE",
+      defaultMessage: "Visual workflow examples",
+      id: "p/CGM67hkK",
       description: "Heading for the integration workflow examples section",
     }),
     workflowsDescription: intl.formatMessage({

@@ -305,6 +305,21 @@ export const visualWorkflowEditorMessages = defineMessages({
     id: "t4mVRTnKLW",
     description: "Right panel heading when a node is selected",
   },
+  triggerType: {
+    defaultMessage: "Trigger",
+    id: "cSkIY27SIk",
+    description: "Label for changing the selected visual workflow trigger type",
+  },
+  deleteStep: {
+    defaultMessage: "Delete step",
+    id: "d/T+F7hGuw",
+    description: "Button that removes the selected node from the visual workflow canvas",
+  },
+  deleteWorkflow: {
+    defaultMessage: "Delete",
+    id: "nqnh5BEInQ",
+    description: "Button that deletes the current visual workflow",
+  },
   httpMethod: {
     defaultMessage: "Method",
     id: "42t+jTqT0q",

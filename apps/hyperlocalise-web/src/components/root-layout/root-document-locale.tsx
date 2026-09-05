@@ -12,18 +12,31 @@
  * of this software will be governed by the GNU General Public License
  * Version 2.0 or later.
  */
-import { useLayoutEffect } from "react";
+import { usePathname } from "next/navigation";
+import { Suspense, useLayoutEffect } from "react";
 
-import type { AppLocale } from "@/lib/app-i18n/locales";
+import { normalizeAppLocale, type AppLocale } from "@/lib/app-i18n/locales";
 
 type RootDocumentLocaleProps = {
   locale: AppLocale;
 };
 
 export function RootDocumentLocale({ locale }: RootDocumentLocaleProps) {
+  return (
+    <Suspense fallback={null}>
+      <RootDocumentLocaleInner locale={locale} />
+    </Suspense>
+  );
+}
+
+function RootDocumentLocaleInner({ locale }: RootDocumentLocaleProps) {
+  const pathname = usePathname();
+  const pathLocale = normalizeAppLocale(pathname.split("/").filter(Boolean)[0] ?? "");
+  const documentLocale = pathLocale ?? locale;
+
   useLayoutEffect(() => {
-    document.documentElement.lang = locale;
-  }, [locale]);
+    document.documentElement.lang = documentLocale;
+  }, [documentLocale]);
 
   return null;
 }

@@ -24,12 +24,30 @@ describe("root layout cacheComponents boundary", () => {
     expect(source).not.toMatch(/\bheaders\s*\(|\bcookies\s*\(/);
   });
 
+  it("uses a static document lang in the root html shell", () => {
+    const source = readFileSync(path.join(import.meta.dirname, "root-html.tsx"), "utf8");
+
+    expect(source).toMatch(/\bDEFAULT_APP_LOCALE\b/);
+    expect(source).toMatch(/<html lang=\{DEFAULT_APP_LOCALE\}/);
+    expect(source).not.toMatch(/\bgetAppLocale\b/);
+  });
+
+  it("resolves request locale inside the root Suspense boundary", () => {
+    const source = readFileSync(
+      path.join(import.meta.dirname, "root-layout-providers.tsx"),
+      "utf8",
+    );
+
+    expect(source).toMatch(/\bgetAppLocale\b/);
+    expect(source).toMatch(/<Suspense fallback={<RootLayoutProvidersFallback/);
+  });
+
   it("keeps the root Suspense fallback free of route children", () => {
     const source = readFileSync(
       path.join(import.meta.dirname, "root-layout-providers.tsx"),
       "utf8",
     );
-    const fallbackFn = source.match(/function RootLayoutProvidersFallback\(\) \{[\s\S]*?\n\}/)?.[0];
+    const fallbackFn = source.match(/function RootLayoutProvidersFallback\([\s\S]*?\n\}/)?.[0];
 
     expect(source).toContain("<Suspense fallback={<RootLayoutProvidersFallback />}>");
     expect(fallbackFn).toBeDefined();

@@ -18,7 +18,7 @@ import { QueryProvider } from "@/components/query-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { DEFAULT_APP_LOCALE, type AppLocale } from "@/lib/app-i18n/locales";
+import { type AppLocale, DEFAULT_APP_LOCALE } from "@/lib/app-i18n/locales";
 import { getAppLocale } from "@/lib/app-i18n/server-locale";
 import { withAuth } from "@/lib/workos/server-auth";
 

@@ -63,3 +63,7 @@ bazel-*
 apps/mac-app/.sparkle-keys/
 .vercel
 .env*
+
+# AI Workflow v2 local sidecar (personal machine only; never open in contributor PRs)
+.ai/
+CLAUDE.md

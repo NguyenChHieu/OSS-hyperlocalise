@@ -84,8 +84,12 @@ func parseJavaPropertiesDocument(content []byte) (propertiesDocument, error) {
 	}
 
 	text := string(content)
-	doc := propertiesDocument{template: text, entries: []propertiesEntry{}}
-	seen := map[string]int{}
+	// Pre-allocate from a sampled count of plausible property lines, not every
+	// physical newline. Blank- or comment-heavy files would otherwise reserve
+	// an entry slot and map bucket per line.
+	capHint := propertiesEntryCapHint(text)
+	doc := propertiesDocument{template: text, entries: make([]propertiesEntry, 0, capHint)}
+	seen := make(map[string]int, capHint)
 	var pendingComments []string
 	currentLine := 1
 
@@ -132,6 +136,60 @@ func parseJavaPropertiesDocument(content []byte) (propertiesDocument, error) {
 	}
 
 	return doc, nil
+}
+
+const (
+	propertiesEntryCapHintSampleBytes = 8 << 10
+	propertiesEntryCapHintMax         = 8 << 10
+)
+
+func propertiesEntryCapHint(text string) int {
+	if len(text) == 0 {
+		return 0
+	}
+
+	sample := propertiesEntrySample(text)
+	candidates := countPlausiblePropertiesEntryLines(sample)
+	if candidates == 0 {
+		return 0
+	}
+	if len(sample) >= len(text) {
+		return min(candidates, propertiesEntryCapHintMax)
+	}
+
+	estimated := int(int64(candidates) * int64(len(text)) / int64(len(sample)))
+	if estimated < candidates {
+		estimated = candidates
+	}
+	return min(estimated, propertiesEntryCapHintMax)
+}
+
+func propertiesEntrySample(text string) string {
+	if len(text) <= propertiesEntryCapHintSampleBytes {
+		return text
+	}
+	prefix := text[:propertiesEntryCapHintSampleBytes]
+	if nl := strings.LastIndexAny(prefix, "\n\r"); nl >= 0 {
+		return text[:nl+1]
+	}
+	return prefix
+}
+
+func countPlausiblePropertiesEntryLines(text string) int {
+	count := 0
+	for pos := 0; pos < len(text); {
+		start, end, next := readPropertiesPhysicalLine(text, pos)
+		if isPlausiblePropertiesEntryLine(text[start:end]) {
+			count++
+		}
+		pos = next
+	}
+	return count
+}
+
+func isPlausiblePropertiesEntryLine(rawLine string) bool {
+	first := firstPropertiesNonWhitespace(rawLine)
+	return first < len(rawLine) && rawLine[first] != '#' && rawLine[first] != '!'
 }
 
 func parseJavaPropertiesEntry(line propertiesLogicalLine, comments []string) (propertiesEntry, error) {
@@ -199,12 +257,18 @@ func parseJavaPropertiesEntry(line propertiesLogicalLine, comments []string) (pr
 		valueStartRaw = line.boundaryRaw[valueStart]
 	}
 
+	// BOLT OPTIMIZATION: Guard slices.Clone to avoid heap allocation when comments is empty.
+	var commentsClone []string
+	if len(comments) > 0 {
+		commentsClone = slices.Clone(comments)
+	}
+
 	return propertiesEntry{
 		key:         key,
 		sourceValue: value,
 		valueStart:  valueStartRaw,
 		valueEnd:    line.rawEnd,
-		comments:    slices.Clone(comments),
+		comments:    commentsClone,
 		line:        line.line,
 	}, nil
 }
@@ -388,14 +452,28 @@ func isPropertiesWhitespace(ch byte) bool {
 }
 
 func countPropertiesLines(s string) int {
-	// Java properties lines can be terminated by \n, \r, or \r\n.
-	// We count all \n and all \r, then subtract \r\n to avoid double-counting.
-	return strings.Count(s, "\n") + strings.Count(s, "\r") - strings.Count(s, "\r\n")
+	// BOLT OPTIMIZATION: Single-pass line counter avoiding redundant full-string scans.
+	if !strings.ContainsAny(s, "\r\n") {
+		return 0
+	}
+	lines := 0
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '\n':
+			lines++
+		case '\r':
+			if i+1 < len(s) && s[i+1] == '\n' {
+				i++
+			}
+			lines++
+		}
+	}
+	return lines
 }
 
 func decodeJavaPropertiesEscapes(raw string) (string, error) {
-	// BOLT OPTIMIZATION: Fast-path for strings without escapes to avoid
-	// strings.Builder allocations and byte-by-byte iteration.
+	// Fast-path for strings without escapes. Clone so keys and values do not
+	// retain the document-wide backing array after the source bytes are gone.
 	if !strings.Contains(raw, "\\") {
 		return strings.Clone(raw), nil
 	}

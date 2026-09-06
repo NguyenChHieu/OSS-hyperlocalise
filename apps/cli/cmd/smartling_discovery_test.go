@@ -230,8 +230,75 @@ func TestSmartlingFilesStatusRequiresFileURIAndZeroTotals(t *testing.T) {
 		t.Fatalf("status: %v", err)
 	}
 	text := out.String()
-	if !strings.Contains(text, "total_strings=0") || !strings.Contains(text, "percent=0") {
+	if !strings.Contains(text, "locale=fr-FR") || !strings.Contains(text, "total_strings=0") || !strings.Contains(text, "percent=0") {
 		t.Fatalf("status output=%s", text)
+	}
+	if strings.Contains(strings.Split(text, "\n")[0], "total_strings=") {
+		t.Fatalf("file header should omit totals: %s", text)
+	}
+}
+
+func TestSmartlingFilesStatusPercentFromAuthorizedCounts(t *testing.T) {
+	t.Setenv("SMARTLING_USER_IDENTIFIER", "uid")
+	t.Setenv("SMARTLING_USER_SECRET", "secret")
+	orig := newSmartlingDiscoveryClient
+	t.Cleanup(func() { newSmartlingDiscoveryClient = orig })
+	newSmartlingDiscoveryClient = func(_ smartling.Config) (smartlingDiscoveryClient, error) {
+		return &fakeSmartlingDiscoveryClient{
+			status: smartling.FileStatus{
+				FileURI:          "locales/en.json",
+				FileType:         "json",
+				LastUploaded:     "t",
+				TotalStringCount: 0,
+				TotalWordCount:   0,
+				Items: []smartling.FileStatusLocale{{
+					LocaleID:              "fr-FR",
+					CompletedStringCount:  5,
+					CompletedWordCount:    8,
+					AuthorizedStringCount: 10,
+					AuthorizedWordCount:   20,
+				}},
+			},
+		}, nil
+	}
+
+	root := newRootCmd("test")
+	out := &bytes.Buffer{}
+	root.SetOut(out)
+	root.SetErr(out)
+	root.SetArgs([]string{"smartling", "files", "status", "--project-id", "123", "--file-uri", "locales/en.json"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "completed_strings=5") || !strings.Contains(text, "total_strings=10") || !strings.Contains(text, "percent=50") {
+		t.Fatalf("status output=%s", text)
+	}
+	if !strings.Contains(text, "completed_words=8") || !strings.Contains(text, "total_words=20") {
+		t.Fatalf("status output=%s", text)
+	}
+}
+
+func TestSmartlingFilesStatusDoesNotDoubleWrapHTTPError(t *testing.T) {
+	t.Setenv("SMARTLING_USER_IDENTIFIER", "uid")
+	t.Setenv("SMARTLING_USER_SECRET", "secret")
+	orig := newSmartlingDiscoveryClient
+	t.Cleanup(func() { newSmartlingDiscoveryClient = orig })
+	newSmartlingDiscoveryClient = func(_ smartling.Config) (smartlingDiscoveryClient, error) {
+		return &fakeSmartlingDiscoveryClient{err: fmt.Errorf("smartling files status: status 404: missing")}, nil
+	}
+
+	root := newRootCmd("test")
+	out := &bytes.Buffer{}
+	root.SetOut(out)
+	root.SetErr(out)
+	root.SetArgs([]string{"smartling", "files", "status", "--project-id", "123", "--file-uri", "missing.json"})
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if strings.Count(err.Error(), "smartling files status:") != 1 {
+		t.Fatalf("double-wrapped error: %v", err)
 	}
 }
 
@@ -379,11 +446,19 @@ func TestParseSmartlingUploadDirectives(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if got["foo"] != "bar" || got["smartling.baz"] != "qux=1" {
+	if got["smartling.foo"] != "bar" || got["smartling.baz"] != "qux=1" {
 		t.Fatalf("got %+v", got)
 	}
 	_, err = parseSmartlingUploadDirectives([]string{"nope"})
 	if err == nil {
 		t.Fatal("expected error")
+	}
+	_, err = parseSmartlingUploadDirectives([]string{"source_key_paths=/a", "smartling.source_key_paths=/b"})
+	if err == nil || !strings.Contains(err.Error(), "duplicate --directive smartling.source_key_paths") {
+		t.Fatalf("expected duplicate error, got %v", err)
+	}
+	summary := formatSmartlingDirectiveSummary(map[string]string{"smartling.foo": "bar"})
+	if summary != "smartling.foo=bar" {
+		t.Fatalf("summary=%q", summary)
 	}
 }

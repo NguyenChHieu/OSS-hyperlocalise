@@ -169,7 +169,7 @@ func TestHTTPClientGetFileStatusZeroTotals(t *testing.T) {
 			if r.URL.Query().Get("fileUri") != "locales/en.json" {
 				t.Fatalf("fileUri=%q", r.URL.Query().Get("fileUri"))
 			}
-			_, _ = fmt.Fprint(w, `{"response":{"code":"SUCCESS","data":{"fileUri":"locales/en.json","fileType":"json","lastUploaded":"2017-09-06T20:29:15Z","totalStringCount":0,"totalWordCount":0,"items":[{"localeId":"fr-FR","completedStringCount":0,"completedWordCount":0}]}}}`)
+			_, _ = fmt.Fprint(w, `{"response":{"code":"SUCCESS","data":{"fileUri":"locales/en.json","fileType":"json","lastUploaded":"2017-09-06T20:29:15Z","totalStringCount":0,"totalWordCount":0,"items":[{"localeId":"fr-FR","completedStringCount":5,"completedWordCount":8,"authorizedStringCount":10,"authorizedWordCount":20}]}}}`)
 		default:
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
@@ -182,9 +182,11 @@ func TestHTTPClientGetFileStatusZeroTotals(t *testing.T) {
 		t.Fatalf("GetFileStatus: %v", err)
 	}
 	if status.TotalStringCount != 0 || status.TotalWordCount != 0 {
-		t.Fatalf("unexpected totals: %+v", status)
+		t.Fatalf("unexpected file totals: %+v", status)
 	}
-	_ = fileStatusPercent(status.Items[0].CompletedStringCount, status.TotalStringCount)
+	if status.Items[0].AuthorizedStringCount != 10 || LocaleStatusPercent(status.Items[0]) != 50 {
+		t.Fatalf("unexpected locale progress: %+v percent=%d", status.Items[0], LocaleStatusPercent(status.Items[0]))
+	}
 }
 
 func TestHTTPClientGetFileStatusHTTPError(t *testing.T) {
@@ -322,11 +324,11 @@ func TestHTTPClientDownloadTranslationFileOmitsRetrievalTypeWhenUnset(t *testing
 }
 
 func TestNormalizeRetrievalTypeRejectsUnknown(t *testing.T) {
-	_, err := normalizeRetrievalType("contextMatchingInstrumented")
+	_, err := NormalizeRetrievalType("contextMatchingInstrumented")
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	_, err = normalizeRetrievalType("published")
+	_, err = NormalizeRetrievalType("published")
 	if err != nil {
 		t.Fatalf("published: %v", err)
 	}
@@ -377,13 +379,6 @@ func TestHTTPClientUploadSourceFileDirectives(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UploadSourceFile: %v", err)
 	}
-}
-
-func fileStatusPercent(completed, total int) int {
-	if total <= 0 {
-		return 0
-	}
-	return (completed * 100) / total
 }
 
 func discoveryTestClient(srv *httptest.Server) *HTTPClient {
@@ -459,11 +454,11 @@ func writeProjectsListPage(w http.ResponseWriter, offset, limit, total int) {
 	})
 }
 
-func TestSmartlingDirectiveFieldName(t *testing.T) {
-	if got := smartlingDirectiveFieldName("source_key_paths"); got != "smartling.source_key_paths" {
+func TestCanonicalDirectiveField(t *testing.T) {
+	if got := CanonicalDirectiveField("source_key_paths"); got != "smartling.source_key_paths" {
 		t.Fatalf("got %q", got)
 	}
-	if got := smartlingDirectiveFieldName("smartling.foo"); got != "smartling.foo" {
+	if got := CanonicalDirectiveField("smartling.foo"); got != "smartling.foo" {
 		t.Fatalf("got %q", got)
 	}
 }

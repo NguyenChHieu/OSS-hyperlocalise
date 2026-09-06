@@ -57,7 +57,7 @@ var newSmartlingDiscoveryClient = func(cfg smartling.Config) (smartlingDiscovery
 func newSmartlingFilesCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "files",
-		Short: "list files in a Smartling project",
+		Short: "list files and show file status",
 	}
 	cmd.AddCommand(newSmartlingFilesListCmd())
 	cmd.AddCommand(newSmartlingFilesStatusCmd())
@@ -175,12 +175,12 @@ func executeSmartlingFilesList(cmd *cobra.Command, o smartlingFilesListOptions) 
 		URIMask:   strings.TrimSpace(o.uriMask),
 	})
 	if err != nil {
-		return fmt.Errorf("smartling files list: %w", err)
+		return wrapSmartlingCommandError("smartling files list", err)
 	}
 	if files == nil {
 		files = []smartling.FileListItem{}
 	}
-	return writeCrowdinEncodedOutput(cmd.OutOrStdout(), o.output, func() error {
+	return writeEncodedOutput(cmd.OutOrStdout(), o.output, func() error {
 		for _, file := range files {
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "uri=%s type=%s last_uploaded=%s\n", file.FileURI, file.FileType, file.LastUploaded); err != nil {
 				return err
@@ -211,20 +211,14 @@ func executeSmartlingFilesStatus(cmd *cobra.Command, o smartlingFilesStatusOptio
 		FileURI:   strings.TrimSpace(o.fileURI),
 	})
 	if err != nil {
-		return fmt.Errorf("smartling files status: %w", err)
+		return wrapSmartlingCommandError("smartling files status", err)
 	}
-	return writeCrowdinEncodedOutput(cmd.OutOrStdout(), o.output, func() error {
-		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "uri=%s type=%s last_uploaded=%s total_strings=%d total_words=%d\n", status.FileURI, status.FileType, status.LastUploaded, status.TotalStringCount, status.TotalWordCount); err != nil {
+	return writeEncodedOutput(cmd.OutOrStdout(), o.output, func() error {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "uri=%s type=%s last_uploaded=%s\n", status.FileURI, status.FileType, status.LastUploaded); err != nil {
 			return err
 		}
 		for _, item := range status.Items {
-			completed := item.CompletedStringCount
-			total := status.TotalStringCount
-			percent := 0
-			if total > 0 {
-				percent = (completed * 100) / total
-			}
-			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "locale=%s completed_strings=%d total_strings=%d completed_words=%d total_words=%d percent=%d\n", item.LocaleID, item.CompletedStringCount, status.TotalStringCount, item.CompletedWordCount, status.TotalWordCount, percent); err != nil {
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "locale=%s completed_strings=%d total_strings=%d completed_words=%d total_words=%d percent=%d\n", item.LocaleID, item.CompletedStringCount, item.AuthorizedStringCount, item.CompletedWordCount, item.AuthorizedWordCount, smartling.LocaleStatusPercent(item)); err != nil {
 				return err
 			}
 		}
@@ -249,12 +243,12 @@ func executeSmartlingLocalesList(cmd *cobra.Command, o smartlingLocalesListOptio
 		ProjectID: strings.TrimSpace(o.projectID),
 	})
 	if err != nil {
-		return fmt.Errorf("smartling locales list: %w", err)
+		return wrapSmartlingCommandError("smartling locales list", err)
 	}
 	if locales == nil {
 		locales = []smartling.LocaleListItem{}
 	}
-	return writeCrowdinEncodedOutput(cmd.OutOrStdout(), o.output, func() error {
+	return writeEncodedOutput(cmd.OutOrStdout(), o.output, func() error {
 		for _, locale := range locales {
 			if locale.Enabled != nil {
 				if _, err := fmt.Fprintf(cmd.OutOrStdout(), "locale=%s source=%t enabled=%t\n", locale.LocaleID, locale.Source, *locale.Enabled); err != nil {
@@ -286,12 +280,12 @@ func executeSmartlingProjectsList(cmd *cobra.Command, o smartlingProjectsListOpt
 		AccountUID: strings.TrimSpace(o.accountUID),
 	})
 	if err != nil {
-		return fmt.Errorf("smartling projects list: %w", err)
+		return wrapSmartlingCommandError("smartling projects list", err)
 	}
 	if projects == nil {
 		projects = []smartling.ProjectListItem{}
 	}
-	return writeCrowdinEncodedOutput(cmd.OutOrStdout(), o.output, func() error {
+	return writeEncodedOutput(cmd.OutOrStdout(), o.output, func() error {
 		for _, project := range projects {
 			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "project_id=%s name=%s source_locale=%s\n", project.ProjectID, project.ProjectName, project.SourceLocaleID); err != nil {
 				return err
@@ -299,4 +293,15 @@ func executeSmartlingProjectsList(cmd *cobra.Command, o smartlingProjectsListOpt
 		}
 		return nil
 	}, projects)
+}
+
+func wrapSmartlingCommandError(action string, err error) error {
+	if err == nil {
+		return nil
+	}
+	prefix := action + ": "
+	if strings.HasPrefix(err.Error(), prefix) {
+		return err
+	}
+	return fmt.Errorf("%s%w", prefix, err)
 }

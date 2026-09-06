@@ -51,12 +51,23 @@ type FileStatus struct {
 }
 
 // FileStatusLocale is per-locale progress on a file.
+// Live Smartling status often leaves FileStatus.TotalStringCount at 0.
+// Per-locale work uses authorizedStringCount / authorizedWordCount as the denominator.
 type FileStatusLocale struct {
 	LocaleID              string `json:"localeId"`
 	CompletedStringCount  int    `json:"completedStringCount"`
 	CompletedWordCount    int    `json:"completedWordCount"`
 	AuthorizedStringCount int    `json:"authorizedStringCount,omitempty"`
 	AuthorizedWordCount   int    `json:"authorizedWordCount,omitempty"`
+}
+
+// LocaleStatusPercent is completed strings over authorized strings for one locale.
+// Zero authorized strings (or a missing field) returns 0 so callers never divide by zero.
+func LocaleStatusPercent(item FileStatusLocale) int {
+	if item.AuthorizedStringCount <= 0 {
+		return 0
+	}
+	return (item.CompletedStringCount * 100) / item.AuthorizedStringCount
 }
 
 // LocaleListInput lists source and target locales for a project.

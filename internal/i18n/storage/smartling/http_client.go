@@ -127,7 +127,7 @@ func (c *HTTPClient) UploadSourceFile(ctx context.Context, in SourceUploadInput)
 		"authorize": fmt.Sprintf("%t", in.Authorize),
 	}
 	for key, value := range in.Directives {
-		field := smartlingDirectiveFieldName(key)
+		field := CanonicalDirectiveField(key)
 		if field == "" {
 			continue
 		}
@@ -804,7 +804,7 @@ func (c *HTTPClient) DownloadTranslationFile(ctx context.Context, in Translation
 		return TranslationDownloadResult{}, fmt.Errorf("smartling download: locale id is required")
 	}
 
-	retrievalType, err := normalizeRetrievalType(in.RetrievalType)
+	retrievalType, err := NormalizeRetrievalType(in.RetrievalType)
 	if err != nil {
 		return TranslationDownloadResult{}, err
 	}

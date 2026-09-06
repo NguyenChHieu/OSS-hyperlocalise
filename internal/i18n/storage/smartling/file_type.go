@@ -35,7 +35,8 @@ func FileTypeForExtension(ext string) string {
 	}
 }
 
-func smartlingDirectiveFieldName(key string) string {
+// CanonicalDirectiveField returns the Files API multipart field name for a parser directive.
+func CanonicalDirectiveField(key string) string {
 	key = strings.TrimSpace(key)
 	if key == "" {
 		return ""
@@ -46,7 +47,8 @@ func smartlingDirectiveFieldName(key string) string {
 	return "smartling." + key
 }
 
-func normalizeRetrievalType(value string) (string, error) {
+// NormalizeRetrievalType accepts pending, published, or pseudo. Empty means omit the query param.
+func NormalizeRetrievalType(value string) (string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return "", nil

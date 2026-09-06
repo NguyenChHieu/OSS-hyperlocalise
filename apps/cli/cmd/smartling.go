@@ -209,14 +209,9 @@ func executeSmartlingDownloadTranslations(cmd *cobra.Command, o smartlingDownloa
 	if strings.TrimSpace(o.fileURI) == "" {
 		return fmt.Errorf("smartling download translations: --file-uri is required")
 	}
-	retrievalType := strings.TrimSpace(o.retrievalType)
-	if retrievalType != "" {
-		switch strings.ToLower(retrievalType) {
-		case "pending", "published", "pseudo":
-			retrievalType = strings.ToLower(retrievalType)
-		default:
-			return fmt.Errorf("smartling download translations: --retrieval-type must be pending, published, or pseudo")
-		}
+	retrievalType, err := smartling.NormalizeRetrievalType(o.retrievalType)
+	if err != nil {
+		return fmt.Errorf("smartling download translations: --retrieval-type must be pending, published, or pseudo")
 	}
 
 	outputPath := strings.TrimSpace(o.output)
@@ -318,7 +313,14 @@ func parseSmartlingUploadDirectives(raw []string) (map[string]string, error) {
 		if !ok || strings.TrimSpace(key) == "" {
 			return nil, fmt.Errorf("smartling upload sources: --directive must be key=value")
 		}
-		out[strings.TrimSpace(key)] = value
+		field := smartling.CanonicalDirectiveField(key)
+		if field == "" {
+			return nil, fmt.Errorf("smartling upload sources: --directive must be key=value")
+		}
+		if _, exists := out[field]; exists {
+			return nil, fmt.Errorf("smartling upload sources: duplicate --directive %s", field)
+		}
+		out[field] = value
 	}
 	return out, nil
 }
@@ -334,11 +336,7 @@ func formatSmartlingDirectiveSummary(directives map[string]string) string {
 	slices.Sort(keys)
 	parts := make([]string, 0, len(keys))
 	for _, key := range keys {
-		field := key
-		if !strings.HasPrefix(field, "smartling.") {
-			field = "smartling." + field
-		}
-		parts = append(parts, field+"="+directives[key])
+		parts = append(parts, key+"="+directives[key])
 	}
 	return strings.Join(parts, " ")
 }
